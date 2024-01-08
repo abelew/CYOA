@@ -166,6 +166,7 @@ function get_sigerr {
 trap get_sigerr ERR
 ?;
         $script_start .= $options->{module_string} if ($options->{module_string});
+        $script_start .= $options->{conda_string} if ($options->{conda_string});
         my $script_end = qq!
 ## The following lines give status codes and some logging
 echo "Job status:\$?" >> ${bash_log}

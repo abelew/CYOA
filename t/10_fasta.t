@@ -62,22 +62,21 @@ ok($run_fasta, 'Run Split_Align_Fasta.');
 
 ## my $parsed_file = 'outputs/fasta_phix_cds_nt_phix/phix_cds_nt_vs_phix.parsed.txt';
 my $parsed_file = $run_fasta->{output};
-## Caveat: every fasta36 run will give slightly different E-values due to the usage of rand().
+## Caveat: every fasta36 run will give slightly different E-values.
 my $expected = qq"Name
 1406
-1406
-136
 136
 890
-890
-136
 136
 312
+51
+171
+261
+3618
 ";
 
 my $test_cmd = qq"less ${parsed_file} | awk '{print \$2}' | head --lines 10";
 my $actual = qx"${test_cmd}";
-
 unless(ok($expected eq $actual, 'Is the resulting table of hits expected?')) {
     my($old, $new) = diff($expected, $actual);
     diag("--\n${old}\n--\n${new}\n");

@@ -135,6 +135,7 @@ sub Caical {
     my $test = ref($options->{suffixes});
     my @suffixes = split(/,/, $options->{suffixes});
     my $species = $options->{species};
+    $species = 'host' if ($species eq 'host_species.txt');
     my $out_base = basename($options->{input}, @suffixes);
     my $jname = qq"caical_${out_base}_vs_${species}";
     my $output_dir = qq"outputs/$options->{jprefix}${jname}";
@@ -712,7 +713,6 @@ sub Filter_Kraken_Worker {
         args => \%args,
         job_log => 'filter_kraken.log',
         jname => 'krakenfilter',
-        jprefix => '06',
         required => ['input', 'output'],
         output_unaligned => undef,
         stranded => 'no',
@@ -795,6 +795,7 @@ sub Filter_Kraken_Worker {
     }
 
     my $need_download = 0;
+    my $cyoa_shell = Bio::Adventure->new(cluster => 0);
     if (defined($host_species_accession)) {
         my $accession_file = qq"$options->{libpath}/$options->{libtype}/${host_species_accession}.fasta";
         if (-r $accession_file) {
@@ -918,11 +919,13 @@ sub Filter_Kraken_Worker {
         if (-r $test_input) {
             $converted = $test_input;
         } else {
-            $converted = $class->Bio::Adventure::Convert::Gb2Gff(input => $downloaded_file);
+            my $converter = $cyoa_shell->Bio::Adventure::Convert::Gb2Gff(
+                input => $downloaded_file,
+                jprefix => qq"$options->{jprefix}_1",);
+            $converted = $converter->{output};
         }
     } ## End checking if the host_species was defined.
 
-    my $cyoa_shell = Bio::Adventure->new(cluster => 0);
     my $index_input = qq"$options->{libpath}/$options->{libtype}/${host_species_accession}.fsa";
     my $index_location = qq"$options->{libpath}/$options->{libtype}/indexes/${host_species_accession}.1.ht2";
     if (-r $index_location) {
@@ -933,6 +936,7 @@ sub Filter_Kraken_Worker {
         print "Did not find indexes, running Hisat2_Index() now.\n";
         my $indexed = $cyoa_shell->Bio::Adventure::Index::Hisat2_Index(
             input => $index_input,
+            jprefix => qq"$options->{jprefix}_2",
             output_dir => $options->{output_dir});
         ## Check to see if there is a text file containing the putative host species
         ## If it does not exist, write it with the species name.
@@ -944,7 +948,7 @@ sub Filter_Kraken_Worker {
         compress => 0,
         do_htseq => 0,
         input => $options->{input_fastq},
-        jprefix => $options->{jprefix},
+        jprefix => qq"$options->{jprefix}_3",
         output_dir => $options->{output_dir},
         output_unaligned => $options->{output_unaligned},
         species => $host_species_accession,
@@ -1457,6 +1461,7 @@ phastaf --force --outdir ${output_dir} \\
 
     if ($options->{interpret}) {
         my $interpret_comment = '## Count up the phastaf regions.';
+        my $new_jprefix = qq"$options->{jprefix}_1";
         my $interpret_jstring = qq?
 use Bio::Adventure;
 use Bio::Adventure::Phage;
@@ -1467,7 +1472,7 @@ my \$result = Bio::Adventure::Phage::Interpret_Phastaf_Worker(\$h,
   input_phageterm => '$options->{input_phageterm}',
   jdepends => '$phastaf->{job_id}',
   jname => 'interpret_phastaf',
-  jprefix => '$options->{jprefix}',);
+  jprefix => '${new_jprefix}',);
 ?;
         my $interpretation = $class->Submit(
             comment => $interpret_comment,
@@ -1478,7 +1483,7 @@ my \$result = Bio::Adventure::Phage::Interpret_Phastaf_Worker(\$h,
             jdepends => $phastaf->{job_id},
             jmem => $options->{jmem},
             jname => 'interpret_phastaf',
-            jprefix => $options->{jprefix},
+            jprefix => $new_jprefix,
             jstring => $interpret_jstring,
             language => 'perl',
             stderr => $stderr,
@@ -1791,13 +1796,14 @@ sub Restriction_Catalog_Worker {
 
     my $re_tsv = FileHandle->new(">$options->{output}");
     print $re_tsv qq"RE\tSite\tOverhang\tCuts\n";
-    for my $name (sort keys %data) {
+    my @reordered = sort { $data{$a}->{cuts} <=> $data{$b}->{cuts} } keys(%data);
+    for my $name (@reordered) {
         print $re_tsv qq"${name}\t$data{$name}->{site}\t$data{$name}->{overhang}\t$data{$name}->{cuts}\n";
     }
     $re_tsv->close();
 }
 
-=head2 C<Terminase_Reorder>
+=head2 C<Terminase_ORF_Reorder>
 
  Reorder an assembly so that a terminase gene is at the beginning.
  Terminase library: 10.1186/s12864-021-08029-8
@@ -1868,6 +1874,7 @@ sub Terminase_ORF_Reorder {
 ## local terminase sequence database.  Then for each contig, move the best
 ## terminase hit to the front of the sequence.\n";
     my $output_tsv = qq"${output_dir}/$options->{library}_summary.tsv";
+    my $new_jprefix = qq"$options->{jprefix}_1";
     my $jstring = qq!
 use Bio::Adventure;
 use Bio::Adventure::Phage;
@@ -1877,7 +1884,7 @@ my \$result = Bio::Adventure::Phage::Terminase_ORF_Reorder_Worker(\$h,
   input => '$options->{input}',
   jdepends => '$options->{jdepends}',
   jname => 'terminase_reorder',
-  jprefix => '$options->{jprefix}',
+  jprefix => '$new_jprefix',
   library => '$options->{library}',
   query => '${prodigal_cds}',
   output => '${final_output}',
@@ -1892,7 +1899,7 @@ my \$result = Bio::Adventure::Phage::Terminase_ORF_Reorder_Worker(\$h,
         jdepends => $options->{jdepends},
         jmem => $options->{jmem},
         jname => 'terminase_reorder',
-        jprefix => $options->{jprefix},
+        jprefix => $new_jprefix,
         jstring => $jstring,
         language => 'perl',
         library => $options->{library},

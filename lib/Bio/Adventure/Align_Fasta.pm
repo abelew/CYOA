@@ -48,6 +48,8 @@ use POSIX qw"ceil";
  jmem(8): Expected memory usage.
  modules('fasta'): Load this environment module.
 
+=back
+
 =cut
 sub Make_Fasta_Job {
     my ($class, %args) = @_;
@@ -61,6 +63,7 @@ sub Make_Fasta_Job {
         cluster => 'slurm',
         jdepends => '',
         jmem => 8,
+        type => 'protein',
         modules => ['fasta', 'cyoa'],);
     my $dep = $options->{jdepends};
     my $split = $options->{split};
@@ -81,21 +84,29 @@ sub Make_Fasta_Job {
         $type_string = "-m ${output_type}";
     }
     my $output = '';
-    my $stdout = qq"$options->{basedir}/split_align.stdout";
-    my $stderr = qq"$options->{basedir}/split_align.stderr";
+    my $stdout = qq"$options->{workdir}/split_align.stdout";
+    my $stderr = qq"$options->{workdir}/split_align.stderr";
+    my $query_flag = '-n';
+    if ($options->{type} eq 'protein') {
+        $query_flag = '-p';
+    } elsif ($options->{type} eq 'rna') {
+        $query_flag = '-U';
+    }
+
     ## Important Note:  fasta36's command line parsing fails on path names > 128 or 256 characters.
     ## Thus my usual '$options->{workdir}' will cause this to fail in many instances
     ## because it introduces many characters to the pathnames.
     if ($split) {
-        $output = qq"$options->{basedir}/outputs/split/${array_id_string}.out";
+        $output = qq"$options->{workdir}/split/${array_id_string}.out";
+        make_path(qq"$options->{workdir}/split") unless (-d qq"$options->{workdir}/split");
         $jstring = qq!
 cd $options->{basedir}
-if [[ -r outputs/split/${array_id_string}/in.fasta ]]; then
-  $options->{fasta_tool} -m $options->{fasta_format} $options->{fasta_args} ${type_string} -T $options->{jcpu} \\
-   outputs/split/${array_id_string}/in.fasta \\
+if [[ -r $options->{workdir}/split/${array_id_string}/in.fasta ]]; then
+  $options->{fasta_tool} ${query_flag} -m $options->{fasta_format} \\
+   $options->{fasta_args} ${type_string} -T $options->{jcpu} \\
+   $options->{workdir}/split/${array_id_string}/in.fasta \\
    $options->{library} \\
-   -O ${output} \\
-   1>${stdout} \\
+   1>${output} \\
    2>>${stderr}
 else
   echo "The input file does not exist."
@@ -106,11 +117,11 @@ fi
         $output = qq"$options->{workdir}/$options->{fasta_tool}.out";
         $jstring = qq!
 cd $options->{basedir}
-  $options->{fasta_tool} -m $options->{fasta_format} $options->{fasta_args} ${type_string} -T $options->{jcpu} \\
+$options->{fasta_tool} -m $options->{fasta_format} \\
+  ${query_flag} $options->{fasta_args} ${type_string} -T $options->{jcpu} \\
   $options->{input} \\
   $options->{library} \\
-  -O ${output} \\
-  1>${stdout} \\
+  1>${output} \\
   2>>${stderr}
 !;
     }
@@ -134,8 +145,6 @@ cd $options->{basedir}
     return($fasta_jobs);
 }
 
-=back
-
 =head2 C<Parse_Fasta>
 
  Parse a fasta36 tool result file and print a summary table.
@@ -155,6 +164,8 @@ cd $options->{basedir}
 =item C<Invocation>
 
 > cyoa --task align --method parsefasta --input fasta_output.txt.xz
+
+=back
 
 =cut
 sub Parse_Fasta {
@@ -229,8 +240,6 @@ sub Parse_Fasta {
     return($results);
 }
 
-=back
-
 =head2 C<Parse_Fasta_Global>
 
  A separate parser for global:global searches.
@@ -258,6 +267,8 @@ sub Parse_Fasta {
  min_score(0): Provide a minimum score required for a hit?
  check_all_hits(0): I am not sure what this does.
  min_percent(0): Add a percentage identity filter
+
+=back
 
 =cut
 sub Parse_Fasta_Global {
@@ -562,8 +573,6 @@ sub Parse_Fasta_Mismatches {
     return($indices);
 }
 
-=back
-
 =head2 C<Split_Align_Fasta>
 
  Split apart a set of query sequences into $args{align_jobs} pieces and align them all separately.
@@ -585,25 +594,30 @@ sub Parse_Fasta_Mismatches {
 
 > cyoa --task fastasplit --input query.fasta --library library.fasta --best_only 1
 
+=back
+
 =cut
 sub Split_Align_Fasta {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
-        fasta_tool => 'ggsearch36',
-        required => ['input', 'library'],
-        interactive => 0,
         align_jobs => 40,
         align_parse => 0,
-        num_dirs => 0,
         best_only => 0,
+        fasta_tool => 'ggsearch36',
+        interactive => 0,
         jmem => 8,
+        jprefix => 90,
+        num_dirs => 0,
+        required => ['input', 'library'],
+        type => 'protein',
         modules => ['fasta', 'cyoa']);
     my $loaded = $class->Module_Loader(modules => $options->{modules},
                                        exe => ['fasta36']);
     my $lib = basename($options->{library}, ('.fasta'));
     my $que = basename($options->{input}, ('.fasta'));
-    my $outdir = qq"$options->{basedir}/outputs/fasta_${que}_${lib}";
+    my $outdir = qq"$options->{basedir}/outputs/" .
+        qq"$options->{jprefix}fasta_${que}_${lib}";
     make_path("${outdir}") unless(-d ${outdir});
     my $output = $options->{input};
     $output = basename($output, ('.gz', '.xz'));
@@ -633,11 +647,11 @@ sub Split_Align_Fasta {
             cluster => $options->{cluster},
             fasta_tool => $options->{fasta_tool},
             split => 1,
+            type => $options->{type},
             workdir => $outdir,);
         $concat_job = $class->Bio::Adventure::Align::Concatenate_Searches(
             cluster => $options->{cluster},
             jdepends => $alignment->{job_id},
-            jprefix => '92',
             output => $output,
             workdir => $outdir,);
         ## Make sure that the alignment job gets the final output
@@ -652,6 +666,7 @@ sub Split_Align_Fasta {
             cluster => $options->{cluster},
             fasta_tool => $options->{fasta_tool},
             num_per_split => $num_per_split->{num_per_split},
+            type => $options->{type},
             workdir => $outdir,
             align_jobs => 1);
     }
@@ -692,7 +707,6 @@ my \$result = \$h->Bio::Adventure::Align_Fasta::Parse_Fasta_Global(
         jmem => $options->{jmem},
         jname => 'parse_search',
         jstring => $jstring,
-        jprefix => '93',
         stdout => $stdout,
         stderr => $stderr,
         language => 'perl',);
@@ -701,8 +715,6 @@ my \$result = \$h->Bio::Adventure::Align_Fasta::Parse_Fasta_Global(
     my $unloaded = $class->Module_Reset(env => $loaded);
     return($parse_job);
 }
-
-=back
 
 =head1 AUTHOR - atb
 

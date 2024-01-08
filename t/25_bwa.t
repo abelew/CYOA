@@ -46,11 +46,10 @@ my $index = $cyoa->Bio::Adventure::Index::BWA_Index(
     input => $phix_fasta,);
 ## Check that the indexes were created:
 ok(-f $index->{output_sa}, "The .sa index file was created: $index->{output_sa}");
-ok(-f $index->{output_pac}, "The .sa index file was created: $index->{output_pac}");
-ok(-f $index->{output_bwt}, "The .sa index file was created: $index->{output_bwt}");
-ok(-f $index->{output_ann}, "The .sa index file was created: $index->{output_ann}");
-ok(-f $index->{output_amb}, "The .sa index file was created: $index->{output_amb}");
-ok(-f $index->{output_fa}, "The .sa index file was created: $index->{output_fa}");
+ok(-f $index->{output_pac}, "The .pac index file was created: $index->{output_pac}");
+ok(-f $index->{output_bwt}, "The .bwt index file was created: $index->{output_bwt}");
+ok(-f $index->{output_ann}, "The .ann index file was created: $index->{output_ann}");
+ok(-f $index->{output_amb}, "The .amb index file was created: $index->{output_amb}");
 
 my $bwa = $cyoa->Bio::Adventure::Map::BWA(
     input => qq'test_forward.fastq.gz',

@@ -28,7 +28,7 @@ my $cyoa = Bio::Adventure->new(basedir => cwd());
 my $fastqc = $cyoa->Bio::Adventure::QA::Fastqc(input => $input_local);
 ok($fastqc, 'Run Fastqc');
 my $status = $cyoa->Wait(job => $fastqc);
-ok($status->{State} eq 'COMPLETED', 'Fastqc completed.);
+ok($status->{State} eq 'COMPLETED', 'Fastqc completed.');
 ok(-r 'scripts/01fqc_test_forward.sh',
    'Fastqc script exists?');
 ok(my $actual = $cyoa->Last_Stat(input => 'outputs/fastqc_stats.csv'),

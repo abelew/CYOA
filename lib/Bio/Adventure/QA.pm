@@ -171,32 +171,33 @@ sub Fastqc {
     my $jstring = qq!mkdir -p ${outdir}
 which perl 2>${stderr} 1>&2
 which fastqc 2>>${stderr} 1>&2
-fastqc --extract \\
+## Even if fastqc finishes happily using a subshell, it might exit with SIGERR
+trap - ERR
+finished=\$(fastqc --extract \\
   -o ${outdir} \\
   ${input_file_string} \\
   2>>${stderr} \\
-  1>>${stdout}
-# shellcheck disable=SC2181
-if [ "\$?" -ne "0" ]; then
-  echo "fastqc failed, this is not considered fatal for a pipeline."
-  exit 0
-fi
+  1>>${stdout} || /bin/true)
+echo "fastqc finished with \$? andor \${finished}."
+
 !;
 
     if ($subshell) {
         $jstring .= qq!
 ## Note that if this is using a subshell, fastqc will assume that the inputs
-## are /dev/fd/xx (usually 63 or 64).
+## are /dev/fd/xx (usually 60 something).
 ## We can likely cheat and get the subshell fd with this:
-badname=\$(basename <(env))
-echo \${badname}
-## with the caveat that this is subject to race conditions if a bunch of other things are
-## creating subshells on this host.
-mv ${outdir}/\${badname}_fastqc.html ${outdir}/${modified_input}.html 2>/dev/null
-echo "move finished with: $?"
-mv ${outdir}/\${badname}_fastqc.zip ${outdir}/${modified_input}.zip 2>/dev/null
-echo "move finished with: $?"
-mv \$(/bin/ls -d ${outdir}/\${badname}_fastqc) ${outdir}/${modified_input} 2>/dev/null
+read_num=1
+for badname in  \$(cd ${outdir} && /bin/ls -d *_fastqc); do
+  echo \${badname}
+  mv ${outdir}/\${badname}.html ${outdir}/r\${read_num}_trimmed_fastqc.html 2>/dev/null
+  echo "html move finished with: \$?"
+  mv ${outdir}/\${badname}.zip ${outdir}/r\${read_num}_trimmed_fastqc.zip 2>/dev/null
+  echo "zip move finished with: $?"
+  mv ${outdir}/\${badname} outputs/01fastqc/r\${read_num}_trimmed_fastqc 2>/dev/null
+  echo "directory move finished with: \$?"
+  let "read_num++"
+done
 !;
     }
 
@@ -220,6 +221,7 @@ mv \$(/bin/ls -d ${outdir}/\${badname}_fastqc) ${outdir}/${modified_input} 2>/de
         input => $fqc->{txtfile},
         jcpu => 1,
         jmem => 1,
+        jprefix => qq"$options->{jprefix}_1",
         jwalltime => '00:03:00',
         jdepends => $fqc->{job_id},);
     $fqc->{stats} = $stats;

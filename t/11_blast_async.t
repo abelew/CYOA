@@ -62,7 +62,7 @@ my $run_blast = $cyoa->Bio::Adventure::Align_Blast::Split_Align_Blast(
     number => 1,
     parse => 0,);
 my $status = $cyoa->Wait(job => $run_blast);
-ok($status->{Status} eq 'COMPLETED', 'The blast job has completed.');
+ok($status->{State} eq 'COMPLETED', 'The blast job has completed.');
 ##ok($run_blast, 'Run Split_Align_Blast.');
 my $expected = qq"QUERYNAME	real_name	Chromosome	Start	End	%ID	Score	Sig	CompLength	Hit_Ident	hits
 Query_1	chr_NC_001422_id_phiX174p01_start_3981_end_5386	NC_001422		3981	5386	100	1406	0	1406	100	1
