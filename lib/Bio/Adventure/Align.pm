@@ -481,6 +481,45 @@ sub Map_Accession {
     return($map);
 }
 
+sub ProgressiveMauve {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['input', 'reference'],
+        jmem => 24,
+        jprefix => '20',);
+    my $jname = 'pmauve';
+    my $outdir = qq"outputs/$options->{jprefix}pmauve";
+    make_path(qq"${outdir}");
+    my $stderr = qq"${outdir}/pmauve.stderr";
+    my $stdout = qq"${outdir}/pmauve.stdout";
+    my $comment = qq!## Attempting to run progressive mauve a directory of genbank/fasta files: $options->{input}.
+!;
+    my $mem = $options->{jmem} * 1000;
+    my $jstring = qq!
+location=\$(dirname Mauve)
+\${location}/progressiveMauve \
+  --output=${outdir}/alignment \
+  --output-guide-tree=${outdir}/guide_tree \
+  --backbone-output=${outdir}/backbone \
+  $options->{library} \
+  \$(/bin/find $options->{input})
+!;
+    my $mauve = $class->Submit(
+        comment => $comment,
+        input => $options->{input},
+        library => $options->{library},
+        jdepends => $options->{jdepends},
+        jmem => $options->{jmem},
+        jname => $jname,
+        jprefix => $options->{jprefix},
+        jstring => $jstring,
+        output => qq"${outdir}/alignment",
+        stderr => $stderr,
+        stdout => $stdout,);
+    return($mauve);
+}
+
 sub OrthoFinder {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
