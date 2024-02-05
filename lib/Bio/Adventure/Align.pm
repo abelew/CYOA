@@ -51,16 +51,15 @@ sub Concatenate_Searches {
         args => \%args,
         workdir => '',
         jmem => 8,);
-    my $workdir = $options->{workdir};
     my $finished = 0;
-    my $output = qq"${workdir}/split_search.txt";
+    my $output = qq"$options->{workdir}/split_search.txt";
     $output = $options->{output} if (defined($options->{output}));
     $output .= ".xz" unless ($output =~ /\.xz$/);
     my $comment_string = qq"## Concatenating the output files into ${output}
 ";
     my $jstring = qq!
 rm -f ${output}
-for i in \$(/bin/ls outputs/split/*.out); do
+for i in \$(/bin/ls $options->{workdir}/split/*.out); do
   xz -9e -c \$i >> ${output}
 done
 !;
@@ -225,21 +224,22 @@ sub Make_Directories {
         args => \%args,
         num_per_split => 100,
         align_jobs => 40,);
-    my $split_info = $options->{num_per_split};
+    my $split_info = $class->Bio::Adventure::Align::Get_Split(args => \%args);
     my $num_per_split = $split_info->{num_per_split};
     my $sequences = $split_info->{seqs};
     my $splits = $options->{align_jobs};
-    my $workdir = $options->{workdir};
     ## I am choosing to make directories starting at 1000
     ## This way I don't have to think about the difference from
     ## 99 to 100 (2 characters to 3) as long as no one splits more than 9000 ways...
     print "Make_Directories: Making $options->{align_jobs} directories with ${num_per_split} sequences.\n";
     my $dir = $options->{array_start};
 
-    remove_tree("outputs/split", {verbose => 0 });
+    remove_tree("$options->{workdir}/split", {verbose => 0 });
     for my $c ($dir .. ($dir + $splits)) {
         ## print "Making directory: split/$c\n";
-        make_path("outputs/split/${c}") if (!-d "outputs/split/${c}" and !-f "outputs/split/${c}");
+        if (!-d "$options->{workdir}/split/${c}" && !-f "$options->{workdir}/split/${c}") {
+            make_path("$options->{workdir}/split/${c}");
+        }
     }
 
     my $in = Bio::SeqIO->new(-file => $options->{input},);
@@ -248,7 +248,7 @@ sub Make_Directories {
         my $id = $in_seq->id();
         my $seq = $in_seq->seq();
         $seq = join("\n", ($seq =~ m/.{1,80}/g));
-        my $output_file = qq"outputs/split/${dir}/in.fasta";
+        my $output_file = qq"$options->{workdir}/split/${dir}/in.fasta";
         my $outfile = FileHandle->new(">>${output_file}");
         my $out_string = qq!>${id}
 ${seq}
@@ -532,7 +532,7 @@ rmdir ${outdir}/output/Results_${month_date}
         input => $options->{input},
         jdepends => $options->{jdepends},
         jmem => $options->{jmem},
-        jname => ${jname},
+        jname => $jname,
         jprefix => $options->{jprefix},
         jstring => $jstring,
         output => $orthofinder_all_output,

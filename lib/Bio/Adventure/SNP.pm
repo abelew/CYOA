@@ -438,6 +438,7 @@ sub SNP_Ratio_Worker {
     my $in_bcf = FileHandle->new("bcftools view $options->{input} |");
     print $log "The large matrix of data will be written to: $options->{output}\n";
     my $all_out = FileHandle->new(">$options->{output}");
+    my $filtered_coverage_log = qq"${out_dir}/filtered_coverage.tsv";
 
     ## Ok, so I want to simplify the vcf output so that I can create a pseudo
     ## count table of every potential SNP position I want to create a 2 column
@@ -636,6 +637,7 @@ sub SNP_Ratio_Worker {
     print $output_by_gene qq"gene\tchromosome\tposition\tfrom_to\taa_subst\n";
     my $output_penetrance = FileHandle->new(">$options->{output_penetrance}");
     print $output_penetrance qq"chromosome\tposition\tfrom_to\tpenetrance\n";
+    my $filtered_coverage = FileHandle->new(">${filtered_coverage_log}");
     my $vars_by_gene = {};
     my $all_count = 0;
     ## Make a copy of the genome so that we can compare before/after the mutation(s)
@@ -662,6 +664,7 @@ sub SNP_Ratio_Worker {
       if (defined($vcf_cutoff)) {
           if ($datum->{$depth_tag} < $vcf_cutoff) {
               print "Dropping $datum->{position} because depth ($datum->{$depth_tag}) is less than $vcf_cutoff.\n";
+              print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
               next SHIFTER;
           }
       }
@@ -669,19 +672,23 @@ sub SNP_Ratio_Worker {
           if (defined($options->{min_value}) && defined($options->{max_value})) {
               if ($datum->{chosen} > $options->{max_value}) {
                   print "$datum->{position} has exceeded max value: $options->{max_value}\n";
+                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
                   next SHIFTER;
               } elsif ($datum->{chosen} < $options->{min_value}) {
                   print "$datum->{position} is less than min value: $options->{min_value}\n";
+                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
                   next SHIFTER;
               }
           } elsif (defined($options->{min_value})) {
               if ($datum->{chosen} < $options->{min_value}) {
                   print "$datum->{position} is less than min value: $options->{min_value}\n";
+                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
                   next SHIFTER;
               }
           } elsif (defined($options->{max_value})) {
               if ($datum->{chosen} > $options->{max_value}) {
                   print "$datum->{position} has exceeded max value: $options->{max_value}\n";
+                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
                   next SHIFTER;
               }
           }
@@ -825,6 +832,7 @@ sub SNP_Ratio_Worker {
     print $log "Compressing output pkm file.\n";
     qx"xz -9e -f $options->{output_pkm}";
     $log->close();
+    $filtered_coverage->close();
     return($count);
 }
 
@@ -857,16 +865,16 @@ sub SNP_Ratio_Intron {
     $output_suffix .= qq"_m$options->{min_value}" if ($options->{min_value});
     $output_suffix .= qq"_ctag-$options->{coverage_tag}" if ($options->{coverage_tag});
     $output_suffix .= qq"_mtag-$options->{chosen_tag}" if ($options->{chosen_tag});
-    my $genome = qq"$options->{libpath}/$options->{libtype}/$options->{species}_${output_suffix}.fasta";
+    my $genome = qq"$options->{libpath}/$options->{libtype}/$options->{species}${output_suffix}.fasta";
     my $stdout = qq"${print_output}/stdout";
     my $stderr = qq"${print_output}/stderr";
-    my $output_all = qq"${print_output}/all_tags_${output_suffix}.txt";
-    my $output_count = qq"${print_output}/count_${output_suffix}.txt";
-    my $output_genome = qq"${print_output}/$options->{species}-${samplename}_${output_suffix}.fasta";
-    my $output_by_gene = qq"${print_output}/variants_by_gene_${output_suffix}.txt";
-    my $output_penetrance = qq"${print_output}/variants_penetrance_${output_suffix}.txt";
-    my $output_pkm = qq"${print_output}/pkm_${output_suffix}.txt";
-    my $output_types = qq"${print_output}/count_types_${output_suffix}.txt";
+    my $output_all = qq"${print_output}/all_tags${output_suffix}.txt";
+    my $output_count = qq"${print_output}/count${output_suffix}.txt";
+    my $output_genome = qq"${print_output}/$options->{species}-${samplename}${output_suffix}.fasta";
+    my $output_by_gene = qq"${print_output}/variants_by_gene${output_suffix}.txt";
+    my $output_penetrance = qq"${print_output}/variants_penetrance${output_suffix}.txt";
+    my $output_pkm = qq"${print_output}/pkm${output_suffix}.txt";
+    my $output_types = qq"${print_output}/count_types${output_suffix}.txt";
     my $comment_string = qq!
 ## Parse the SNP data and generate a modified $options->{species} genome.
 ##  This should read the file:
@@ -967,8 +975,10 @@ sub SNP_Ratio_Intron_Worker {
     print $log "Reading gff: ${gff}, extracting type: $options->{gff_type} features tagged $options->{gff_tag}.\n";
     my $in_bcf = FileHandle->new("bcftools view $options->{input} |");
     print $log "The large matrix of data will be written to: $options->{output}\n";
+    my $filtered_coverage_log = qq"${output_dir}/filtered_coverage_introns.tsv";
     my $all_out = FileHandle->new(">$options->{output}");
     my $type_counter = FileHandle->new(">$options->{output_types}");
+    my $filtered_coverage = FileHandle->new(">${filtered_coverage_log}");
     my %type_counts = ();
 
     ## Read the genome so that I may write a copy with all the nucleotides changed.
@@ -1221,16 +1231,28 @@ sub SNP_Ratio_Intron_Worker {
       my $depth_tag = $options->{coverage_tag};
       my $vcf_cutoff = $options->{vcf_cutoff};
       if (defined($vcf_cutoff)) {
-          next SHIFTER if ($datum->{$depth_tag} < $vcf_cutoff);
+          if ($datum->{$depth_tag} < $vcf_cutoff) {
+              print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
+              next SHIFTER;
+          }
       }
       if (defined($chosen) && defined($datum->{chosen})) {
           if (defined($options->{min_value}) && defined($options->{max_value})) {
-              next SHIFTER if ($datum->{chosen} > $options->{max_value} ||
-                               $datum->{chosen} < $options->{min_value});
+              if ($datum->{chosen} > $options->{max_value} ||
+                  $datum->{chosen} < $options->{min_value}) {
+                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
+                  next SHIFTER;
+              }
           } elsif (defined($options->{min_value})) {
-              next SHIFTER if ($datum->{chosen} < $options->{min_value});
+              if ($datum->{chosen} < $options->{min_value}) {
+                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
+                  next SHIFTER;
+              }
           } elsif (defined($options->{max_value})) {
-              next SHIFTER if ($datum->{chosen} > $options->{max_value});
+              if ($datum->{chosen} > $options->{max_value}) {
+                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
+                  next SHIFTER;
+              }
           }
       }
 
@@ -1381,6 +1403,7 @@ sub SNP_Ratio_Intron_Worker {
     print $log "Compressing output pkm file.\n";
     qx"xz -9e -f $options->{output_pkm}";
     $log->close();
+    $filtered_coverage->close();
     return($count);
 } ## End of the intron aware SNP Ratio worker
 

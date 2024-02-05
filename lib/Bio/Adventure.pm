@@ -143,6 +143,7 @@ has clean => (is => 'rw', default => 0); ## Cleanup after yourself?
 has cluster => (is => 'rw', default => undef); ## Are we running on a cluster?
 has comment => (is => 'rw', default => undef); ## Set a comment in running slurm/bash/etc scripts.
 has compress => (is => 'rw', default => 1); ## Compress output files?
+has conda_string => (is => 'rw', default => undef);
 has config => (is => 'rw', default => undef); ## Not sure
 has count => (is => 'rw', default => 1); ## Quantify reads after mapping?
 has correction => (is => 'rw', default => 1); ## Perform correction when using fastp?
@@ -159,8 +160,10 @@ has do_umi => (is => 'rw', default => 1); ## Extract UMIs when using fastp
 has download => (is => 'rw', default => 1);
 has email => (is => 'rw', default => 'abelew@umd.edu');
 has evalue => (is => 'rw', default => 0.001); ## Default e-value cutoff
-has fasta_args => (is => 'rw', default => ' -b 20 -d 20 '); ## Default arguments for the fasta36 suite
+has fasta_args => (is => 'rw', default => '-b 20 -d 20'); ## Default arguments for the fasta36 suite
 has fasta_tool => (is => 'rw', default => 'ggsearch36'); ## Which fasta36 program to run?
+has fastqc => (is => 'rw', default => 'check'); ## Perform fastqc in a pipeline?
+has filter => (is => 'rw', default => 1);  ## When performing an assembly, do a host filter?
 has filtered => (is => 'rw', default => 'unfiltered');  ## Whether or not Fastqc is running on filtered data.
 has freebayes => (is => 'rw', default => 0);
 has fsa_input => (is => 'rw'); ## fsa genome output file for creating a genbank file
@@ -176,7 +179,6 @@ has gff_cds_parent_type => (is => 'rw', default => 'mRNA');
 has gff_cds_type => (is => 'rw', default => 'CDS');
 has help => (is => 'rw', default => undef); ## Ask for help?
 has hisat_args => (is => 'rw', default => ' --sensitive ');
-has host_filter => (is => 'rw', default => 1);  ## When performing an assembly, do a host filter?
 has htseq_args => (is => 'rw', default => ' --order=name --idattr=gene_id --minaqual=10 --type=exon --stranded=yes --mode=union '); ## Most likely htseq options
 has identity => (is => 'rw', default => 70); ## Alignment specific identity cutoff
 has index_file => (is => 'rw', default => 'indexes.txt'); ## File containing indexes:sampleIDs when demultiplexing samples - likely tnseq
@@ -324,12 +326,13 @@ $XZ_OPTS = '-9e';
 $XZ_DEFAULTS = '-9e';
 $ENV{LESS} = '--buffers 0 -B';
 $ENV{PERL_USE_UNSAFE_INC} = 0;
+if (!defined($ENV{TMPDIR})) {
+    $ENV{TMPDIR} = '/tmp';
+}
 my $lessopen = Get_Lesspipe();
 ## Added to test Bio:DB::SeqFeature::Store
 if (!defined($ENV{PERL_INLINE_DIRECTORY})) {
-    my $this_tmpdir = '/tmp';
-    $this_tmpdir = $ENV{TMPDIR} if (defined($ENV{TMPDIR}));
-    my $filename = File::Temp::tempnam($this_tmpdir, "inline_$ENV{USER}");
+    my $filename = File::Temp::tempnam($ENV{TMPDIR}, "inline_$ENV{USER}");
     $ENV{PERL_INLINE_DIRECTORY} = $filename;
     my $made = make_path($filename);
 }
@@ -632,7 +635,7 @@ sub Get_Paths {
         my $filename = basename($in);
         my $filebase_compress = basename($in, ('.gz', '.xz', '.bz2'));
         my @exts = ('.fastq', '.fasta', '.fsa', '.faa', 'fna', '.fa', '.ffn',
-                    '.tsv', 'gff', '.gff3', '.gbk', '.gbf', '.sqn', 'tbl');
+                    'gff', '.gff3', '.gbk', '.gbf', '.sqn', 'tbl', '.tsv', '.txt');
         my $filebase_extension = basename($filebase_compress, @exts);
         my $directory = dirname($in);
         my $dirname = basename($directory);
@@ -1391,10 +1394,21 @@ fi
 module purge
 module add ';
         for my $m (@module_lst) {
-            $module_string .= qq" ${m}" if (defined($m));
+            $module_string .= qq"${m} " if (defined($m));
         }
-        $module_string .= ' 2>/dev/null 1>&2';
+        $module_string .= '2>/dev/null 1>&2';
         $options->{module_string} = $module_string;
+    }
+
+    my $conda_string;
+    my @conda_lst = ();
+    @conda_lst = @{$modules{conda}} if (defined($modules{conda}));
+    if (scalar(@conda_lst) > 0) {
+        for my $c (@conda_lst) {
+            $conda_string .= qq"conda activate ${c}
+";
+        }
+        $options->{conda_string} = $conda_string;
     }
 
     ## If we are invoking an indirect job, we need a way to serialize the options
@@ -1404,6 +1418,12 @@ module add ';
         my $option_directory;
         if (defined($options->{output_dir})) {
             $option_directory = $options->{output_dir}
+        } elsif (defined($options->{output})) {
+            $option_directory = dirname($options->{output});
+        } elsif (defined($options->{stdout})) {
+            $option_directory = dirname($options->{stdout});
+        } elsif (defined($options->{stderr})) {
+            $option_directory = dirname($options->{stderr});
         } elsif (defined($options->{input})) {
             $option_directory = dirname($options->{input});
         } else {

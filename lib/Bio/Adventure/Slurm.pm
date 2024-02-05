@@ -1419,8 +1419,9 @@ use strict;
 use FileHandle;
 use Bio::Adventure;
 my \$out = FileHandle->new(">>${sbatch_log}");
-my \$d = qx'date';
-print \$out "## Started $script_file at \${d}";
+my (\$sec, \$min, \$hour, \$mday, \$mon, \$year, \$wday, \$yday, \$isdst) = localtime(time);
+my \$now = sprintf("%04d-%02d-%02d %02d:%02d:%02d", \$year+1900, \$mon+1, \$mday, \$hour, \$min, \$sec);
+print \$out "## Started $script_file at \${now}";
 chdir("$options->{basedir}");
 my \$h = Bio::Adventure->new();
 ?;
@@ -1433,9 +1434,10 @@ my \$loaded = \$h->Load_Vars(input => '$parent->{option_file}');
         my $perl_end = qq!## The following lines give status codes and some logging
 my \$jobid = "";
 \$jobid = \$ENV{SLURM_JOBID} if (\$ENV{SLURM_JOBID});
-my \$end_d = qx'date';
+(\$sec, \$min, \$hour, \$mday, \$mon, \$year, \$wday, \$yday, \$isdst) = localtime(time);
+\$now = sprintf("%04d-%02d-%02d %02d:%02d:%02d", \$year+1900, \$mon+1, \$mday, \$hour, \$min, \$sec);
 my \$host = qx'hostname';
-print \$out "## \${host} finished \${jobid} ${script_base} at \${end_d}.\n";
+print \$out "## \${host} finished \${jobid} ${script_base} at \${now}.\n";
 close(\$out);
 !;
         my $total_perl_string = qq"${perl_start}\n";
@@ -1505,6 +1507,7 @@ function get_sigerr {
 trap get_sigerr ERR
 ?;
         $script_start .= $options->{module_string} if ($options->{module_string});
+        $script_start .= $options->{conda_string} if ($options->{conda_string});
 
         ## Note, the 'echo "Job status: $? " >> ${sbatch_log}'
         ## really is not necessary now because I have errexit on.
@@ -1651,7 +1654,7 @@ sub Wait {
             print qq"$datum->{'Elapsed'} time using $datum->{'AveCPUFreq'}Mhz.\n";
         } elsif ($datum->{State} eq 'PENDING') {
             $wait_count->{pending}++;
-            print "This job is still pending, it may be restarting.\n";
+            print "This job is still pending.\n";
         } elsif ($datum->{State} eq 'CANCELLED') {
             $wait_count->{cancelled}++;
             $wait_count->{finished}++;

@@ -945,7 +945,9 @@ sub Trinotate {
     my $input_dir = $input_paths->[0]->{dirname};
     my $input_noext = $input_paths->[0]->{filebase_extension};
     my $output_name = basename($input_noext);
-    $output_name = qq"${output_name}_trinotate.tsv";
+    $output_name = qq"${output_name}_trinotate";
+    my $output_tsv = qq"${output_name}.tsv";
+    my $output_go = qq"${output_name}_go.tsv";
     my $output_dir = qq"outputs/$options->{jprefix}trinotate";
     my $stdout = qq"${output_dir}/trinotate_${job_name}.stdout";
     my $stderr = qq"${output_dir}/trinotate_${job_name}.stderr";
@@ -963,8 +965,8 @@ sub Trinotate {
 !;
     my $jstring = qq!
 function cleanup {
-  echo "Removing /tmp/${input_file}.sqlite"
-  rm  -f /tmp/${input_file}.sqlite
+  echo "Removing $ENV{TMPDIR}/${input_file}.sqlite"
+  rm  -f "$ENV{TMPDIR}/${input_file}.sqlite"
 }
 trap cleanup EXIT
 
@@ -982,10 +984,10 @@ else
   done
 fi
 
-cp ${trinotate_exe_dir}/Trinotate.sqlite /tmp/${input_file}.sqlite
+cp ${trinotate_exe_dir}/Trinotate.sqlite $ENV{TMPDIR}/${input_file}.sqlite
 ${trinotate_exe_dir}/auto/$options->{trinotate} \\
   --conf ${expected_config} \\
-  --Trinotate_sqlite /tmp/${input_file}.sqlite \\
+  --Trinotate_sqlite $ENV{TMPDIR}/${input_file}.sqlite \\
   --transcripts ${input_file} \\
   --gene_to_trans_map ${input_file}.gene_trans_map \\
   --CPU 6 \\
@@ -993,11 +995,15 @@ ${trinotate_exe_dir}/auto/$options->{trinotate} \\
   1>trinotate_${job_name}.stdout
 ## The file created by trinotate is a tsv, not xls.
 if [[ -f "Trinotate.xls" ]]; then
-  mv Trinotate.xls ${output_name}
+  mv Trinotate.xls ${output_tsv}
 else
-  mv Trinotate.tsv ${output_name}
+  mv Trinotate.tsv ${output_tsv}
+fi
+if [[ -f "Trinotate.xls.gene_ontology" ]]; then
+  mv Trinotate.xls.gene_ontology ${output_go}
 fi
 rm -f ./*.ok* ./*.out* ./*.outfmt6* ./*.cmds* ./*.log*
+rm -f $ENV{TMPDIR}/${input_file}.sqlite
 rm -rf TMHMM_* ${input_file}.ffn.trans*
 cd "\${start}"
 !;
@@ -1010,7 +1016,8 @@ cd "\${start}"
         jstring => $jstring,
         jmem => 12,
         jwalltime => '144:00:00',
-        output => qq"${output_dir}/${output_name}",
+        output => qq"${output_dir}/${output_tsv}",
+        output_go => qq"${output_dir}/${output_go}",
         prescript => $options->{prescript},
         postscript => $options->{postscript},
         stdout => $stdout,
@@ -1089,7 +1096,7 @@ my \$result = \$h->Bio::Adventure::Annotation::Rosalind_Plus_Worker(
         jmem => 8,
         jname => $options->{jname},
         job_log => $log,
-        jprefix => $options->{jprefix},
+        jprefix => qq"$options->{jprefix}_1",
         jstring => $jstring,
         language => 'perl',
         output => $output_file,

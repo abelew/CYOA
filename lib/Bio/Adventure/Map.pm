@@ -128,7 +128,7 @@ sub Bowtie {
             jdepends => $options->{jdepends},
             jprefix => $current_prefix - 1,
             libtype => $libtype,);
-        $options->{jdepends} = $index_job->{jobid};
+        $options->{jdepends} = $index_job->{job_id};
     }
 
     my $bowtie_input_flag = "-q"; ## fastq by default
@@ -334,7 +334,7 @@ sub Bowtie2 {
             jdepends => $options->{jdepends},
             jprefix => $options->{jprefix} - 1,
             libtype => $libtype,);
-        $options->{jdepends} = $index_job->{jobid};
+        $options->{jdepends} = $index_job->{job_id};
     }
     my $bowtie_input_flag = '-q '; ## fastq by default
     $bowtie_input_flag = '-f ' if (${bt_input} =~ /\.fasta$/);
@@ -784,6 +784,115 @@ fi
     return($bwa_job);
 }
 
+sub Downsample_Guess_Strand {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['species', 'input'],
+        jmem => 24,
+        reads => 1000000, ## Needs to be big enough for salmon to smaple
+        jprefix => '45',);
+    my $depends = $options->{jdepends};
+    if ($options->{species} =~ /\:/) {
+        my @species_lst = split(/:/, $options->{species});
+        my @result_lst = ();
+        my $start_species = $options->{species};
+        foreach my $sp (@species_lst) {
+            print "Invoking salmon on ${sp}\n";
+            $options->{species} = $sp;
+            my $result = Bio::Adventure::Map::Salmon($class, %{$options});
+            push (@result_lst, $result);
+        }
+        $options->{species} = $start_species;
+        return(@result_lst);
+    }
+
+    my $ready = $class->Check_Input(files => $options->{input});
+    my %sa_jobs = ();
+    my $libtype = 'genome';
+    $libtype = $options->{libtype} if ($options->{libtype});
+    my $species = $options->{species};
+
+    my $jname = qq"sal_${species}";
+    ## $jname = $options->{jname} if ($options->{jname});
+    my $outdir = qq"outputs/$options->{jprefix}salmon_${species}";
+    my $stderr = qq"${outdir}/salmon_${species}.stderr";
+    my $stdout = qq"${outdir}/salmon_${species}.stdout";
+
+    my $sa_args = '';
+    my $sa_input = $options->{input};
+    my $input_name = $sa_input;
+    my $sa_rm = qq"rm ${outdir}/r1_downsampled.fastq
+";
+    my $downsample_commands = '';
+    if ($sa_input =~ /\:|\;|\,|\s+/) {
+        my @pair_listing = split(/\:|\;|\,|\s+/, $sa_input);
+        $sa_args .= qq" -1 ${outdir}/r1_downsampled.fastq -2 ${outdir}/r2_downsampled.fastq ";
+        $input_name = $pair_listing[0];
+        $downsample_commands .= qq"sampled_r1=\$( { less $pair_listing[0] ||:; } |\\
+  head -n $options->{reads} > ${outdir}/r1_downsampled.fastq )
+sampled_r2=\$( { less $pair_listing[1] ||:; } |\\
+  head -n $options->{reads} > ${outdir}/r2_downsampled.fastq )
+";
+        my $sa_rm .= qq"rm ${outdir}/r2_downsampled.fastq
+";
+    } else {
+        $sa_args .= qq" -r ${outdir}/r1_downsampled.fastq ";
+        $downsample_commands .= qq"sampled_r1=\$( { less $sa_input} ||:; } |\\
+  head -n $options->{reads} > ${outdir}/r1_downsampled.fastq )
+";
+    }
+
+    ## Check that the indexes exist
+    my $sa_reflib = qq"$options->{libpath}/${libtype}/indexes/$options->{species}_salmon_index";
+    my $index_job;
+    if (!-r $sa_reflib) {
+        my $transcript_file = qq"$options->{libpath}/${libtype}/$options->{species}_cds.fasta";
+        $index_job = $class->Bio::Adventure::Index::Salmon_Index(
+            input => $transcript_file,
+            depends => $options->{jdepends},
+            libtype => $libtype,);
+        $options->{jdepends} = $index_job->{job_id};
+    }
+
+    my $comment = qq!## This is a salmon pseudoalignment of ${sa_input} against
+## ${sa_reflib}.
+!;
+    my $jstring = qq!mkdir -p ${outdir}
+## For reasons passing my understanding, the less downsample is throwing a ERR
+## when running in the script; but the outputs are created correctly.
+${downsample_commands}
+salmon quant -i ${sa_reflib} \\
+  -l A --gcBias --validateMappings  \\
+  ${sa_args} \\
+  -o ${outdir} \\
+  2>${stderr} \\
+  1>${stdout}
+${sa_rm}
+!;
+    my $salmon = $class->Submit(
+        comment => $comment,
+        input => $sa_input,
+        jdepends => $options->{jdepends},
+        jname => $jname,
+        jprefix => $options->{jprefix},
+        jstring => $jstring,
+        jmem => $options->{jmem},
+        output => qq"${outdir}/quant.sf",
+        stderr => $stderr,
+        stdout => $stdout,
+        prescript => $args{prescript},
+        postscript => $args{postscript},);
+    $salmon->{index_job} = $index_job;
+    my $strand = $class->Bio::Adventure::Metadata::Salmon_Strand(
+        input => $stderr,
+        jdepends => $salmon->{job_id},
+        jname => qq"sastrand_$options->{species}",
+        jprefix => $options->{jprefix},);
+    $salmon->{strand} = $strand;
+    return($salmon);
+}
+
 =back
 
 =head2 C<Hisat2>
@@ -820,7 +929,6 @@ sub Hisat2 {
         jname => 'hisat2',
         jprefix => '40',
         jwalltime => '36:00:00',
-        libtype => 'genome',
         maximum => undef,
         output_dir => undef,
         output_unaligned => undef,
@@ -847,17 +955,17 @@ sub Hisat2 {
     }
     my $hisat_args = $class->Passthrough_Args(arbitrary => $options->{hisat_args});
     $hisat_args .= qq" -k $options->{maximum} " if (defined($options->{maximum}));
-    if ($options->{task} eq 'dnaseq') {
-        $hisat_args .= qq" --no-spliced_alignment ";
+    if ($options->{task} eq 'dnaseq' or !$options->{introns}) {
+        $hisat_args .= qq" --no-spliced-alignment ";
     }
     my $prefix_name = 'hisat2';
     $prefix_name .= qq"_k$options->{maximum}" if (defined($options->{maximum}));
     my $hisat_name = qq"${prefix_name}_$options->{species}_$options->{libtype}";
-    my $suffix_name = $prefix_name;
-    if ($options->{jname}) {
-        $hisat_name .= qq"_$options->{jname}";
-        $suffix_name .= qq"_$options->{jname}";
-    }
+    my $xz_jname = qq"xz_${hisat_name}";
+    my $sam_jname = qq"s2b_${hisat_name}";
+    my $htseq_jname = qq"htseq_${hisat_name}";
+    my $htmulti_jname = qq"htmulti_${hisat_name}";
+    my $stat_jname = qq"${hisat_name}_stat";
 
     my $hisat_dir = qq"outputs/$options->{jprefix}hisat2_$options->{species}";
     ## Make it possible to put the hisat outputs in another directory (phage filtering)
@@ -993,7 +1101,6 @@ hisat2 -x ${hisat_reflib} ${hisat_args} \\
         unaligned => $unaligned_filenames,
         unaligned_dis => $unaligned_discordant_filename,
         unaligned_comp => $unaligned_xz,);
-    my $xz_jname = qq"xz_$options->{species}_${suffix_name}";
     my $new_jprefix = qq"$options->{jprefix}_1";
     if ($options->{compress}) {
         my $comp = $class->Bio::Adventure::Compress::Compress(
@@ -1009,7 +1116,6 @@ hisat2 -x ${hisat_reflib} ${hisat_args} \\
     ## HT1_Stats also reads the trimomatic output, which perhaps it should not.
     ## my $trim_output_file = qq"outputs/$options->{jbasename}-trimomatic.out";
     my $sam_jprefix = qq"$options->{jprefix}_2";
-    my $sam_jname = qq"s2b_${suffix_name}";
     my $sam_job = $class->Bio::Adventure::Convert::Samtools(
         input => $sam_filename,
         jcpu => 1,
@@ -1034,7 +1140,7 @@ hisat2 -x ${hisat_reflib} ${hisat_args} \\
             $htmulti = $class->Bio::Adventure::Count::HTSeq(
                 input => $htseq_input,
                 jdepends => $sam_job->{job_id},
-                jname => $suffix_name,
+                jname => $htseq_jname,
                 jprefix => $new_jprefix,
                 libtype => $options->{libtype},
                 mapper => 'hisat2',
@@ -1044,7 +1150,7 @@ hisat2 -x ${hisat_reflib} ${hisat_args} \\
             $htmulti = $class->Bio::Adventure::Count::HT_Multi(
                 input => $htseq_input,
                 jdepends => $sam_job->{job_id},
-                jname => $suffix_name,
+                jname => $htmulti_jname,
                 jprefix => $new_jprefix,
                 libtype => $options->{libtype},
                 mapper => 'hisat2',
@@ -1060,11 +1166,12 @@ hisat2 -x ${hisat_reflib} ${hisat_args} \\
     } else {
         $htseq_out = $hisat_job->{htseq}->{output};
     }
+
     my $stats = $class->Bio::Adventure::Metadata::HT2_Stats(
         input => $stderr,
         count_table => $htseq_out,
         jdepends => $hisat_job->{job_id},
-        jname => qq"hisat2st_${suffix_name}",
+        jname => $stat_jname,
         jprefix => $new_jprefix,
         output_dir => $hisat_dir,);
     $hisat_job->{stats} = $stats;
@@ -1345,7 +1452,7 @@ sub Salmon {
         $sa_args .= qq" -1 <(less $pair_listing[0]) -2 <(less $pair_listing[1]) ";
         $input_name = $pair_listing[0];
     } else {
-        $sa_args .= qq" -r <(less $sa_input) ";
+        $sa_args .= qq" -r <(less ${sa_input}) ";
     }
 
     ## Check that the indexes exist

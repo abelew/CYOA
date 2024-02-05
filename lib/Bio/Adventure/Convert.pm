@@ -9,6 +9,10 @@ extends 'Bio::Adventure';
 use Bio::FeatureIO;
 use Bio::Tools::GFF;
 use Bio::Root::Exception;
+use Bio::Seq;
+use Bio::SeqIO;
+use Bio::SeqFeature::Generic;
+use Bio::Tools::GFF;
 use File::Basename;
 use File::Which qw"which";
 use List::MoreUtils qw"uniq";
@@ -28,6 +32,55 @@ no warnings qw"experimental::try";
 
 =head1 METHODS
 
+=cut
+
+=head2 C<Fasta2Gff>
+
+  Convert a fasta file to a simple gff file.
+
+  This is really only intended to make a fasta database of stuff like
+  rRNAs into a simple gff file so that it is easier to count up rRNA
+  reads observed per molecule per sample.  As such it makes no attempt
+  to do anything useful other than write out the entry names and lengths.
+
+=cut
+sub Fasta2Gff {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['input'],
+        jprefix => '78');
+    my $dir = dirname($options->{input});
+    my $base = basename($options->{input}, ('.fasta', '.fsa', '.fna', '.fa'));
+    my $gff_name = qq"${dir}/${base}.gff";
+    my $gff_opened = open(GFF, ">${gff_name}");
+    my $features;
+    my $seqio_in = Bio::SeqIO->new(-format => 'fasta', -file => $options->{input});
+    my $gff_out = Bio::Tools::GFF->new(-fh => \*GFF, -gff_version => 3);
+    my $features_written = 0;
+  SEQS: while (my $seq = $seqio_in->next_seq) {
+      my $len = $seq->length;
+      my $id = $seq->id;
+      print "Writing entry for $id\n";
+      my $fasta_feature = Bio::SeqFeature::Generic->new(
+          -primary => 'misc_feature',
+          -seq_id => $id,
+          -source => 'fasta_file',
+          -start => 1,
+          -end => $len,
+          -strand => +1,
+          -score => undef,
+          -frame => 0,
+          -tag => {
+              'ID' => $id,
+          },);
+      $fasta_feature->display_name($id);
+      $gff_out->write_feature($fasta_feature);
+      $features_written++;
+  }
+    return($features_written);
+}
+
 =head2 C<Gb2Gff>
 
  A poorly named genbank flat file converter.
@@ -44,7 +97,7 @@ sub Gb2Gff {
         required => ['input'],
         jprefix => '78');
     my $base = basename($options->{input}, ('.xz', '.gz', '.bz2'));
-    $base = basename($base, ('.gb', '.gba', '.gbk', '.genbank'));
+    $base = basename($base, ('.gb', '.gba', '.gbff', '.gbk', '.genbank'));
     my $dir = dirname($options->{input});
     if (defined($options->{output_dir})) {
         $dir = $options->{output_dir};
@@ -137,10 +190,8 @@ sub Gb2Gff_Worker {
                                     -format => 'Fasta');
     my $rrna_gffout = Bio::Tools::GFF->new(-file => ">$options->{output_rrna_gff}", -gff_version => 3);
     my $rrna_fasta = Bio::SeqIO->new(-file => qq">$options->{output_rrna_fasta}", -format => 'Fasta');
-    print "TESTME: Starting to write features\n";
     while (my $seq = $seqio->next_seq) {
         $seq_count++;
-        print "Writing feature: $seq_count\n";
         $total_nt = $total_nt + $seq->length();
         $fasta->write_seq($seq);
         print "Wrote ${seq_count} features.\n";
@@ -158,28 +209,47 @@ sub Gb2Gff_Worker {
       FEAT: for my $feat_object ($seq->get_SeqFeatures) {
           $feature_count++;
           my $feat_count = 0;
+          my $id_string = '';
+          my $id;
+          my $id_hash = {};
+          foreach my $thing (keys %{$feat_object->{_gsf_tag_hash}}) {
+              my @arr = @{$feat_object->{_gsf_tag_hash}->{$thing}};
+              $id_hash->{$thing} = $arr[0];
+          }
+          my $parent_sequence_id = $feat_object->seq_id;
+          if (defined($id_hash->{locus_tag})) {
+              $id_string .= qq"$id_hash->{locus_tag}|";
+              $id = $id_hash->{locus_tag};
+          }
+          if (defined($id_hash->{ID})) {
+              $id_string .= qq"$id_hash->{ID}|";
+              $id = $id_hash->{ID} unless ($id);
+          }
+          if (defined($id_hash->{display_name})) {
+              $id_string .= qq"$id_hash->{display_name}|";
+              $id = $id_hash->{display_name} unless ($id);
+          }
+          if (defined($id_hash->{gene})) {
+              $id_string .= qq"$id_hash->{gene}|";
+              $id = $id_hash->{gene} unless($id);
+          }
+          if (defined($id_hash->{protein_id})) {
+              $id_string .= "$id_hash->{protein_id}|";
+              $id = $id_hash->{protein_id} unless($id);
+          }
+          if (defined($id_hash->{product})) {
+              $id_string .= "$id_hash->{product}|";
+              ## The product cannot be used as the ID because it has spaces.
+          }
+          if (defined($id_hash->{db_xref})) {
+              $id_string .= "$id_hash->{db_xref}|";
+              $id = $id_hash->{db_xref} unless($id);
+          }
+          $id =~ s/\|$//g;
+          $id_string =~ s/\|$//g;
+
           if ($feat_object->primary_tag eq 'rRNA') {
               $rrna_gffout->write_feature($feat_object);
-              my $id_string = '';
-              my $desc = '';
-              my $id_hash = {};
-              foreach my $thing (keys %{$feat_object->{_gsf_tag_hash}}) {
-                  my @arr = @{$feat_object->{_gsf_tag_hash}->{$thing}};
-                  $id_hash->{$thing} = $arr[0];
-              }
-              my $id = '';
-              if (defined($id_hash->{protein_id})) {
-                  $id = qq"$id_hash->{protein_id}";
-              }
-              if (defined($id_hash->{gene})) {
-                  $desc .= "$id_hash->{gene} ; ";
-              }
-              if (defined($id_hash->{db_xref})) {
-                  $desc .= "$id_hash->{db_xref} ; ";
-              }
-              if (defined($id_hash->{product})) {
-                  $desc .= "$id_hash->{product}";
-              }
               my $start = $feat_object->start;
               my $end = $feat_object->end;
               my $len = $feat_object->length;
@@ -198,33 +268,13 @@ sub Gb2Gff_Worker {
                   len => $len,
                   feat => $feat_object,
               };
-              my $rrna_object = Bio::PrimarySeq->new(-id => $id_string, -seq => $seq,
-                                                     description => $desc);
+              my $rrna_object = Bio::PrimarySeq->new(-id => $id,
+                                                     -seq => $seq,
+                                                     description => $id_string);
               $rrna_fasta->write_seq($rrna_object);
           } elsif ($feat_object->primary_tag eq 'CDS') {
               $cds_gff->write_feature($feat_object);
               $feat_count++;
-              my $id_string = '';
-              my $id_hash = {};
-              foreach my $thing (keys %{$feat_object->{_gsf_tag_hash}}) {
-                  my @arr = @{$feat_object->{_gsf_tag_hash}->{$thing}};
-                  $id_hash->{$thing} = $arr[0];
-              }
-              my $id = '';
-              if (defined($id_hash->{protein_id})) {
-                  $id = qq"$id_hash->{protein_id}";
-              }
-              my $desc = '';
-              if (defined($id_hash->{gene})) {
-                  $desc .= "$id_hash->{gene} ; ";
-              }
-              if (defined($id_hash->{db_xref})) {
-                  $desc .= "$id_hash->{db_xref} ; ";
-              }
-              if (defined($id_hash->{product})) {
-                  $desc .= "$id_hash->{product}";
-              }
-              $desc .= "\n";
               my $start = $feat_object->start;
               my $end = $feat_object->end;
               my $len = $feat_object->length;
@@ -256,8 +306,12 @@ sub Gb2Gff_Worker {
                   feat => $feat_object,
               };
               push(@feature_list, $size);
-              my $seq_object = Bio::PrimarySeq->new(-id => $id, -seq => $seq, description => $desc);
-              my $pep_object = Bio::PrimarySeq->new(-id => $id, -seq => $pep, description => $desc);
+              my $seq_object = Bio::PrimarySeq->new(-id => $id,
+                                                    -seq => $seq,
+                                                    description => $id_string);
+              my $pep_object = Bio::PrimarySeq->new(-id => $id,
+                                                    -seq => $pep,
+                                                    description => $id_string);
               $cds_fasta->write_seq($seq_object);
               my $ttseq = $seq_object->seq;
               $pep_fasta->write_seq($pep_object);

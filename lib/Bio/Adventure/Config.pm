@@ -181,7 +181,8 @@ sub Get_Menus {
             name => 'pipeline',
             message => 'When Mr. Bilbo Baggins announced he would shortly be celebrating his eleventyfirst birthday, there was much talk and excitement in Hobbiton.  Go to page 1618033',
             choices => {
-                '(prnaseq): Preset assembly.' => \&Bio::Adventure::Pipeline::Process_RNAseq,
+                '(pdnaseq): Preset DNAseq tasks.' => \&Bio::Adventure::Pipeline::Process_DNAseq,
+                '(prnaseq): Preset RNAseq tasks.' => \&Bio::Adventure::Pipeline::Process_RNAseq,
                 '(priboseq): Perform a preset pipeline of ribosome profiling tasks.' => \&Bio::Adventure::Pipeline::Riboseq,
                 '(ptnseq): Perform a preset pipeline of TNSeq tasks.' => \&Bio::Adventure::Pipeline::TNSeq,
                 '(pbt1): Perform a preset group of bowtie1 tasks.' => \&Bio::Adventure::Pipeline::Bowtie,
@@ -321,6 +322,10 @@ sub Get_Modules {
 
     ## I think that with recent changes, one need no longer add 'cyoa' as a module.
     my %module_data = (
+        'Example' => {
+            modules => ['abricate'],
+            conda => ['torsten'],
+            exe => 'example' },
         'Abricate' => {  ## Adding cyoa because Path::Tiny isn't in the abricate directory yet.
             modules => ['cyoa', 'any2fasta', 'abricate', 'blast', 'blastdb',],
             exe => 'abricate' },
@@ -330,6 +335,7 @@ sub Get_Modules {
         'Assembly_Coverage' => {
             modules => ['cyoa', 'hisat2', 'samtools', 'bbmap',], },
         'Bacphlip' => { modules => 'bacphlip', exe => 'bacphlip' },
+        'Bedtools_Coverage' =>  { modules => 'bedtools', exe => 'bedtools' },
         'Biopieces_Graph' => { modules => ['biopieces'] },
         'Bowtie' => { modules => 'bowtie1' },
         'Bowtie2' => { modules => 'bowtie2' },
@@ -348,8 +354,10 @@ sub Get_Modules {
         'Collect_Assembly' => { modules => 'cyoa' },
         'Consolidate_TAs' => { modules => 'cyoa', },
         'Cutadapt' => { modules => ['cyoa', 'cutadapt'], exe => 'cutadapt'},
+        'Downsample_Guess_Strand' => { modules => ['salmon'] },
         'Essentiality_TAs' => { modules => 'cyoa', },
         'Extend_Kraken_DB' => { modules => ['kraken'], exe => ['kraken2'] },
+        'Fasta2Gff' => { modules => ['cyoa'] },
         'Fastqc' => { modules => ['fastqc'] },
         'Fastq_Dump' => { modules => ['cyoa', 'sra'], },
         'Fastp' => { modules => ['fastp'], exe => 'fastp' },
@@ -364,7 +372,7 @@ sub Get_Modules {
         'Glimmer_Single' => {
             modules => ['glimmer', 'cyoa'], exe => 'glimmer3' },
         'Gubbins' => { modules => 'gubbins' },
-        'Guess_Strand' => { modules => 'cyoa' },
+        'Guess_Strand' => { modules => ['cyoa', 'samtools'] },
         'Hisat2' => { modules => 'hisat2', exe => 'hisat2'},
         'Hisat2_Index' => { modules => ['hisat2'], exe => ['hisat2'], },
         'HT_Multi' => { modules => 'htseq' },
@@ -468,6 +476,7 @@ sub Get_Modules {
         ## a list, but just a scalar.
         my $module_type = ref($datum->{modules});
         my @mod_lst;
+        my @conda_lst;
         if (!$module_type) {
             my $mod_name = $datum->{modules};
             if ($mod_name) {
@@ -475,6 +484,12 @@ sub Get_Modules {
                 $datum->{modules} = \@mod_lst;
             } else {
                 $datum = {};
+            }
+
+            my $conda_name = $datum->{conda};
+            if ($conda_name) {
+                push(@conda_lst, $conda_name);
+                $datum->{conda} = \@conda_lst;
             }
         }
     } else {
@@ -506,6 +521,7 @@ sub Get_TODOs {
         "annotatephage+" => \$todo_list->{todo}{'Bio::Adventure::Pipeline::Annotate_Phage'},
         "aragorn+" => \$todo_list->{todo}{'Bio::Adventure::Feature_Prediction::Aragorn'},
         "assemblycoverage+" => \$todo_list->{todo}{'Bio::Adventure::Assembly::Assembly_Coverage'},
+        "bedcov+" => \$todo_list->{todo}{'Bio::Adventure::Count::Bedtools_Coverage'},
         "biopieces+" => \$todo_list->{todo}{'Bio::Adventure::QA::Biopieces_Graph'},
         "blastmerge+" => \$todo_list->{todo}{'Bio::Adventure::Align_Blast::Merge_Blast_Parse'},
         "blastparse+" => \$todo_list->{todo}{'Bio::Adventure::Align_Blast::Blast_Parse'},
@@ -532,6 +548,7 @@ sub Get_TODOs {
         "concat+" => \$todo_list->{todo}{'Bio::Adventure::Align::Concatenate_Searches'},
         "cutadapt+" => \$todo_list->{todo}{'Bio::Adventure::Trim::Cutadapt'},
         "download+" => \$todo_list->{todo}{'Bio::Adventure::Prepare::Download_NCBI_Accessions'},
+        "downsampleguess+" => \$todo_list->{todo}{'Bio::Adventure::Map::Downsample_Guess_Strand'},
         "essentialitytas+" => \$todo_list->{todo}{'Bio::Adventure::TNSeq::Essentiality_TAs'},
         "extendkraken+" => \$todo_list->{todo}{'Bio::Adventure::Index::Extend_Kraken_DB'},
         "extracttrinotate+" => \$todo_list->{todo}{'Bio::Adventure::Annotation::Extract_Trinotate'},
@@ -542,6 +559,7 @@ sub Get_TODOs {
         "fastamerge+" => \$todo_list->{todo}{'Bio::Adventure::Align_Fasta::Merge_Parse_Fasta'},
         "fastamismatch+" => \$todo_list->{todo}{'Bio::Adventure::Align_Fasta::Parse_Fasta_Mismatches'},
         "fastaparse+" => \$todo_list->{todo}{'Bio::Adventure::Align_Fasta::Parse_Fasta'},
+        "fasta2gff+" => \$todo_list->{todo}{'Bio::Adventure::Convert::Fasta2Gff'},
         "fastqct+" => \$todo_list->{todo}{'Bio::Adventure::QA::Fastqc'},
         "fastqdump+" => \$todo_list->{todo}{'Bio::Adventure::Prepare::Fastq_Dump'},
         "featureextract+" => \$todo_list->{todo}{'Bio::Adventure::Annotation_Genbank::Extract_Features'},
@@ -637,6 +655,7 @@ sub Get_TODOs {
         "pbt1+" => \$todo_list->{todo}{'Bio::Adventure::RNAseq_Pipeline_Bowtie'},
         "pbt2+" => \$todo_list->{todo}{'Bio::Adventure::RNAseq_Pipeline_Bowtie2'},
         "pbwa+" => \$todo_list->{todo}{'Bio::Adventure::Pipeline::BWA'},
+        "pdnaseq+" => \$todo_list->{todo}{'Bio::Adventure::Pipeline::Process_DNASeq'},
         "phageassemble+" => \$todo_list->{todo}{'Bio::Adventure::Pipeline::Phage_Assemble'},
         "phisat+" => \$todo_list->{todo}{'Bio::Adventure::Pipeline::Hisat'},
         "pkallisto+" => \$todo_list->{todo}{'Bio::Adventure::Pipeline::RNAseq_Pipeline_Kallisto'},

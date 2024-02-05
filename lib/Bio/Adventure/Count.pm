@@ -12,6 +12,7 @@ use Cwd;
 use File::Basename;
 use File::Path qw"make_path";
 use File::Which qw"which";
+use List::Util qw"sum";
 use String::Approx qw"amatch";
 
 =head1 NAME
@@ -25,6 +26,38 @@ use String::Approx qw"amatch";
 =head1 METHODS
 
 =cut
+
+sub Bedtools_Coverage {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        jprefix => '60',
+        required => ['input', 'species'],);
+    my $job_name = $class->Get_Job_Name();
+    my $output_dir = qq"outputs/$options->{jprefix}bedtools_coverage_$options->{species}";
+    my $genome = qq"$options->{libdir}/$options->{libtype}/$options->{species}.fasta";
+    my $stderr = qq"${output_dir}/bedtools_coverage.stderr";
+    my $stdout = qq"${output_dir}/bedtools_coverage_$options->{species}.bed";
+    my $comment = '## Calculate coverage of an alignment vs. genome.';
+    my $jstring = qq!mkdir -p ${output_dir}
+bedtools genomecov -bga -ibam $options->{input} 1>${stdout} 2>${stderr}
+!;
+    my $bedtools = $class->Submit(
+        comment => $comment,
+        jcpu => 1,
+        jdepends => $options->{jdepends},
+        jname => qq"bedcov_${job_name}",
+        jprefix => $options->{jprefix},
+        jstring => $jstring,
+        jmem => 24,
+        output => $stdout,
+        stderr => $stderr,
+        stdout => $stdout,
+        prescript => $options->{prescript},
+        postscript => $options->{postscript},);
+    return($bedtools);
+}
+
 sub Guess_Strand {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
@@ -75,6 +108,7 @@ sub Guess_Strand_Worker {
     my $options = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species', 'gff_type', 'gff_tag',],
+        maximum => 4000,
         coverage => 0.2,
         output_log => '',
         output => '',);
@@ -100,25 +134,54 @@ sub Guess_Strand_Worker {
     my @aligns = split(/\t/, $alignfun[0]);
     my @unaligns = split(/\t/, $alignfun[1]);
     my $number_reads = $aligns[2] + $unaligns[3];
-    my $output_name = qq"$options->{input}.out";
-    print $log "There are $number_reads alignments in $options->{input} made of $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
+    my $output_name = qq"$options->{input}.txt";
+    my $summary_string = qq"There are ${number_reads} alignments in $options->{input}.
+ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
+    print $log $summary_string;
+    print $summary_string;
     my $forward_hit = 0;
     my $reverse_hit = 0;
     my %result = ();
+    my $read_num = 0;
+    my $counters = {
+        counted => 0,
+        paired => 0,
+        proper_pair => 0,
+        this_unmapped => 0,
+        mate_unmapped => 0,
+        this_reverse => 0,
+        mate_reverse => 0,
+        first_pair => 0,
+        second_pair => 0,
+        not_primary => 0,
+        failed_sequencer => 0,
+        optical_duplicate => 0,
+        supplemental_align => 0,
+        pair_facing_in => 0,
+        pair_facing_out => 0,
+        straddle_feature => 0,
+        inside_feature => 0,
+        outside_feature => 0,
+        num_mismatches => 0,
+        mean_mismatches => 0,
+        total_bases => 0,
+        plus_stranded => 0,
+        minus_stranded => 0,
+        mean_scores => 0,
+        mean_scored => 0,
+        grand_mean_score => 0,
+    };
+    print "Going to stop after $options->{maximum} reads\n";
   BAMLOOP: while (my $align = $bam->read1) {
-      my $cigar = $align->cigar_str;
-      if ($cigar eq '') {
-          ## print "This did not align.\n";
-          next BAMLOOP;
+      $read_num++;
+      print "TESTME: $read_num\n";
+      $counters->{counted}++;
+      if ($read_num >= $options->{maximum}) {
+          last BAMLOOP;
       }
-      $align_count++;
       ##if ($class->{debug}) {  ## Stop after a relatively small number of reads when debugging.
       ##    last BAMLOOP if ($align_count > 200);
       ##}
-      if (($align_count % 1000000) == 0) {
-          $million_aligns++;
-          print $log "Finished $million_aligns million alignments out of ${number_reads}.\n";
-      }
       my $seqid = $target_names->[$align->tid];
       ## my $start = $align->pos + 1;
       ## my $end = $align->calend;
@@ -156,21 +219,90 @@ sub Guess_Strand_Worker {
       ## 0x200(512): this failed the sequencer checks
       ## 0x400(1024): this is an optical duplicate
       ## 0x800(2048): this is a supplemental alignment.
-      my $first = $align->get_tag_values('FIRST_MATE');
-
-      ## Look for a feature at this position...
-      my %chr_features = %{$features->{$seqid}};
-      for my $feat_id (keys %chr_features) {
-          my %feat = %{$chr_features{$feat_id}};
-
-          ##  ------------------->>>>>-------<<<<<--------------------------
-          ##                  >>>>>
-          if ($start <= $feat{start} && $end >= $feat{start} && $end < $feat{end}) {
-              use Data::Dumper;
-              print Dumper %feat;
-          }
+      ## These flags get the following constant names for get_tag_values():
+      ## 0x0001 => 'PAIRED', 0x0002 => 'MAP_PAIR', 0x0004 => 'UNMAPPED', 0x0008 => 'M_UNMAPPED',
+      ## 0x0010 => 'REVERSED', 0x0020 => 'M_REVERSED', 0x0040 => 'FIRST_MATE',
+      ## 0x0080 => 'SECOND_MATE', 0x0100 => 'NOT_PRIMARY', 0x0200 => 'QC_FAILED',
+      ## 0x0400 => 'DUPLICATE', 0x0800 => 'SUPPLEMENTARY',
+      $counters->{paired}++ if ($align->get_tag_values('PAIRED'));
+      $counters->{proper_pair}++ if ($align->get_tag_values('MAP_PAIR'));
+      $counters->{this_unmapped}++ if ($align->get_tag_values('UNMAPPED'));
+      $counters->{mate_unmapped}++ if ($align->get_tag_values('M_UNMAPPED'));
+      $counters->{this_reversed}++ if ($align->get_tag_values('REVERSED'));
+      $counters->{mate_reversed}++ if ($align->get_tag_values('M_REVERSED'));
+      $counters->{first_pair}++ if ($align->get_tag_values('FIRST_MATE'));
+      $counters->{second_pair}++ if ($align->get_tag_values('SECOND_MATE'));
+      $counters->{not_primary}++ if ($align->get_tag_values('NOT_PRIMARY'));
+      $counters->{failed_sequencer}++ if ($align->get_tag_values('QC_FAILED'));
+      $counters->{optical_duplicate}++ if ($align->get_tag_values('DUPLICATE'));
+      $counters->{supplemental_align}++ if ($align->get_tag_values('SUPPLEMENTARY'));
+      $counters->{total_aligned_bases} += $align->query->length;
+      if ($align->strand > 0) {
+          $counters->{plus_stranded}++;
+      } else {
+          $counters->{minus_stranded}++;
       }
+      my $score_ref = $align->qscore;
+      my @scores = @{$score_ref};
+      if (scalar(@scores) > 0) {
+          sub this_mean {
+              return(sum (@_)/@_);
+          }
+          $counters->{mean_scores} += this_mean(@scores);
+          $counters->{mean_scored} += scalar(@scores);
+      } else {
+          print "No score ref\n";
+      }
+
+      my $cigar = $align->cigar_str;
+      if ($cigar eq '') {
+          ## print "This did not align.\n";
+          next BAMLOOP;
+      }
+      $align_count++;
+      ## Look for a feature at this position...
+      #my %chr_features = %{$features->{$seqid}};
+      #for my $feat_id (keys %chr_features) {
+      #    my %feat = %{$chr_features{$feat_id}};
+      #
+      #    ##  ------------------->>>>>-------<<<<<--------------------------
+      #    ##                  >>>>>
+      #    if ($start <= $feat{start} && $end >= $feat{start} && $end < $feat{end}) {
+      #        use Data::Dumper;
+      #        #print Dumper %feat;
+      #    }
+      #}
   } ## End reading each bam entry
+    $counters->{grand_mean_score} = $counters->{mean_scores} / $counters->{mean_scored};
+    # $counters->{mean_mismatches} = $counters->{num_mismatches} / $counters->{total_bases};
+    # $counters->{proportion_unmapped} = (($counters->{this_unmapped} + $counters->{mate_unmapped}) / 2) / $counters->{couted};
+    print $log "
+Reads counted: $counters->{counted}
+Paired reads: $counters->{paired}
+Properly paired: $counters->{proper_pair}
+This unmapped: $counters->{this_unmapped}
+Mate unmapped: $counters->{mate_unmapped}
+This reverse: $counters->{this_reverse}
+Mate reverse: $counters->{mate_reverse}
+First pair: $counters->{first_pair}
+Second pair: $counters->{second_pair}
+Not primary: $counters->{not_primary}
+Failed sequencer: $counters->{failed_sequencer}
+Optical duplicates: $counters->{optical_duplicate}
+Supplemental alignments: $counters->{supplemental_align}
+Facing in: $counters->{pair_facing_in}
+Facing out: $counters->{pair_facing_out}
+Straddling features: $counters->{straddle_feature}
+Inside features: $counters->{inside_feature}
+Outside features: $counters->{outside_feature}
+Total mismatches: $counters->{num_mismatches}
+Mean mismatches: $counters->{mean_mismatches}
+Total nucleotides: $counters->{total_bases}
+Plus stranded: $counters->{plus_stranded}
+Minus stranded: $counters->{minus_stranded}
+Grand score_mean: $counters->{grand_mean_score}
+Proportion unmapped: $counters->{proportion_unmapped}
+";
     $log->close();
 }
 
@@ -196,6 +328,8 @@ sub Guess_Strand_Worker {
    vs. contaminants.
  modules('htseq'): List of environment modules.
  paired('1'): Is this a paired library?
+
+=back
 
 =cut
 sub HT_Multi {
@@ -311,8 +445,6 @@ sub HT_Multi {
     return(\@jobs);
 }
 
-=back
-
 =head2 C<HT_Types>
 
  Guess about most appropriate flags for htseq-count.
@@ -326,6 +458,8 @@ sub HT_Multi {
 
  gff_type('gene'): When set, this will just count that type.
  gff_tag('ID'): Ditto, but the GFF tag for IDs.
+
+=back
 
 =cut
 sub HT_Types {
@@ -415,8 +549,6 @@ sub HT_Types {
     return($ret);
 }
 
-=back
-
 =head2 C<HTSeq>
 
  Run htseq-count on a sorted, indexed bam file.
@@ -447,6 +579,8 @@ sub HT_Types {
   will make it easier to tell where it came from.
  modules('htseq'): List of environment modules to load.
  paired('1'): Is this library paired?
+
+=back
 
 =cut
 sub HTSeq {
@@ -526,6 +660,7 @@ sub HTSeq {
     if ($gff_type_arg) {
         $variable_string = qq!gff_type=${gff_type}
 gff_tag=${gff_tag}
+stranded=${stranded}
 !;
     }
     $output .= qq"_s${stranded}_${gff_type}_${gff_tag}.count";
@@ -539,7 +674,7 @@ gff_tag=${gff_tag}
         my $htseq_invocation = qq!${variable_string}
 htseq-count \\
   -q -f bam \\
-  -s ${stranded} -a ${aqual} \\
+  -s \${stranded} -a ${aqual} \\
   ${gff_type_arg} ${gff_tag_arg} \\!;
     my $jstring = qq!
 ${htseq_invocation}
@@ -573,8 +708,6 @@ xz -f -9e ${output}
     return($htseq);
 }
 
-=back
-
 =head2 C<Jellyfish>
 
  Run jellyfish with multiple values of K on a fast(a|q) file(s).
@@ -594,6 +727,8 @@ xz -f -9e ${output}
  jprefix(18): Prefix for the job name.
  modules('jellyfish'): Module list.
 
+=back
+
 =cut
 sub Jellyfish {
     my ($class, %args) = @_;
@@ -606,10 +741,18 @@ sub Jellyfish {
     my $count = 0;
     my $ret;
     if (scalar(@kmer_array) > 1) {
-      KMERARR: for my $k (@kmer_array) {
+        my $first = shift @kmer_array;
           my $job = $class->Bio::Adventure::Count::Jellyfish(
               %{$options},
-              length => $k);
+              length => $first);
+        my $prefix_count = 0;
+      KMERARR: for my $k (@kmer_array) {
+          $prefix_count++;
+          my $new_jprefix = qq"$options->{jprefix}_${prefix_count}";
+          my $job = $class->Bio::Adventure::Count::Jellyfish(
+              %{$options},
+              jprefix => $new_jprefix,
+              length => $first);
           if ($count == 0) {
               $ret = $job;
           } else {
@@ -670,6 +813,7 @@ jellyfish dump ${count_file} > ${count_fasta} \\
         jmem => 12,
         jcpu => 4,
         output => $matrix_file,
+        output_dir => $output_dir,
         prescript => $options->{prescript},
         postscript => $options->{postscript},
         stderr => $stderr,
@@ -686,6 +830,7 @@ my \$result = \$h->Bio::Adventure::Count::Jellyfish_Matrix(
   jdepends => '$jelly->{job_id}',
   jname => 'jelly_matrix',
   jprefix => '${new_prefix}',
+  output_dir => '${output_dir}',  ## Defines where the pdata goes.
   output => '${matrix_file}',);
 !;
     my $matrix_job = $class->Submit(
@@ -697,6 +842,7 @@ my \$result = \$h->Bio::Adventure::Count::Jellyfish_Matrix(
         jstring => $jstring,
         jcpu => 1,
         language => 'perl',
+        output_dir => $output_dir,
         output => $matrix_file,
         stdout => $stdout,);
     $jelly->{matrix_job} = $matrix_job;
@@ -720,8 +866,6 @@ my \$result = \$h->Bio::Adventure::Count::Jellyfish_Matrix(
     return($jelly);
 }
 
-=back
-
 =head2 C<Jellyfish_Matrix>
 
  Convert the jellyfish fasta format to a matrix-compatible tsv.
@@ -737,6 +881,8 @@ my \$result = \$h->Bio::Adventure::Count::Jellyfish_Matrix(
  output('fasta_matrix.csv'): Filename to which to convert the
   jellyfish output.
  jprefix(19): Prefix for the jobname/output directory.
+
+=back
 
 =cut
 sub Jellyfish_Matrix {
@@ -777,8 +923,6 @@ sub Jellyfish_Matrix {
     return($nmer_count);
 }
 
-=back
-
 =head2 C<Kraken>
 
  Use kraken2 to taxonomically classify reads.
@@ -798,6 +942,8 @@ sub Jellyfish_Matrix {
 =item C<Invocation>
 
 > cyoa --task annot --method kraken --input read1.fastq.xz:read2.fastq.xz --library standard
+
+=back
 
 =cut
 sub Kraken {
@@ -851,6 +997,7 @@ rm -f ${stdout}
 rm -f ${output_dir}/*.fastq.gz
 ";
     }
+    my $output = qq"${output_dir}/kraken_report.txt";
     my $kraken = $class->Submit(
         comment => $comment,
         jcpu => 6,
@@ -859,15 +1006,105 @@ rm -f ${output_dir}/*.fastq.gz
         jname => "kraken_${job_name}",
         jprefix => $options->{jprefix},
         jstring => $jstring,
-        output => qq"${output_dir}/kraken_report.txt",
+        output => $output,
         prescript => $options->{prescript},
         postscript => $options->{postscript},
         stdout => $stdout,
         stderr => $stderr,);
+    my $counter = $class->Bio::Adventure::Count::Kraken_to_Matrix(
+        input => $output,
+        jprefix => $options->{jprefix} + 1,
+        jdepends => $kraken->{job_id},);
+    $kraken->{kraken2mtrx} = $counter;
     return($kraken);
 }
 
+=head2 C<Kraken_to_Matrix>
+
+  Given the kraken report, create a matrix of reads by genus/species/whatever.
+
+=over
+
+=item C<Arguments>
+
+  input: tsv file produced by kraken.
+
 =back
+
+=cut
+sub Kraken_to_Matrix {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['input'],
+        jprefix => 21,);
+    my $job_name = $class->Get_Job_Name();
+    my $inputs = $class->Get_Paths($options->{input});
+    $inputs = $inputs->[0];
+    my $output = qq"$inputs->{directory}/$inputs->{filebase_extension}_matrix.tsv";
+    my $stdout = qq"$inputs->{directory}/kraken_to_matrix.stdout";
+    my $stderr = qq"$inputs->{directory}/kraken_to_matrix.stderr";
+    my $log = qq"$inputs->{directory}/kraken_to_matrix.log";
+    my $comment = qq"## Make a matrix of kraken hits.\n";
+    my $jstring = qq?
+use Bio::Adventure::Count;
+my \$result = \$h->Bio::Adventure::Count::Kraken_to_Matrix_Worker(
+  input => '$options->{input}',);
+?;
+    my $matrix_job = $class->Submit(
+        comment => $comment,
+        input => $options->{input},
+        jdepends => $options->{jdepends},
+        jmem => 4,
+        jname => 'kraken2mtrx',
+        jprefix => $options->{jprefix},
+        jstring => $jstring,
+        language => 'perl',
+        log => $log,
+        output => $output,
+        stdout => $stdout,
+        stderr => $stderr,);
+    return($matrix_job);
+}
+
+sub Kraken_to_Matrix_Worker {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['input'],);
+    my $separator = 'g__';
+    my $job_log = 'kraken_matrix.log';
+
+    my $out = FileHandle->new(">$options->{log}");
+    my $mtrx = FileHandle->new(">$options->{output}");
+    my $in = FileHandle->new("<$options->{input}");
+    print $out "Collating reads by ${separator}.\n";
+    print $out "Reading kraken report: $options->{input}.\n";
+    my %genus_observed = ();
+    my $line_count = 0;
+    while (my $line = <$in>) {
+        chomp $line;
+        next unless ($line =~ m/$separator/);
+        $line_count++;
+        my ($entry, $number) = split(/\t/, $line);
+        my ($stuff, $genus) = split(/$separator/, $entry);
+        $genus =~ s/\|.*$//g;
+        $genus =~ s/\s+/_/g;
+        if (defined($genus_observed{$genus})) {
+            $genus_observed{$genus} = $genus_observed{$genus} + $number;
+        } else {
+            $genus_observed{$genus} = $number;
+        }
+    }
+    $in->close();
+    print $mtrx "Genus\tObserved\n";
+    foreach my $s (keys %genus_observed) {
+        print $mtrx "${s}\t$genus_observed{$s}\n";
+    }
+    $mtrx->close();
+    $out->close();
+    return(%genus_observed);
+}
 
 =head2 C<Mash>
 
@@ -942,6 +1179,8 @@ for outer in ${sketch_dir}/*; do
  mi_genome(required): The set of all miRNAs expected.
  bamfile(required): Input bam file to search.
 
+=back
+
 =cut
 sub Mi_Map {
     my ($class, %args) = @_;
@@ -981,8 +1220,6 @@ sub Mi_Map {
     return($job);
 } ## End of Mi_Map
 
-=back
-
 =head2 C<Read_Mi>
 
  Read an miRNA database.
@@ -995,6 +1232,8 @@ sub Mi_Map {
 =item C<Arguments>
 
  seqfile: The fasta file in question.
+
+=back
 
 =cut
 sub Read_Mi {
@@ -1010,8 +1249,6 @@ sub Read_Mi {
     }
     return(\%sequences);
 }
-
-=back
 
 =head2 C<Mpileup>
 
@@ -1072,6 +1309,8 @@ bcftools view -l 9 -o ${pileup_output} 2>${output_dir}/mpileup_bcftools.stderr
  output: Output file to write.
  seqdb: Hash of IDs to sequences from Read_Mi().
  mappings: Hash of IDs to precursors/etc.
+
+=back
 
 =cut
 sub Read_Mappings_Mi {
@@ -1143,8 +1382,6 @@ sub Read_Mappings_Mi {
     return($newdb);
 }
 
-=back
-
 =head2 C<Read_Bam_Mi>
 
  Read a bam file and cross reference it against an miRNA database.
@@ -1156,6 +1393,8 @@ sub Read_Mappings_Mi {
  mappings: Set of database entries to query against.
  bamfile: Input alignments to search.
  mi_genome: Fasta file containing the genomic context of the miRNAs.
+
+=back
 
 =cut
 sub Read_Bam_Mi {
@@ -1218,8 +1457,6 @@ sub Read_Bam_Mi {
     return($mappings);
 }
 
-=back
-
 =head2 C<Final_Print_Mi>
 
  Print out the final counts of miRNA mappings.
@@ -1230,6 +1467,8 @@ sub Read_Bam_Mi {
 
  data: Result from cross referencing the bam/genome/miRNAs.
  output: Output filename for writing a tsv of the counts.
+
+=back
 
 =cut
 sub Final_Print_Mi {
@@ -1246,8 +1485,6 @@ sub Final_Print_Mi {
     $output->close();
     return($hits);
 } ## End of Final_Print
-
-=back
 
 =head2 C<Count_Alignments>
 
@@ -1270,6 +1507,8 @@ sub Final_Print_Mi {
  host_pattern(''): Pattern used to differentiate host-mapped reads.
  libpath: Change the dirname of the fasta libraries.
  libtype('genome'): Change the subdirectory of the fasta libraries.
+
+=back
 
 =cut
 sub Count_Alignments {
@@ -1421,8 +1660,6 @@ Multi-both: $result->{both_multi}\n";
     return($result);
 }
 
-=back
-
 =head2 C<SLSearch>
 
  Search a pile of reads for the trypanosome spliced leader.
@@ -1449,6 +1686,8 @@ Multi-both: $result->{both_multi}\n";
  search('AGTTTCTGTACTTTATTGG'): SL substring to search.
  jmem(24): Memory to allocate for this task.
  jprefix(50): Default jobname/output prefix.
+
+=back
 
 =cut
 sub SLSearch {
@@ -1487,8 +1726,6 @@ my \$result = \$h->Bio::Adventure::Count::SLSearch_Worker(
         stdout => $stdout,);
     return($slsearch);
 }
-
-=back
 
 =head2 C<SLSearch_Worker>
 
@@ -1619,8 +1856,6 @@ Total results:
     $log_fh->close();
 }
 
-=back
-
 =head2 C<SL_UTR>
 
  Search a pile of reads for UTR boundaries with the SL/polyA.
@@ -1640,6 +1875,8 @@ Total results:
  search('AGTTTCTGTACTTTATTGG'): SL substring to search.
  jmem(24): Memory to allocate for this task.
  jprefix(50): Default jobname/output prefix.
+
+=back
 
 =cut
 sub SL_UTR {
@@ -1678,8 +1915,6 @@ my \$result = \$h->Bio::Adventure::Count::SL_UTR_Worker(
         stdout => $stdout,);
     return($sl_utr);
 }
-
-=back
 
 =head2 C<SL_UTR_Worker>
 
@@ -1809,8 +2044,6 @@ Total results:
   reverse-complement observed: $global_search_result{rc_found}\n";
     $log_fh->close();
 }
-
-
 
 =head1 AUTHOR - atb
 

@@ -22,19 +22,16 @@ make_path('genome/indexes'); ## Make a directory for the phix indexes.
 if (!-r 'test_forward.fastq.gz') {
     ok(cp($input_file, 'test_forward.fastq.gz'), 'Copying data.');
 }
-
 if (!-r 'genome/phix.fasta') {
     ok(cp($phix_fasta, 'genome/phix.fasta'), 'Copying phix fasta file.');
     ## my $uncompressed = qx"gunzip genome/phix.fastq.gz && mv genome/phix.fasta.gz genome/phix.fasta";
 }
-
 if (!-r 'genome/phix.gff') {
     ok(cp($phix_gff, 'genome/phix.gff'), 'Copying phix gff file.');
     ## my $uncompressed = qx"gunzip genome/phix.gff.gz && mv genome/phix.gff.gz genome/phix.gff";
 }
 
 my $cyoa = Bio::Adventure->new(
-    cluster => 0,
     basedir => cwd(),
     libdir => cwd(),
     stranded => 'no',
@@ -42,19 +39,25 @@ my $cyoa = Bio::Adventure->new(
     gff_id => 'gene_id',
     species => 'phix',);
 
+## Note that when using a cluster for this, one must remember to use a locally copied file for indexing/input.
 my $index = $cyoa->Bio::Adventure::Index::BWA_Index(
-    input => $phix_fasta,);
+    input => 'genome/phix.fasta',);
+my $status = $cyoa->Wait(job => $index);
+ok($status->{State} eq 'COMPLETED', 'The bwa mapping completed.');
 ## Check that the indexes were created:
 ok(-f $index->{output_sa}, "The .sa index file was created: $index->{output_sa}");
-ok(-f $index->{output_pac}, "The .pac index file was created: $index->{output_pac}");
-ok(-f $index->{output_bwt}, "The .bwt index file was created: $index->{output_bwt}");
-ok(-f $index->{output_ann}, "The .ann index file was created: $index->{output_ann}");
-ok(-f $index->{output_amb}, "The .amb index file was created: $index->{output_amb}");
+ok(-f $index->{output_pac}, "The .sa index file was created: $index->{output_pac}");
+ok(-f $index->{output_bwt}, "The .sa index file was created: $index->{output_bwt}");
+ok(-f $index->{output_ann}, "The .sa index file was created: $index->{output_ann}");
+ok(-f $index->{output_amb}, "The .sa index file was created: $index->{output_amb}");
+ok(-f $index->{output_fa}, "The .sa index file was created: $index->{output_fa}");
 
 my $bwa = $cyoa->Bio::Adventure::Map::BWA(
     input => qq'test_forward.fastq.gz',
     jprefix => 25,);
-ok($bwa, 'Run Bwa.');
+ok($bwa, 'Submitted bwa jobs.');
+$status = $cyoa->Wait(job => $bwa);
+ok($status->{State} eq 'COMPLETED', 'The bwa mapping completed.');
 
 ## Some files of interest:
 my $htseq_mem = $bwa->{htseq_mem}->[0]->{output};

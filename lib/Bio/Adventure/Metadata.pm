@@ -1756,6 +1756,51 @@ echo "\$stat_string" >> "${output}"!;
     return($stats);
 }
 
+sub Salmon_Strand {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        jmem => 1,);
+    my $jname = 'strand';
+    $jname = $options->{jname} if ($options->{jname});
+    my $paths = $class->Get_Paths($options->{input});
+    my $jobid = qq"$paths->[0]->{jbasename}_stats";
+    my $outdir = dirname($options->{input});
+    my $output = qq"${outdir}/salmon_strand.txt";
+    my $comment = qq"## This is a stupidly simple job to collect the autodetected strand.\n";
+    my $jstring = qq!
+less $options->{input} |\\
+  grep "Automatically detected" |\\
+  perl -pe 's/^.*Automatically detected .* (\\w+)\$/\$1/' \\
+  2>stranded.stderr 1>${output}
+result=\$(<${output})
+if [[ "\${result}" == "ISR" ]]; then
+  echo "reverse -fr-firststrand" > strand.txt
+elif [[ "\${result}" == "SR" ]]; then
+  echo "reverse -fr-firststrand" > strand.txt
+elif [[ "\${result}" == "ISF" ]]; then
+  echo "forward -fr-secondstrand" > strand.txt
+elif [[ "\${result}" == "SF" ]]; then
+  echo "forward -fr-secondstrand" > strand.txt
+else
+  echo "unstranded -fr-unstranded" > strand.txt
+fi
+!;
+    my $strand = $class->Submit(
+        comment => $comment,
+        input => $options->{input},
+        jcpu => 1,
+        jmem => 1,
+        jname => $jname,
+        jdepends => $options->{jdepends},
+        jprefix => $args{jprefix},
+        jstring => $jstring,
+        jwalltime => '00:01:00',
+        stdout => '',
+        output => $output,);
+    return($strand);
+}
+
 =head2 C<Tophat_Stats>
 
  Collect alignment statistics from the accepted_hits.bam/unaligned.bam files
