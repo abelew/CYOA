@@ -286,6 +286,49 @@ cp $options->{input_tsv} ${output_dir}
     return($collect);
 }
 
+sub Contig_Reorder {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['input', 'reference'],
+        jmem => 24,
+        jprefix => '19',);
+    my $jname = 'mreorder';
+    my $outdir = qq"outputs/$options->{jprefix}mreorder";
+    make_path(qq"${outdir}");
+    my $stderr = qq"${outdir}/mauve_reorder.stderr";
+    my $stdout = qq"${outdir}/mauve_reorder.stdout";
+    my $comment = qq!## Attempting to run mauve's contig reorder function of $options->{input} vs. $options->{reference}.
+!;
+    my $mem = $options->{jmem} * 1000;
+    my $renamed = basename($options->{input}, ('.fsa', '.fasta'));
+    my $jstring = qq!
+location=\$(dirname Mauve)
+java -Xmx${mem}m -cp \${location}/Mauve.jar \
+  org.gel.mauve.contigs.ContigOrderer \
+  -output ${outdir} \
+  -ref $options->{library} \
+  -draft $options->{input} \
+  2>${stderr} 1>${stdout}
+
+target_dir=\$(/bin/ls -d ${outdir}/align* | tail -n 1)
+cp \${target_dir}/$options->{input} ${outdir}/${renamed}_reordered.fasta
+!;
+    my $mauve = $class->Submit(
+        comment => $comment,
+        input => $options->{input},
+        library => $options->{library},
+        jdepends => $options->{jdepends},
+        jmem => $options->{jmem},
+        jname => $jname,
+        jprefix => $options->{jprefix},
+        jstring => $jstring,
+        output => qq"${outdir}/${renamed}_reordered.fasta",
+        stderr => $stderr,
+        stdout => $stdout,);
+    return($mauve);
+}
+
 =back
 
 =head2 C<Unicycler_Filter_Depth>
@@ -778,8 +821,8 @@ sub Unicycler {
     my $backup_string = '';
     if ($options->{input} =~ /\:|\;|\,|\s+/) {
         my @in = split(/\:|\;|\,|\s+/, $options->{input});
-        $input_string = qq" -1 ${output_dir}/r1.fastq.gz -2 ${output_dir}/r2.fastq.gz";
-        $shovill_input = qq" --R1 ${output_dir}/r1.fastq.gz --R2 ${output_dir}/r2.fastq.gz ";
+        $input_string = qq" -1 ${output_dir}/r1.fastq -2 ${output_dir}/r2.fastq";
+        $shovill_input = qq" --R1 ${output_dir}/r1.fastq --R2 ${output_dir}/r2.fastq ";
         $ln_string = qq"less $in[0] > ${output_dir}/r1.fastq
 less $in[1] > ${output_dir}/r2.fastq\n";
         if ($in[0] =~ /\.fastq$/) {
@@ -789,8 +832,8 @@ less $in[1] > ${output_dir}/r2.fastq\n";
 cp $in[1] ${output_dir}/r2.fastq\n";
         }
     } else {
-        $input_string = qq" -1 ${output_dir}/r1.fastq.gz ";
-        $shovill_input = qq" --R1 ${output_dir}/r1.fastq.gz ";
+        $input_string = qq" -1 ${output_dir}/r1.fastq ";
+        $shovill_input = qq" --R1 ${output_dir}/r1.fastq ";
         $ln_string = qq" less $options->{input} > ${output_dir}/r1.fastq ";
         if ($options->{input} =~ /\.fastq$/) {
             $input_string = qq" -1 ${output_dir}/r1.fastq ";
@@ -901,7 +944,7 @@ sub Velvet {
     2>${output_dir}/velvetg_${job_name}.stderr \\
     1>${output_dir}/velvetg_${job_name}.stdout
   new_params=\$(velvet-estimate-exp_cov.pl ${output_dir}/stats.txt \|
-    { grep velvetg parameters || test \$? = 1; } \|
+    { grep velvetg ${output_dir}/parameters || test \$? = 1; } \|
     sed 's/velvetg parameters: //g')
   ##velvetg ${output_dir} \${new_params} -read_trkg yes -amos_file yes \\
   ##  2>${output_dir}/second_velvetg.txt 2>&1

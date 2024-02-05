@@ -265,6 +265,7 @@ has qsub_dependsarray => (is => 'rw', default => 'depend=afterokarray:'); ## Str
 has qsub_path => (is => 'rw', default => scalar_which('qsub'));
 has qual => (is => 'rw', default => undef); ## cutadapt quality string
 has query => (is => 'rw', default => undef); ## Used for searches when input is already taken, most likely blast/fasta
+has reference => (is => 'rw', default => undef);
 has restart => (is => 'rw', default => 0); ## Restart job(s) in the middle of a group
 has riboanchor => (is => 'rw', default => 'start'); ## When correcting, use the start or end position as an anchor
 has riboasite => (is => 'rw', default => 1); ## Count riboseq A site positions?
@@ -473,6 +474,7 @@ $ENV{PATH}.") unless($check);
     my $path_agrees = Check_Libpath(libdir => $class->{libdir}, libpath => $class->{libpath});
     $class->{libpath} = $path_agrees->{libpath};
     $class->{libdir} = $path_agrees->{libdir};
+    $class->{input} =~ s/:|\;|\,|\.$//g;
 
     ## Check that the module command is available as a bash function.
     ## I was initially going to do this in BUILD(), but I think that might mess up jobs

@@ -595,6 +595,7 @@ sub Process_DNASeq {
     }
 
     my $map_input = $options->{input};
+    my $map_prereq = $last_job;
     my $trim;
     if ($options->{trim}) {
         $prefix = sprintf("%02d", ($prefix + 1));
@@ -610,6 +611,7 @@ sub Process_DNASeq {
         $map_input = $trim->{output};
         sleep($options->{jsleep});
         my $last_job = $trim->{job_id};
+        $map_prereq = $last_job;
     }
 
     $prefix = sprintf("%02d", ($prefix + 1));
@@ -669,7 +671,7 @@ sub Process_DNASeq {
             introns => 0,
             species => $first_species,
             jprefix => $prefix,
-            jdepends => $last_job,
+            jdepends => $map_prereq,
             stranded => $options->{stranded});
         $last_job = $first_map->{job_id};
         $jobid = qq"${prefix}hisat";

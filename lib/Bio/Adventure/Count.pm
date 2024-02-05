@@ -821,7 +821,14 @@ jellyfish dump ${count_file} > ${count_fasta} \\
     $comment = qq"## This should create a matrix with rows as kmers and elements
 ## comprised of the number of occurrences.
 ";
-    my $new_prefix = $options->{jprefix} + 1;
+    my $new_prefix = $options->{jprefix};
+    if ($options->{jprefix} =~ /_/) {
+        my ($pre, $post) = split(/_/, $options->{jprefix});
+        $post = $post + 1;
+        $new_prefix = qq"$Ppre}_${post}";
+    } else {
+        $new_prefix = $options->{jprefix} + 1;
+    }
     $jstring = qq!
 use Bio::Adventure;
 use Bio::Adventure::Phage;
@@ -958,6 +965,7 @@ sub Kraken {
     ## kraken2 --db ${DBNAME} --paired --classified-out cseqs#.fq seqs_1.fq seqs_2.fq
     my $job_name = $class->Get_Job_Name();
     my $input_directory = basename(cwd());
+    print "Classifying reads against the $options->{library} kraken database.\n";
     my $output_dir = qq"outputs/$options->{jprefix}kraken_$options->{library}";
     make_path($output_dir);
     my $input_string = "";

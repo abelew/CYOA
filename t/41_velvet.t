@@ -23,12 +23,9 @@ if (!-r 'genome/phix.fasta') {
     ok(cp($phix_fasta, 'genome/phix.fasta'), 'Copying phix fasta file.');
 }
 my $cyoa = Bio::Adventure->new(cluster => 0, basedir => cwd());
-my $jelly = $cyoa->Bio::Adventure::Count::Jellyfish(
-    input => 'genome/phix.fasta',
+my $velvet = $cyoa->Bio::Adventure::Assembly::Velvet(
+    input => 'test_forward.fastq.gz',
     jprefix => 40,);
+my $output = $velvet->{output};
 
-my $first_job_outputs = $jelly->{compression}->{output};
-my @output_files = split(/:/, $first_job_outputs);
-for my $o (@output_files) {
-    ok (-f $o, "Output file create: ${o}");
-}
+ok (-f $output, "Output file created: ${output}");

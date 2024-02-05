@@ -171,8 +171,6 @@ sub Run_Method {
     return($class);
 }
 
-=back
-
 =head1 AUTHOR - atb
 
 Email abelew@gmail.com

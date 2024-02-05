@@ -19,6 +19,6 @@ chdir($new);
 my $cyoa = Bio::Adventure->new(cluster => 0, basedir => cwd());
 
 my $trimmer = $cyoa->Bio::Adventure::Trim::Cutadapt(input => $input_file);
-ok($trimmer, 'Run Trimomatic');
+ok($trimmer, 'Run Cutadapt');
 
 chdir($start);

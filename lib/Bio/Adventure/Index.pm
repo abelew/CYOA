@@ -146,7 +146,7 @@ sub BWA_Index {
     my $jstring = qq!mkdir -p ${output_dir}
 start=\$(pwd)
 cd $options->{libdir}/$options->{libtype}/indexes
-ln -sf \${start}/$options->{input} ${species}.fa
+ln -sf $options->{input} ${species}.fa
 bwa index ${species}.fa \\
   2>${stderr} \\
   1>${stdout}

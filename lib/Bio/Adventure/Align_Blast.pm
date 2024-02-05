@@ -498,8 +498,9 @@ blastp is normal protein/protein.
         my $split_info = $class->Bio::Adventure::Align::Get_Split(%args);
         my $num_per_split = $split_info->{num_per_split};
         print "Going to make $options->{align_jobs} directories with ${num_per_split} sequences each.\n";
-        my $actual = $class->Bio::Adventure::Align::Make_Directories(%args,
-            num_per_split => $split_info);
+        my $actual = $class->Bio::Adventure::Align::Make_Directories(
+            workdir => $outdir,
+            num_per_split => $split_info,);
         print "Actually used ${actual} directories to write files.\n";
         my $alignment = $class->Bio::Adventure::Align_Blast::Make_Blast_Job(
             library => $lib,
@@ -516,6 +517,7 @@ blastp is normal protein/protein.
         my $num_per_split = $class->Bio::Adventure::Align::Get_Split();
         $options = $class->Set_Vars(num_per_split => $num_per_split);
         my $actual = $class->Bio::Adventure::Align::Make_Directories(
+            workdir => $outdir,
             num_per_split => $num_per_split);
         my $alignment = $class->Bio::Adventure::Align_Blast::Make_Blast_Job(
             library => $lib,
