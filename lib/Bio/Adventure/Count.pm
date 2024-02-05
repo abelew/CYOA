@@ -965,6 +965,7 @@ sub Kraken {
     ## kraken2 --db ${DBNAME} --paired --classified-out cseqs#.fq seqs_1.fq seqs_2.fq
     my $job_name = $class->Get_Job_Name();
     my $input_directory = basename(cwd());
+    print "Classifying reads against the $options->{library} kraken database.\n";
     my $output_dir = qq"outputs/$options->{jprefix}kraken_$options->{library}";
     make_path($output_dir);
     my $input_string = "";
