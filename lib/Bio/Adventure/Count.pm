@@ -821,7 +821,14 @@ jellyfish dump ${count_file} > ${count_fasta} \\
     $comment = qq"## This should create a matrix with rows as kmers and elements
 ## comprised of the number of occurrences.
 ";
-    my $new_prefix = $options->{jprefix} + 1;
+    my $new_prefix = $options->{jprefix};
+    if ($options->{jprefix} =~ /_/) {
+        my ($pre, $post) = split(/_/, $options->{jprefix});
+        $post = $post + 1;
+        $new_prefix = qq"$Ppre}_${post}";
+    } else {
+        $new_prefix = $options->{jprefix} + 1;
+    }
     $jstring = qq!
 use Bio::Adventure;
 use Bio::Adventure::Phage;
