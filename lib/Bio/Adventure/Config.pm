@@ -272,11 +272,17 @@ sub Get_Menus {
                 '(tpp): Run the transit preprocessing script.' => \&Bio::Adventure::TNSeq::Transit_TPP,
             },
         },
+        Splicing => {
+            name => 'splicing',
+            message => 'Tools to consider splicing',
+            choices => {
+                '(suppa): Quantify changes in transcript splicing events across samples.' => \&Bio::Adventure::Splicing::Suppa,
+            },
+        },
         Structure => {
             name => 'structure',
             message => 'Intended for gene and RNA structure tools',
             choices => {
-                '(suppa): Quantify changes in transcript splicing events across samples.' => \&Bio::Adventure::Structure::Suppa,
                 '(vienna): Use the RNAfold method from vienna to examine potential RNA structures.' => \&Bio::Adventure::Structure::Vienna,
             },
         },
@@ -633,7 +639,7 @@ sub Get_TODOs {
         "splitalign+" => \$todo_list->{todo}{'Bio::Adventure::Align::Split_Align'},
         "sradownload+" => \$todo_list->{todo}{'Bio::Adventure::Prepare::Download_SRA_PRJNA'},
         "star+" => \$todo_list->{todo}{'Bio::Adventure::Map::STAR'},
-        "suppa+" => \$todo_list->{todo}{'Bio::Adventure::Structure::Suppa'},
+        "suppa+" => \$todo_list->{todo}{'Bio::Adventure::Splicing::Suppa'},
         "tacheck+" => \$todo_list->{todo}{'Bio::Adventure::TNSeq::TA_Check'},
         "test+" => \$todo_list->{todo}{'Bio::Adventure::Slurm::Test_Job'},
         "tophat+" => \$todo_list->{todo}{'Bio::Adventure::Map::Tophat'},

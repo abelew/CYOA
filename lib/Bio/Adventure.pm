@@ -56,7 +56,6 @@ use Bio::Adventure::Compress;
 use Bio::Adventure::Convert;
 use Bio::Adventure::Feature_Prediction;
 use Bio::Adventure::Index;
-
 use Bio::Adventure::Map;
 use Bio::Adventure::Metadata;
 use Bio::Adventure::Phage;
@@ -67,8 +66,8 @@ use Bio::Adventure::Resistance;
 use Bio::Adventure::Riboseq;
 use Bio::Adventure::QA;
 use Bio::Adventure::SeqMisc;
+use Bio::Adventure::Splicing;
 use Bio::Adventure::Structure;
-
 use Bio::Adventure::SNP;
 use Bio::Adventure::TNSeq;
 use Bio::Adventure::Torque;
@@ -407,6 +406,7 @@ $ENV{PATH}.") unless($check);
         my $d = qx'date';
         chomp $d;
         print $out "# Started CYOA at ${d} with arguments: ${arg_string}.\n";
+        ## print "# Started CYOA at ${d} with arguments: ${arg_string}.\n";
         $out->close();
     }
 
@@ -474,7 +474,6 @@ $ENV{PATH}.") unless($check);
     my $path_agrees = Check_Libpath(libdir => $class->{libdir}, libpath => $class->{libpath});
     $class->{libpath} = $path_agrees->{libpath};
     $class->{libdir} = $path_agrees->{libdir};
-    $class->{input} =~ s/:|\;|\,|\.$//g;
 
     ## Check that the module command is available as a bash function.
     ## I was initially going to do this in BUILD(), but I think that might mess up jobs
@@ -503,8 +502,9 @@ sub Check_Input {
     my ($class, %args) = @_;
     my $file_list;
     if (ref($args{files}) eq 'SCALAR' || ref($args{files}) eq '') {
-        if ($args{files} =~ /:/) {
-            my @tmp = split(/:/, $args{files});
+        if ($args{files} =~ /:|\;|\,/) {
+            $args{files} =~ s/:|\;|\,$//g;
+            my @tmp = split(/:|\;|\,/, $args{files});
             $file_list = \@tmp;
         } else {
             $file_list->[0] = $args{files};
@@ -793,7 +793,6 @@ sub Get_Vars {
             $default_vars{$k} = $class->{$k};
         }
     }
-
     ## Then the set of variables passed to Get_Vars();
     ## These are effectively function defaults
     my %getvars_default_vars = %args;  ## This guy has jprefix...
@@ -963,6 +962,10 @@ sub Get_Vars {
     ## And last, the getopt overrides
     $class->{variable_getopt_overrides} = \%getopt_override_vars;
     $class->{variable_current_state} = \%returned_vars;
+    ## Quick sanitization of the input.
+    if ($returned_vars{input}) {
+        $returned_vars{input} =~ s/(:|\;|\,|\.)$//g;
+    }
     return(\%returned_vars);
 }
 

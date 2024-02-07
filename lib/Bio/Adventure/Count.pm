@@ -1063,6 +1063,7 @@ my \$result = \$h->Bio::Adventure::Count::Kraken_to_Matrix_Worker(
         comment => $comment,
         input => $options->{input},
         jdepends => $options->{jdepends},
+        jcpu => 1,
         jmem => 4,
         jname => 'kraken2mtrx',
         jprefix => $options->{jprefix},

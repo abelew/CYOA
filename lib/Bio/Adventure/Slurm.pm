@@ -517,32 +517,46 @@ sub Choose_QOS {
           }
       } ## End iterating over accounts
 
-        unless ($found_qos) {
-          ACCOUNT2: for my $account (keys %{$associations->{$cluster}}) {
-              my $potential_qos = {};
+        if ($found_qos < 1) {
+            my @cluster_assoc_v2 = keys %{$associations->{$cluster}};
+          ACCOUNT2: for my $account (@cluster_assoc_v2) {
+              my $non_stringent_qos = {};
+              ## Skip past scavenger and fill it in if we cannot do anything else.
+              next ACCOUNT2 if ($account eq 'scavenger');
               ## If we get here, then there is no place to immediately queue the job
               ## because there are already jobs queued, so just pick a qos which is big enough.
               my $found_qos2 = 0;
-            QOS2: for my $q (@qos) {
+              my @qos_v2 = ();
+              if (defined($associations->{$cluster}->{$account}->{qos})) {
+                  @qos_v2 = @{$associations->{$cluster}->{$account}->{qos}};
+              } else {
+                  next ACCOUNT2;
+              }
+            QOS2: for my $q (@qos_v2) {
                 next QOS2 if ($q eq 'default' && $skip_default);
                 my $info = $qos_info->{$q};
+                print "Searching for any queue which can hold this job, the queue must provide mem > $wanted_spec->{mem} cpu: $wanted_spec->{cpu} gpu: $wanted_spec->{gpu} hours: $wanted_spec->{walltime_hours}\n";
                 if ($info->{max_job_mem}) {
                     if ($wanted_spec->{mem} > $info->{max_job_mem}) {
+                        ## print "Failed the qos $q due to insufficient memory: $info->{max_job_mem}\n";
                         next QOS2;
                     }
                 }
                 if ($info->{max_job_cpu}) {
                     if ($wanted_spec->{cpu} > $info->{max_job_cpu}) {
+                        ## print "Failed the qos $q due to insufficient cpu: $info->{max_job_cpu}\n";
                         next QOS2;
                     }
                 }
                 if ($info->{max_job_gpu}) {
                     if ($wanted_spec->{gpu} > $info->{max_job_gpu}) {
+                        ## print "Failed the qos $q due to insufficient gpu: $info->{max_job_gpu}\n";
                         next QOS2;
                     }
                 }
                 if ($info->{max_hours}) {
                     if ($wanted_spec->{walltime_hours} > $info->{max_hours}) {
+                        ## print "Failed the qos $q due to insufficient time: $info->{max_hours}\n";
                         next QOS2;
                     }
                 }
@@ -552,14 +566,21 @@ sub Choose_QOS {
                     delta_mem => $info->{max_job_mem} - $info->{used_mem},
                     delta_hours => $info->{max_hours} - $info->{used_hours},
                 };
-                $potential_qos->{$q} = $potential_metrics;
+                $non_stringent_qos->{$q} = $potential_metrics;
             } ## End iterating over the non-stringent qos.
-              my $num_potential = scalar(keys(%{$potential_qos}));
+              my @non_stringent_potential = keys %{$non_stringent_qos};
+              my $num_potential = scalar(@non_stringent_potential);
+
               if ($num_potential) {
-                  $chosen_qos = Choose_Among_Potential_QOS($potential_qos);
+                  $chosen_qos = Choose_Among_Potential_QOS($non_stringent_qos);
                   $chosen_account = $account;
                   $chosen_cluster = $cluster;
               }
+              ## I am not sure if we want to force scavenger at this time?
+              ## else {
+              ##  print "The set of potential qos is empty.  Setting chosen_qos to scavenger.\n";
+              ##    $chosen_qos = 'scavenger';
+              ## }
 
               $found_qos2++;
               if (!defined($qos_info->{$chosen_qos}->{used_mem})) {
@@ -573,7 +594,8 @@ sub Choose_QOS {
               $qos_info->{used_cpu} = $qos_info->{$chosen_qos}->{used_cpu} + $wanted_spec->{cpu};
               $qos_info->{used_gpu} = $qos_info->{$chosen_qos}->{used_gpu} + $wanted_spec->{gpu};
               $qos_info->{used_hours} = $qos_info->{$chosen_qos}->{used_hours} + $wanted_spec->{walltime_hours};
-              last ACCOUNT2;
+              ## I am not sure if I should use this last...
+              # last ACCOUNT2;
           }
       } ## End iterating over a second attempt of accounts.
     } ## End a second pass if we didn't find anything the first time.
