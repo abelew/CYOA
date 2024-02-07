@@ -222,7 +222,6 @@ sub Make_Directories {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
-        workdir => 'outputs/split',
         num_per_split => 100,
         align_jobs => 40,);
     my $split_info = $class->Bio::Adventure::Align::Get_Split(args => \%args);

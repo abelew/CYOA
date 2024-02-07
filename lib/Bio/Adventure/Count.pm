@@ -825,7 +825,7 @@ jellyfish dump ${count_file} > ${count_fasta} \\
     if ($options->{jprefix} =~ /_/) {
         my ($pre, $post) = split(/_/, $options->{jprefix});
         $post = $post + 1;
-        $new_prefix = qq"$Ppre}_${post}";
+        $new_prefix = qq"${pre}_${post}";
     } else {
         $new_prefix = $options->{jprefix} + 1;
     }
