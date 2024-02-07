@@ -825,7 +825,7 @@ jellyfish dump ${count_file} > ${count_fasta} \\
     if ($options->{jprefix} =~ /_/) {
         my ($pre, $post) = split(/_/, $options->{jprefix});
         $post = $post + 1;
-        $new_prefix = qq"$Ppre}_${post}";
+        $new_prefix = qq"${pre}_${post}";
     } else {
         $new_prefix = $options->{jprefix} + 1;
     }
@@ -1063,6 +1063,7 @@ my \$result = \$h->Bio::Adventure::Count::Kraken_to_Matrix_Worker(
         comment => $comment,
         input => $options->{input},
         jdepends => $options->{jdepends},
+        jcpu => 1,
         jmem => 4,
         jname => 'kraken2mtrx',
         jprefix => $options->{jprefix},
