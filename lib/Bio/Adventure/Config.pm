@@ -369,6 +369,8 @@ sub Get_Modules {
         'Fastp' => { modules => ['fastp'], exe => 'fastp' },
         'Filter_Host_Kraken' => {
             modules => ['cyoa', 'kraken', 'hisat2', 'htseq', 'samtools'], },
+        'Fragment_Genome' => {
+            modules => ['cyoa' ], },
         'Freebayes_SNP_Search' => {
             modules => ['gatk', 'freebayes', 'samtools', 'bcftools', 'vcftools'],
             exe => ['gatk', 'freebayes'], },
@@ -572,6 +574,7 @@ sub Get_TODOs {
         "featureextract+" => \$todo_list->{todo}{'Bio::Adventure::Annotation_Genbank::Extract_Features'},
         "filterdepth+" => \$todo_list->{todo}{'Bio::Adventure::Assembly::Unicycler_Filter_Depth'},
         "filterkraken+" => \$todo_list->{todo}{'Bio::Adventure::Phage::Filter_Host_Kraken'},
+        "fragment+" => \$todo_list->{todo}{'Bio::Adventure::SeqMisc::Fragment_Genome'},
         "freebayes+" => \$todo_list->{todo}{'Bio::Adventure::SNP::Freebayes_SNP_Search'},
         "gb2gff+" => \$todo_list->{todo}{'Bio::Adventure::Convert::Gb2Gff'},
         "gff2fasta+" => \$todo_list->{todo}{'Bio::Adventure::Convert::Gff2Fasta'},

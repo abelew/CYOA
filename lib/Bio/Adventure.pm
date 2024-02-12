@@ -143,6 +143,7 @@ has cluster => (is => 'rw', default => undef); ## Are we running on a cluster?
 has comment => (is => 'rw', default => undef); ## Set a comment in running slurm/bash/etc scripts.
 has compress => (is => 'rw', default => 1); ## Compress output files?
 has conda_string => (is => 'rw', default => undef);
+has condition_column => (is => 'rw', default => undef);
 has config => (is => 'rw', default => undef); ## Not sure
 has count => (is => 'rw', default => 1); ## Quantify reads after mapping?
 has correction => (is => 'rw', default => 1); ## Perform correction when using fastp?
@@ -162,6 +163,7 @@ has evalue => (is => 'rw', default => 0.001); ## Default e-value cutoff
 has fasta_args => (is => 'rw', default => '-b 20 -d 20'); ## Default arguments for the fasta36 suite
 has fasta_tool => (is => 'rw', default => 'ggsearch36'); ## Which fasta36 program to run?
 has fastqc => (is => 'rw', default => 'check'); ## Perform fastqc in a pipeline?
+has file_column => (is => 'rw', default => undef);
 has filter => (is => 'rw', default => 1);  ## When performing an assembly, do a host filter?
 has filtered => (is => 'rw', default => 'unfiltered');  ## Whether or not Fastqc is running on filtered data.
 has freebayes => (is => 'rw', default => 0);
@@ -275,7 +277,7 @@ has ribomaxsize => (is => 'rw', default => 36); ## Maximum size to search for ri
 has ribominpos => (is => 'rw', default => -30); ## Minimum position for counting (riboseq)
 has ribomaxpos => (is => 'rw', default => 30); ## Maximum position for counting (riboseq)
 has ribocorrect => (is => 'rw', default => 1); ## Correct ribosome positions for biases
-has ribosizes => (is => 'rw', default => '25,26,27,28,29,30,31,32,33,34'); ## Use these sizes for riboseq reads
+has sizes => (is => 'rw', default => '25,26,27,28,29,30,31,32,33,34'); ## Use these sizes for riboseq reads
 has runs => (is => 'rw', default => 1000); ## Number of runs for bayesian methods.
 has sampleid => (is => 'rw', default => undef); ## Identifier to use for a sample.
 has samtools_mapped => (is => 'rw', default => 0); ## Extract mapped reads with samtools.
@@ -284,6 +286,7 @@ has sbatch_depends => (is => 'rw', default => 'afterok:');
 has sbatch_dependsarray => (is => 'rw', default => 'afterok:'); ## String to pass for an array of jobs
 has sbatch_path => (is => 'rw', default => scalar_which('sbatch'));
 has search_string => (is => 'rw', default => 'tail');
+has separation => (is => 'rw', default => '10');
 has shell => (is => 'rw', default => '/usr/bin/bash'); ## Default qsub shell
 has species => (is => 'rw', default => undef); ## Primarily for getting libraries to search against
 has sra => (is => 'rw', default => 0);

@@ -4,7 +4,10 @@ use autodie qw":all";
 use diagnostics;
 use warnings qw"all";
 
+use File::Path qw"make_path rmtree";
 use File::Temp qw / tmpnam /;
+use FileHandle;
+use POSIX qw"floor ceil";
 use parent 'Exporter';
 our @EXPORT = qw"$references";
 our @EXPORT_OK = qw"$references";
@@ -16,6 +19,11 @@ our @EXPORT_OK = qw"$references";
 Bio::Adventure::SeqMisc - Given a primary sequence, collect some information.
 
 =head1 SYNOPSIS
+
+Much of this file should be deleted.  I wrote it before I was aware of
+BioPerl's interfaces which do much of this, but better.  Since I am
+=revisiting this for other purposes, perhaps this is a good time to
+=clean it out.
 
 The information collected includes the following:
 
@@ -31,6 +39,110 @@ revcomp.  GC/CT content.
 
 Conversely, perform randomizations using a few algorithms
 including via the external squid library.
+
+=cut
+
+sub Fragment_Genome {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['species'],
+        jmem => 8,
+        overlap => 10,
+        sizes => '50,100,200,400,800,1600',
+        separation => 20,
+        strands => 'both',
+        jname => 'fragmenter',
+        jprefix => '93',);
+    my $jname = $options->{jname};
+    my $output_dir = qq"outputs/$options->{jprefix}${jname}_$options->{species}";
+    make_path($output_dir);
+    my $input = qq"$options->{libpath}/$options->{libtype}/$options->{species}.fasta";
+    my $output = qq"${output_dir}/$options->{species}_fragmented.fasta";
+    my $stderr = qq"${output_dir}/fragmenter.stderr";
+    my $stdout = qq"${output_dir}/fragmenter.stdout";
+    my $comment = qq'## Creating pseudoreads using sizes: $options->{sizes} and genome: ${input}.\n';
+    my $jstring = qq!use Bio::Adventure::SeqMisc;
+my \$result = \$h->Bio::Adventure::SeqMisc::Fragment_Genome_Worker(
+  input => '$input',
+  species => '$options->{species}',
+  jdepends => '$options->{jdepends}',
+  jname => '${jname}',
+  jprefix => '$options->{jprefix}',
+  output => '${output}',
+  overlap => '$options->{overlap}',
+  separation => '$options->{separation}',
+  sizes => '$options->{sizes}',
+  stdout => '${stdout}',
+  stderr => '${stderr}',
+  output_dir => '${output_dir}',);
+!;
+    my $fragments = $class->Submit(
+        comment => $comment,
+        input => $input,
+        jdepends => $options->{jdepends},
+        jname => $jname,
+        jprefix => $options->{jprefix},
+        jstring => $jstring,
+        output => $output,
+        output_dir => $output_dir,
+        overlap => $options->{overlap},
+        separation => $options->{separation},
+        sizes => $options->{sizes},
+        species => $options->{species},
+        stdout => $stdout,
+        stderr => $stderr,
+        language => 'perl',);
+    return($fragments);
+}
+
+sub Fragment_Genome_Worker {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['input'],);
+    my $log = FileHandle->new(">>$options->{stdout}");
+    my $seqio_in = Bio::SeqIO->new(-format => 'fasta', -file => $options->{input});
+    my $seqio_out = Bio::SeqIO->new(-format => 'fasta', -file => qq">$options->{output}");
+    my @sizes = split(/\,/, $options->{sizes});
+    my $overlap_d2 = ceil($options->{overlap} / 2.0);
+    my $separation = $options->{separation} - $overlap_d2;
+    my $num_written = 0;
+  SEQS: while (my $seq = $seqio_in->next_seq) {
+      my $rev = $seq->revcom;
+      my $start_pos = 1;
+      my $len = $seq->length;
+      my $id = $seq->id;
+      my $size_offset = 0;
+      for my $size (@sizes) {
+          my $chunks = ceil($size / $len);
+          my $chunk_start = 1 + $size_offset;
+          my $chunk = 0;
+        CHUNKS: while ($chunk_start < $len) {
+            $chunk++;
+            my $chunk_end = $chunk_start + $size;
+            $chunk_end = $len if ($chunk_end > $len);  ## Maybe len - 1?
+            $chunk_start = $len if ($chunk_start >= $len);
+            last CHUNKS if ($chunk_start == $len);
+            my $contig_subseq = $seq->subseq($chunk_start, $chunk_end);
+            my $revcomp_contig_subseq = $rev->subseq($chunk_start, $chunk_end);
+            my $chunk_seq = Bio::Seq->new(-seq => $contig_subseq,
+                                          -display_id => qq"${id}_fwd_${size}_${chunk_start}_${chunk_end}");
+            my $written = $seqio_out->write_seq($chunk_seq);
+            my $rev_chunk_seq = Bio::Seq->new(-seq => $revomp_contig_subseq,
+                                          -display_id => qq"${id}_rev_${size}_${chunk_start}_${chunk_end}");
+            my $rev_written = $seqio_out->write_seq($rev_chunk_seq);
+            $num_written++;
+            $chunk_start = ($chunk_start + $size) - $overlap_d2;
+          } ## End iterating over every chunk
+          $size_offset = $size_offset + 10;
+          print $log "Wrote ${num_written} fragments of size: $size for $id.\n";
+          $num_written = 0;
+      } ## End iterating over every size
+  } ## End iterating over every contig
+    $log->close();
+}
+
 
 =head1 DATA STRUCTURES
 
@@ -489,42 +601,42 @@ global data structure above...
 =cut
 sub new {
     my ($class, %arg) = @_;
-#    $arg{sequence} = [] if (!defined($arg{sequence}));
+    #    $arg{sequence} = [] if (!defined($arg{sequence}));
     srand();
     my $seqstring = '';
     my $seq_type = ref($arg{sequence});
     if ($seq_type eq 'ARRAY') {
-	foreach my $char (@{$arg{sequence}}) {
-	    $char = 'U' if ($char eq 'T');
-	    $char = 'u' if ($char eq 't');
-	    $seqstring .= $char;
-	}
+        foreach my $char (@{$arg{sequence}}) {
+            $char = 'U' if ($char eq 'T');
+            $char = 'u' if ($char eq 't');
+            $seqstring .= $char;
+        }
     } else {
-	$seqstring = $arg{sequence};
-	$seqstring =~ tr/Tt/Uu/;
-	my @seq = split(//, $seqstring);
-	$arg{sequence} = \@seq;
+        $seqstring = $arg{sequence};
+        $seqstring =~ tr/Tt/Uu/;
+        my @seq = split(//, $seqstring);
+        $arg{sequence} = \@seq;
     }
     my $me = bless {
-	nt => {0 => 'A', 1 => 'U', 2 => 'C', 3 => 'G',},
-	sequence => $arg{sequence},
-	seqstring => $seqstring,
-	revcomp => $seqstring,
-	reverse => $seqstring,
-	complement => $seqstring,
-	length => scalar(@{$arg{sequence}}),
-	aaseq => [],
-	aaminusone => [],
-	aaminustwo => [],
-	dint12seq => [],
-	dint23seq => [],
-	dint31seq => [],
-	dint13seq => [],
-	codonseq => [],
-	readop => defined($arg{readop}) ? $arg{readop} : 'straight',
-	ntfreq => {},
-	dintfreq => {},
-	codonfreq => {},
+        nt => {0 => 'A', 1 => 'U', 2 => 'C', 3 => 'G',},
+        sequence => $arg{sequence},
+        seqstring => $seqstring,
+        revcomp => $seqstring,
+        reverse => $seqstring,
+        complement => $seqstring,
+        length => scalar(@{$arg{sequence}}),
+        aaseq => [],
+        aaminusone => [],
+        aaminustwo => [],
+        dint12seq => [],
+        dint23seq => [],
+        dint31seq => [],
+        dint13seq => [],
+        codonseq => [],
+        readop => defined($arg{readop}) ? $arg{readop} : 'straight',
+        ntfreq => {},
+        dintfreq => {},
+        codonfreq => {},
     };
     $me->{revcomp} = scalar reverse $me->{revcomp};
     $me->{reverse} = scalar reverse $me->{reverse};
@@ -535,56 +647,56 @@ sub new {
     $me->{pyrimidine_content} = $me->Get_CT(\@ntseq);
     my (@aaseq, @aaminusone, @aaminustwo, @codonseq, @dint12seq, @dint23seq, @dint31seq, @dint13seq);
     if ($me->{readop} eq 'orf') {
-	my @init = ('A', 'T', 'G');
-	next until (splice(@ntseq, 0, 3) eq @init);
+        my @init = ('A', 'T', 'G');
+        next until (splice(@ntseq, 0, 3) eq @init);
     }
     my $finished = 0;
     my $count = 0;
     my ($one, $two, $three, $last_one, $last_two, $last_three);
     while (scalar(@ntseq) > 2 and $finished == 0) {
-	$count = $count + 3;
-	$me->{dintfreq}{12}{join('', $ntseq[0], $ntseq[1])}++;
-	$me->{dintfreq}{23}{join('', $ntseq[1], $ntseq[2])}++;
-	$me->{dintfreq}{13}{join('', $ntseq[0], $ntseq[2])}++;
-	if ($count == $me->{length}) {
-	    $me->{dintfreq}{31}{join('', $ntseq[2], '*')}++;
-	} else {
-	    $me->{dintfreq}{31}{join('', $ntseq[2], $ntseq[3])}++;
-	}
-	$last_one = $one;
-	$last_two = $two;
-	$last_three = $three;
-	($one, $two, $three) = splice(@ntseq, 0, 3);
-	my $codon_string = join('', $one, $two, $three);
-	$codon_string = uc($codon_string);
-	$codon_string =~ tr/T/U/;
-	my ($minus_one_codon_string, $minus_two_codon_string);
-	if (defined($last_three)) {
-	    $minus_one_codon_string = join('', $last_three, $one, $two);
-	    push(@aaminusone, $references->{codons}{$minus_one_codon_string});
-	}
-	if (defined($last_two)) {
-	    $minus_two_codon_string = join('', $last_two, $last_three, $one);
-	    push(@aaminustwo, $references->{codons}{$minus_two_codon_string});
-	}
+        $count = $count + 3;
+        $me->{dintfreq}{12}{join('', $ntseq[0], $ntseq[1])}++;
+        $me->{dintfreq}{23}{join('', $ntseq[1], $ntseq[2])}++;
+        $me->{dintfreq}{13}{join('', $ntseq[0], $ntseq[2])}++;
+        if ($count == $me->{length}) {
+            $me->{dintfreq}{31}{join('', $ntseq[2], '*')}++;
+        } else {
+            $me->{dintfreq}{31}{join('', $ntseq[2], $ntseq[3])}++;
+        }
+        $last_one = $one;
+        $last_two = $two;
+        $last_three = $three;
+        ($one, $two, $three) = splice(@ntseq, 0, 3);
+        my $codon_string = join('', $one, $two, $three);
+        $codon_string = uc($codon_string);
+        $codon_string =~ tr/T/U/;
+        my ($minus_one_codon_string, $minus_two_codon_string);
+        if (defined($last_three)) {
+            $minus_one_codon_string = join('', $last_three, $one, $two);
+            push(@aaminusone, $references->{codons}{$minus_one_codon_string});
+        }
+        if (defined($last_two)) {
+            $minus_two_codon_string = join('', $last_two, $last_three, $one);
+            push(@aaminustwo, $references->{codons}{$minus_two_codon_string});
+        }
 
-	if (!defined($references->{codons}{$codon_string})) {
-	    print "$codon_string is not defined!\n";
-	}
-	push(@aaseq, $references->{codons}{$codon_string});
-	push(@codonseq, $codon_string);
-	push(@dint12seq, join('', $one, $two));
-	push(@dint23seq, join('', $two, $three));
+        if (!defined($references->{codons}{$codon_string})) {
+            print "$codon_string is not defined!\n";
+        }
+        push(@aaseq, $references->{codons}{$codon_string});
+        push(@codonseq, $codon_string);
+        push(@dint12seq, join('', $one, $two));
+        push(@dint23seq, join('', $two, $three));
 
-	#	push(@dint13seq, join('', $one, $ntseq[0]));
-	($count == $me->{length}) ? push(@dint31seq, join('', $three, '*')) :
-	    push(@dint31seq, join('', $three, $ntseq[0]));
-	$me->{codonfreq}{$codon_string}++;
-	$me->{ntfreq}{$one}++;
-	$me->{ntfreq}{$two}++;
-	$me->{ntfreq}{$three}++;
+        # push(@dint13seq, join('', $one, $ntseq[0]));
+        ($count == $me->{length}) ? push(@dint31seq, join('', $three, '*')) :
+            push(@dint31seq, join('', $three, $ntseq[0]));
+        $me->{codonfreq}{$codon_string}++;
+        $me->{ntfreq}{$one}++;
+        $me->{ntfreq}{$two}++;
+        $me->{ntfreq}{$three}++;
 
-	$finished++ if ($me->{readop} eq 'orf' and ($references->{codons}{$codon_string} eq '*'));
+        $finished++ if ($me->{readop} eq 'orf' and ($references->{codons}{$codon_string} eq '*'));
     }    ## End while the length of sequence > 2
     $me->{aaseq} = \@aaseq;
     $me->{aaminusone} = \@aaminusone;
@@ -596,9 +708,9 @@ sub new {
     $me->{dint13seq} = \@dint13seq;
 
     while (scalar(@ntseq) > 0) {
-	my $nt = shift @ntseq;
-	$me->{ntfreq}{$nt}++;
-	$count++;
+        my $nt = shift @ntseq;
+        $me->{ntfreq}{$nt}++;
+        $count++;
     }
     return ($me);
 }
@@ -620,23 +732,23 @@ sub Random {
     my $count = 0;
     my $codon_count = 0;
     while (scalar(@seq) > 0) {
-	shift @seq;
-	$return[$count] = $me->{nt}->{int(rand(4))};
+        shift @seq;
+        $return[$count] = $me->{nt}->{int(rand(4))};
 
-	## Avoid premature termination codons using the codon table of interest.
-	if ($codon_count == 2) {
-	    my $test = $return[$count - 2] . $return[$count - 1] . $return[$count];
-	    my $fun = $me->{codons}->{$test};
+        ## Avoid premature termination codons using the codon table of interest.
+        if ($codon_count == 2) {
+            my $test = $return[$count - 2] . $return[$count - 1] . $return[$count];
+            my $fun = $me->{codons}->{$test};
 
-	    while ($me->{codons}->{$test} eq '*') {
-		$return[$count - 2] = $me->{nt}->{int(rand(4))};
-		$return[$count - 1] = $me->{nt}->{int(rand(4))};
-		$return[$count] = $me->{nt}->{int(rand(4))};
-		$test = join('', $return[$count - 2], $return[$count - 1], $return[$count]);
-	    }    ## End while we have a ptc
-	}    ## End codon check.
-	($codon_count == 2) ? $codon_count = 0 : $codon_count++;
-	$count++;
+            while ($me->{codons}->{$test} eq '*') {
+                $return[$count - 2] = $me->{nt}->{int(rand(4))};
+                $return[$count - 1] = $me->{nt}->{int(rand(4))};
+                $return[$count] = $me->{nt}->{int(rand(4))};
+                $test = join('', $return[$count - 2], $return[$count - 1], $return[$count]);
+            }    ## End while we have a ptc
+        }    ## End codon check.
+        ($codon_count == 2) ? $codon_count = 0 : $codon_count++;
+        $count++;
     }    ## End top level while
     return (\@return);
 }
@@ -651,10 +763,10 @@ sub SameCodons {
     my @codons = @{$me->{codonseq}};
     my @return;
     while (scalar(@codons) > 0) {
-	my $pull = int(rand(scalar(@codons)));
-	my ($first, $second, $third) = split(//, $codons[$pull]);
-	push(@return, $first, $second, $third);
-	splice(@codons, $pull, 1);
+        my $pull = int(rand(scalar(@codons)));
+        my ($first, $second, $third) = split(//, $codons[$pull]);
+        push(@return, $first, $second, $third);
+        splice(@codons, $pull, 1);
     }
     return (\@return);
 }
@@ -670,22 +782,22 @@ sub Get_CT {
     my $par = shift;
     my $ct;
     if (!defined($par)) {
-	my $len = scalar(@{$arr});
-	my $num_y = 0;
-	foreach my $char (@{$arr}) {
-	    $num_y++ if ($char eq 'c' or $char eq 't' or $char eq 't' or $char eq 'C' or $char eq 'U' or $char eq 'u');
-	}
+        my $len = scalar(@{$arr});
+        my $num_y = 0;
+        foreach my $char (@{$arr}) {
+            $num_y++ if ($char eq 'c' or $char eq 't' or $char eq 't' or $char eq 'C' or $char eq 'U' or $char eq 'u');
+        }
         $len = 1 if (!defined($len) or ($len == 0));
-	$ct = $num_y * 100.0 / $len;
+        $ct = $num_y * 100.0 / $len;
     } else {
-	my $num_y = 0;
-	my $total = 0;
-	for my $c (0 .. $#$par) {
-	    next if ($par->[$c] eq '.');
-	    $num_y++ if ($arr->[$c] eq 'c' or $arr->[$c] eq 't' or $arr->[$c] eq 'C' or $arr->[$c] eq 'T' or $arr->[$c] eq 'U' or $arr->[$c] eq 'u');
-	    $total++;
-	}
-	$ct = (($total == 0) ? 0 : $num_y * 100.0 / $total);
+        my $num_y = 0;
+        my $total = 0;
+        for my $c (0 .. $#$par) {
+            next if ($par->[$c] eq '.');
+            $num_y++ if ($arr->[$c] eq 'c' or $arr->[$c] eq 't' or $arr->[$c] eq 'C' or $arr->[$c] eq 'T' or $arr->[$c] eq 'U' or $arr->[$c] eq 'u');
+            $total++;
+        }
+        $ct = (($total == 0) ? 0 : $num_y * 100.0 / $total);
     }
     $ct = sprintf('%.1f', $ct);
     return($ct);
@@ -702,22 +814,22 @@ sub Get_GC {
     my $par = shift;
     my $gc;
     if (!defined($par)) {
-	my $len = scalar(@{$arr});
-	my $num_strong = 0;
-	foreach my $char (@{$arr}) {
-	    $num_strong++ if ($char eq 'c' or $char eq 'g' or $char eq 'G' or $char eq 'C');
-	}
+        my $len = scalar(@{$arr});
+        my $num_strong = 0;
+        foreach my $char (@{$arr}) {
+            $num_strong++ if ($char eq 'c' or $char eq 'g' or $char eq 'G' or $char eq 'C');
+        }
         $len = 1 if (!defined($len) or ($len == 0));
-	$gc = $num_strong * 100.0 / $len;
+        $gc = $num_strong * 100.0 / $len;
     } else {
-	my $num_strong = 0;
-	my $total = 0;
-	for my $c (0 .. $#$par) {
-	    next if ($par->[$c] eq '.');
-	    $num_strong++ if ($arr->[$c] eq 'c' or $arr->[$c] eq 'g' or $arr->[$c] eq 'C' or $arr->[$c] eq 'G');
-	    $total++;
-	}
-	$gc = (($total == 0) ? 0 : $num_strong * 100.0 / $total);
+        my $num_strong = 0;
+        my $total = 0;
+        for my $c (0 .. $#$par) {
+            next if ($par->[$c] eq '.');
+            $num_strong++ if ($arr->[$c] eq 'c' or $arr->[$c] eq 'g' or $arr->[$c] eq 'C' or $arr->[$c] eq 'G');
+            $total++;
+        }
+        $gc = (($total == 0) ? 0 : $num_strong * 100.0 / $total);
     }
     $gc = sprintf('%.1f', $gc);
     return($gc);
@@ -736,32 +848,32 @@ sub Same31Random {
     my ($third, $first) = undef;
     while (scalar(@dint31seq) > 0) {
 
-	#  The first nucleotide in the codon, checking if we are starting or ending.
-	if (defined($first)) {    ## Not at the beginning of the sequence?
-	    if ($first eq '*') {    ## Maybe at the end?
-		return (\@return);    ## If so, drop out
-	    } else {                  ## If not at the end push the first
-		push(@return, $first);
-	    }
-	}         ## End the if not at the beginning of the sequence
-	else {    ## at the beginning add a random nucleotide at position 1.
-	    push(@return, $me->{nt}->{ int( rand(4))});
-	}
+        #  The first nucleotide in the codon, checking if we are starting or ending.
+        if (defined($first)) {    ## Not at the beginning of the sequence?
+            if ($first eq '*') {    ## Maybe at the end?
+                return (\@return);    ## If so, drop out
+            } else {                  ## If not at the end push the first
+                push(@return, $first);
+            }
+        }         ## End the if not at the beginning of the sequence
+        else {    ## at the beginning add a random nucleotide at position 1.
+            push(@return, $me->{nt}->{ int( rand(4))});
+        }
 
-	#	!defined($first)    ?   ## 1st nucleotide in the sequence?
-	#	  push(@return, $me->{nt}->{int(rand(4))})    :   ## yes
-	#		($first eq '*')    ?  ## End of sequence?
-	#		  return(\@return)    :  ## yes
-	#			push(@return, $first);  ## no
+        # !defined($first)    ?   ## 1st nucleotide in the sequence?
+        #   push(@return, $me->{nt}->{int(rand(4))})    :   ## yes
+        #   ($first eq '*')    ?  ## End of sequence?
+        #     return(\@return)    :  ## yes
+        #     push(@return, $first);  ## no
 
-	#  The second nucleotide in the codon
-	push(@return, $me->{nt}->{int(rand(4))});
+        #  The second nucleotide in the codon
+        push(@return, $me->{nt}->{int(rand(4))});
 
-	#  The third nucleotide in the codon
-	####  Why do I do the shift here?  Think about the recreation of the nucleotide sequence
-	####  for a moment in terms of the first codon and you will see :)
-	($third, $first) = split(//, shift(@dint31seq));
-	push(@return, $third);
+        #  The third nucleotide in the codon
+        ####  Why do I do the shift here?  Think about the recreation of the nucleotide sequence
+        ####  for a moment in terms of the first codon and you will see :)
+        ($third, $first) = split(//, shift(@dint31seq));
+        push(@return, $third);
     }    ## End while.
     return (\@return);
 }
@@ -777,9 +889,9 @@ sub Sameaa {
     my @aaseq = @{$aaref};
     my @return = ();
     while (scalar(@aaseq) > 0) {
-	my $aa = shift @aaseq;
-	my ($first, $second, $third) = split(//, $me->{codons}->{$aa}->[0]->[int(rand(scalar(@{$me->{codons}->{$aa}->[0]})))]);
-	push(@return, $first, $second, $third);
+        my $aa = shift @aaseq;
+        my ($first, $second, $third) = split(//, $me->{codons}->{$aa}->[0]->[int(rand(scalar(@{$me->{codons}->{$aa}->[0]})))]);
+        push(@return, $first, $second, $third);
     }
     return (\@return);
 }
@@ -805,25 +917,25 @@ sub Same31Composite {
     my $first = undef;
     my ($third) = split(//, $dint31seq[0]);
     while (scalar(@dint31seq) > 0) {
-	my $aa = shift @aminos;
-	#  The first nucleotide in the codon, checking if we are starting or ending.
-	!defined($first)
-	    ?    ## 1st nucleotide in the sequence?
-	    push(@codons, $me->Find_Alternates($aa, "..$third"))
-	    :    ## yes
-	    ($first eq '*')
-	    ?    ## End of sequence?
-	    return (\@codons)
-	    :    ## yes
-	    push(@codons, $me->Find_Alternates($aa, "$first.$third"));
+        my $aa = shift @aminos;
+        #  The first nucleotide in the codon, checking if we are starting or ending.
+        !defined($first)
+            ?    ## 1st nucleotide in the sequence?
+            push(@codons, $me->Find_Alternates($aa, "..$third"))
+            :    ## yes
+            ($first eq '*')
+            ?    ## End of sequence?
+            return (\@codons)
+            :    ## yes
+            push(@codons, $me->Find_Alternates($aa, "$first.$third"));
 
-	#			push(@codons, $first);  ## no
-	#  The second nucleotide in the codon
-	#	push(@codons, $me->Find_Alternates($aa, "$first.$third"));
-	#  The third nucleotide in the codon
-	####  Why do I do the shift here?  Think about the recreation of the nucleotide sequence
-	####  for a moment in terms of the first codon and you will see :)
-	($third, $first) = split(//, shift(@dint31seq));
+        # push(@codons, $first);  ## no
+        #  The second nucleotide in the codon
+        # push(@codons, $me->Find_Alternates($aa, "$first.$third"));
+        #  The third nucleotide in the codon
+        ####  Why do I do the shift here?  Think about the recreation of the nucleotide sequence
+        ####  for a moment in terms of the first codon and you will see :)
+        ($third, $first) = split(//, shift(@dint31seq));
     }    ## End while.
     return (\@codons);
 }
@@ -889,13 +1001,13 @@ Code shamelessly taken from Jonathan Jacobs' <jlj email> work from 2003.
 
 =cut
 sub Coin_Random {
-  my $me = shift;
-  my $sequence = shift;
-  my @nucleotides = ('a','u','g','c');
-  for my $c ($#$sequence) {
-    $sequence->[$c] = $nucleotides[int(rand(4))];
-  }
-  return ($sequence);
+    my $me = shift;
+    my $sequence = shift;
+    my @nucleotides = ('a','u','g','c');
+    for my $c ($#$sequence) {
+        $sequence->[$c] = $nucleotides[int(rand(4))];
+    }
+    return ($sequence);
 }
 
 =head2 C<Nucleotide_Montecarlo>
@@ -905,17 +1017,17 @@ Code shamelessly taken from Jonathan Jacobs' <jlj email> work from 2003.
 
 =cut
 sub Nucleotide_Montecarlo {
-  my $start_sequence = shift;
-  my @st = @{$start_sequence};
-  my $new_sequence = [];
-  my $new_seq_count = 0;
-  while (@st) {
-    my $position = rand(@st);
-    $new_sequence->[$new_seq_count] = $position;
-    $new_seq_count++;
-    splice(@st, $position, 1);
-  }
-  return ($new_sequence);
+    my $start_sequence = shift;
+    my @st = @{$start_sequence};
+    my $new_sequence = [];
+    my $new_seq_count = 0;
+    while (@st) {
+        my $position = rand(@st);
+        $new_sequence->[$new_seq_count] = $position;
+        $new_seq_count++;
+        splice(@st, $position, 1);
+    }
+    return ($new_sequence);
 }
 
 =head2 C<Dinucleotide>
@@ -937,9 +1049,9 @@ sub Dinucletode {
     my @doublets = ();
     push(@doublets, $start_sequence =~ /(?=(\w\w))/g);
     while (scalar(@{$start_sequence}) > scalar(@new_sequence)) {
-	my $chosen_doublet = int(rand(@doublets));
-	my ($base1, $base2) = split(//, $doublets[$chosen_doublet]);
-	push(@new_sequence, $base1, $base2);
+        my $chosen_doublet = int(rand(@doublets));
+        my ($base1, $base2) = split(//, $doublets[$chosen_doublet]);
+        push(@new_sequence, $base1, $base2);
     }
     return (\@new_sequence);
 }
@@ -957,10 +1069,10 @@ sub Codon_montecarlo {
     my $new_seq_count = 0;
     my @codons = $$start_sequence =~ /(\w\w\w)/g;
     while (@codons) {
-	my $position = rand(@codons);
-	my @nts = split(//, $codons[$position]);
-	push(@new_sequence, @nts);
-	splice(@codons, $position, 1);
+        my $position = rand(@codons);
+        my @nts = split(//, $codons[$position]);
+        push(@new_sequence, @nts);
+        splice(@codons, $position, 1);
     }
     return (\@new_sequence);
 }
@@ -977,8 +1089,8 @@ sub Related_Codon {
     my $start_sequence = shift;
     my @codons = $start_sequence =~ /(\w\w\w)/g;
     for my $c (0 .. $#codons) {
-	my @potential = split(/\s/, $Randomize::amino_acids{$codons[$c]});
-	$codons[$c] = $potential[ rand(@potential)];
+        my @potential = split(/\s/, $Randomize::amino_acids{$codons[$c]});
+        $codons[$c] = $potential[ rand(@potential)];
     }
     return (\@codons);
 }
@@ -993,9 +1105,9 @@ sub ArrayShuffle {
     my $seqArrayREF = shift;
     my @arrayREF = @$seqArrayREF;
     for (my $i = @arrayREF ; --$i ;) {
-	my $j = int rand($i + 1);
-	next if $i == $j;
-	@arrayREF[$i, $j] = @arrayREF[$j, $i];
+        my $j = int rand($i + 1);
+        next if $i == $j;
+        @arrayREF[$i, $j] = @arrayREF[$j, $i];
     }
     return (\@arrayREF);
 }
@@ -1081,22 +1193,22 @@ sub Codon_Distribution {
     my $me = shift;
     my %args = @_;
     my $residues = ['*'] unless ($args{residues});
-#    my $sequence = $me->{aaminusone} unless ($args{sequence});
+    #    my $sequence = $me->{aaminusone} unless ($args{sequence});
     my $sequence = ($args{sequence} ? $args{sequence} : $me->{aaminusone});
     my $dist_array = ($args{dist_array} ? $args{dist_array} : []);
     my @seq = @{$sequence};
     my $dist = 0;
-    LOOP: while (@seq) {
-	my $current = shift(@seq);
-	foreach my $res (@{$residues}) {
-	    if ($current eq $res) {
-		$dist_array = $me->Add_One($dist, $dist_array);
-		$dist = 0;
-		next LOOP;
-	    }
-	}
-	$dist++;
-    } ## End of the while loop
+  LOOP: while (@seq) {
+      my $current = shift(@seq);
+      foreach my $res (@{$residues}) {
+          if ($current eq $res) {
+              $dist_array = $me->Add_One($dist, $dist_array);
+              $dist = 0;
+              next LOOP;
+          }
+      }
+      $dist++;
+  } ## End of the while loop
     return($dist_array);
 }
 
