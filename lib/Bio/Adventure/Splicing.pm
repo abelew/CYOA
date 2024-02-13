@@ -172,7 +172,6 @@ fi
     my %files_by_condition = ();
     my %samples_by_condition = ();
     my $sample_count = -1;
-    print "TESTME: Starting to iterate over samplenames.\n";
   SAMPLENAMES: for my $s (@samplenames) {
       $sample_count++;
       my $f = $filenames[$sample_count];
@@ -197,10 +196,10 @@ fi
 
     if ($filename_heading ne $options->{file_column}) {
         print "Something seems wrong with the name of the file entry.\n";
-    }
+  }
     if ($condition_heading ne $options->{condition_column}) {
         print "Something seems wrong with the name of the condition entry.\n";
-    }
+  }
 
     ## Now start creating the invocation strings for the various steps
     ## suppa will perform.  The first step is already complete: the
@@ -218,22 +217,28 @@ fi
         my $count = -1;
       FILES: for my $f (@{$files_by_condition{$cond}}) {
           next FILES unless(defined($f));
-            $count++;
-            my $sample = $sample_names[$count];
-            ## The following if handles salmon/kallisto inputs; htseq
-            ## will require an explicit tpm conversion.
-            if ($options->{mapper} eq 'salmon') {
-                $awk_string .= qq!awk '{printf("\%s\\t\%s\\n", \$1, \$4)}' ${f} > ${tpm_base}/${sample}.tpm
+          $count++;
+          my $sample = $sample_names[$count];
+          ## The following if handles salmon/kallisto inputs; htseq
+          ## will require an explicit tpm conversion.
+          if ($options->{mapper} eq 'salmon') {
+              $awk_string .= qq!
+if [[ -r "${tpm_base}/${sample}.tpm" ]]; then
+  echo "The tpm file for ${sample} already exists."
+else
+  awk '{printf("\%s\\t\%s\\n", \$1, \$4)}' ${f} > ${tpm_base}/${sample}.tpm
+  perl -p -i.unmodified -e 's/^(\\w+)\\.\\d+(\\s+.*\$)/\$1\$2/g' ${tpm_base}/${sample}.tpm
+fi
 !;
-            } elsif ($options->{mapper} eq 'kallisto') {
-                ## I think I can just copy outputs from rsem too? (check that)
-                $awk_string = qq!cp ${f} ${tpm_base}/${sample}.tpm
+          } elsif ($options->{mapper} eq 'kallisto') {
+              ## I think I can just copy outputs from rsem too? (check that)
+              $awk_string = qq!cp ${f} ${tpm_base}/${sample}.tpm
 !;
-            } else {
-                die("I need a tpm conversion here and have not added it yet.");
-            }
-            $file_string .= qq!${tpm_base}/${sample}.tpm !;
-        }
+          } else {
+              die("I need a tpm conversion here and have not added it yet.");
+          }
+          $file_string .= qq!${tpm_base}/${sample}.tpm !;
+      }
         ## Now use suppa's joinFiles function to reformat the inputs
         ## into its (bizarre to me) expected format.
         $join_string .= qq!
@@ -245,18 +250,7 @@ else
     2>>${tpm_base}.stderr 1>>${tpm_base}.stdout
 fi
 !;
-        ## Salmon puts the version number at the end of the IDs, suppa
-        ## cannot deal with this.
-        if ($options->{mapper} eq 'salmon') {
-            $join_string .= qq!
-if [[ -r "${tpm_base}/${cond}.tpm.unmodified" ]]; then
-  echo "The sanitized tpm already exists."
-else
-  echo "Sanitizing the salmon tpm files."
-  perl -p -i.unmodified -e 's/^(\\w+)\\.\\d+(\\s+.*\$)/\$1\$2/g' ${tpm_base}/${cond}.tpm
-fi
-!;
-        }
+
         ## Given the full set of annotations and tpm inputs, create a
         ## PSI for all events.
         $psi_string .= qq!

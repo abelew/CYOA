@@ -130,7 +130,7 @@ sub Fragment_Genome_Worker {
                                           -display_id => qq"${id}_fwd_${size}_${chunk_start}_${chunk_end}");
             my $written = $seqio_out->write_seq($chunk_seq);
             my $rev_chunk_seq = Bio::Seq->new(-seq => $revcomp_contig_subseq,
-                                          -display_id => qq"${id}_rev_${size}_${chunk_start}_${chunk_end}");
+                                              -display_id => qq"${id}_rev_${size}_${chunk_start}_${chunk_end}");
             my $rev_written = $seqio_out->write_seq($rev_chunk_seq);
             $num_written++;
             $chunk_start = ($chunk_start + $size) - $overlap_d2;
