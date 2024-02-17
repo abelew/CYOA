@@ -129,8 +129,10 @@ sub Download_SRA_PRJNA {
     print $log "Beginning download of SRA samples associated with: $options->{input}.\n";
     my $eutil = Bio::DB::EUtilities->new(
         -eutil => 'esearch', -email => $options->{email},
+        -retmax => 10000,	
         -db => 'sra', -term => $accession,);
     my $id_count = $eutil->get_count;
+    my $id_max = $eutil->get_retmax;
     if (!defined($id_count)) {
         print $log "Did not find any SRA accession for this accession.\n";
     } else {
@@ -139,8 +141,10 @@ sub Download_SRA_PRJNA {
     my @ids = $eutil->get_ids;
     my $summary = Bio::DB::EUtilities->new(
         -eutil => 'esummary', -email => $options->{email},
+        -retmax => 10000,
         -db => 'sra', -id => \@ids);
     my $count = 0;
+    my $item_count = 0;
   DOCS: while (my $docsum = $summary->next_DocSum) {
       my $id_info = {
           uid => $ids[$count],
@@ -148,6 +152,7 @@ sub Download_SRA_PRJNA {
       my $accession;
     ITEMS: while (my $item = $docsum->next_Item) {
         ## This prints stuff like 'Runs ExtLinks CreateDate etc' followed by the data associated therein.
+	$item_count++;
         my $name = $item->get_name;
           if ($name eq 'Runs') {
               my $stuff = $item->get_content;
@@ -188,11 +193,28 @@ sub Download_SRA_PRJNA {
               my $protocol = $stuff;
               $protocol =~ s/.*\<LIBRARY_CONSTRUCTION_PROTOCOL\>(.*?)\<\/LIBRARY_CON.*/$1/g;
               $id_info->{protocol} = $protocol;
-          }
-    }
+	  } elsif ($name eq 'ExtLinks') {
+	      my $stuff = $item->get_content;
+              my $title = $stuff;
+              $title =~ s/.*\<Title\>(.*?)\<\/Title\>.*/$1/g;
+              $id_info->{links} = $title;
+	  } elsif ($name eq 'CreateDate') {
+	      my $stuff = $item->get_content;
+              my $title = $stuff;
+              $title =~ s/.*\<Title\>(.*?)\<\/Title\>.*/$1/g;
+              $id_info->{create} = $title;
+	  } elsif ($name eq 'UpdateDate') {
+	      my $stuff = $item->get_content;
+              my $title = $stuff;
+              $title =~ s/.*\<Title\>(.*?)\<\/Title\>.*/$1/g;
+              $id_info->{update} = $title;
+          } else {
+	      print "This item has a name I haven't parsed yet: $name\n";
+	  }
+    } ## End iterating over items
       $sra_info{$accession} = $id_info;
       $count++;
-  }
+  } ## End iterating over the document summary
 
     ## Print the output csv file.
     my @order = ('accession', 'total_spots', 'total_bases', 'experiment_acc',

@@ -60,8 +60,10 @@ sub Align_SNP_Search {
 
 =head2 C<Freebayes_SNP_Search>
 
- Invoke freebayes to create and filter a set of variant positions.
- arXiv:1207.3907
+ Invoke freebayes to create and filter a set of variant positions
+ after using GATK to limit the duplicate sequence effect.
+ GATK: 10.1186/s40104-019-0359-0
+ freebayes: arXiv:1207.3907
 
 =cut
 sub Freebayes_SNP_Search {

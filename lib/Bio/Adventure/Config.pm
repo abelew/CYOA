@@ -89,6 +89,7 @@ sub Get_Menus {
             message => 'And it rained a fever. And it rained a silence. And it rained a sacrifice. And it rained a miracle. And it rained sorceries and saturnine eyes of the totem.  Go to page 2584981.',
             choices => {
                 '(sam2bam): Convert a sam mapping to compressed/sorted/indexed bam.' => \&Bio::Adventure::Convert::Sam2Bam,
+                '(bam2cov): Convert a sorted bam to tsv of coverage/base.' => \&Bio::Adventure::Convert::Bam2Coverage,
                 '(gb2gff): Convert a genbank flat file to gff/fasta files.' => \&Bio::Adventure::Convert::Gb2Gff,
                 '(gff2fasta): Convert a gff file to a fasta file.' => \&Bio::Adventure::Convert::Gff2Fasta,
             },
@@ -341,6 +342,7 @@ sub Get_Modules {
         'Assembly_Coverage' => {
             modules => ['cyoa', 'hisat2', 'samtools', 'bbmap',], },
         'Bacphlip' => { modules => 'bacphlip', exe => 'bacphlip' },
+        'Bam2Coverage' => { modules => ['samtools', 'bbmap',] },
         'Bedtools_Coverage' =>  { modules => 'bedtools', exe => 'bedtools' },
         'Biopieces_Graph' => { modules => ['biopieces'] },
         'Bowtie' => { modules => 'bowtie1' },
@@ -524,17 +526,32 @@ sub Get_TODOs {
     my %args = @_;
     my $todo_list = ();
     my $possible_todos = {
+        ## Run Torsten Seeman's abricate against an assembly to look for groups of genes,
+        ## primarily antibiotic resistance, but any database may be performed.
         "abricate+" => \$todo_list->{todo}{'Bio::Adventure::Resistance::Abricate'},
+        ## Create an assembly using Abyss.
         "abyss+" => \$todo_list->{todo}{'Bio::Adventure::Assembly::Abyss'},
+        ## Filter a population genetics dataset via Angsd
         "angsdfilter+" => \$todo_list->{todo}{'Bio::Adventure::PopGen::Angsd_Filter'},
+        ## Use my phage pipeline to attempt to annotate a phage assembly.
         "annotatephage+" => \$todo_list->{todo}{'Bio::Adventure::Pipeline::Annotate_Phage'},
+        ## Given an assembly, search for tRNA-like genes.
         "aragorn+" => \$todo_list->{todo}{'Bio::Adventure::Feature_Prediction::Aragorn'},
+        ## Remap reads to a new assembly to estimate coverage on a per-baseis.
         "assemblycoverage+" => \$todo_list->{todo}{'Bio::Adventure::Assembly::Assembly_Coverage'},
+        ## Use the logic from Assembly_Coverage to calculate coverage vs. an existing genome.
+        "bam2cov+" => \$todo_list->{todo}{'Bio::Adventure::Convert::Bam2Coverage'},
+        ## Use bedtools to calculate coverage, partially redundant with bam2cov
         "bedcov+" => \$todo_list->{todo}{'Bio::Adventure::Count::Bedtools_Coverage'},
+        ## Biopieces provides some fun utilities for QA/QC.
         "biopieces+" => \$todo_list->{todo}{'Bio::Adventure::QA::Biopieces_Graph'},
+        ## Split up a large set of sequences, run blast on them, and merge the result.
         "blastmerge+" => \$todo_list->{todo}{'Bio::Adventure::Align_Blast::Merge_Blast_Parse'},
+        ## Simplify the results from blast into a table
         "blastparse+" => \$todo_list->{todo}{'Bio::Adventure::Align_Blast::Blast_Parse'},
+        ## Perform all of the steps noted in blastmerge
         "blastsplitalign+" => \$todo_list->{todo}{'Bio::Adventure::Align_Blast::Split_Align_Blast'},
+        ## Run old-school bowtie
         "bowtie+" => \$todo_list->{todo}{'Bio::Adventure::Map::Bowtie'},
         "bowtie2+" => \$todo_list->{todo}{'Bio::Adventure::Map::Bowtie2'},
         "bowtierrna+" => \$todo_list->{todo}{'Bio::Adventure::Map::Bowtie_RRNA'},
