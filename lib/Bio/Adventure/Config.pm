@@ -661,7 +661,7 @@ sub Get_TODOs {
         "star+" => \$todo_list->{todo}{'Bio::Adventure::Map::STAR'},
         "suppa+" => \$todo_list->{todo}{'Bio::Adventure::Splicing::Suppa'},
         "tacheck+" => \$todo_list->{todo}{'Bio::Adventure::TNSeq::TA_Check'},
-        "test+" => \$todo_list->{todo}{'Bio::Adventure::Slurm::Test_Job'},
+        "test+" => \$todo_list->{todo}{'Bio::Adventure::Test_Job'},
         "tophat+" => \$todo_list->{todo}{'Bio::Adventure::Map::Tophat'},
         "tpp+" => \$todo_list->{todo}{'Bio::Adventure::TNSeq::Transit_TPP'},
         "trainprodigal+" => \$todo_list->{todo}{'Bio::Adventure::Annotation::Train_Prodigal'},

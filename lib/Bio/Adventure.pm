@@ -1506,6 +1506,12 @@ module add ';
     return($result);
 }
 
+sub Test_Job {
+    my ($class, %args) = @_;
+    my $cyoa = Bio::Adventure->new();
+    my $test = $class->Bio::Adventure::SNP::Test_Worker(%args);
+}
+
 =head2 C<Wait>
 
 Wait on a job, when possible collect information about it.
