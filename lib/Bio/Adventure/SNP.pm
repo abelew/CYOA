@@ -571,8 +571,9 @@ sub SNP_Ratio_Worker {
     ## NC_045512.2     3037    .       C       T       224     PASS    DP=244;ADF=0,121;ADR=0,121;AD=0,242;VDB=0;SGB=-0.693147;MQSB=0.976205;MQ0F=0;AC=2;AN=2;DP4=0,0,121,121;MQ=42    GT:PL:DP:SP:ADF:ADR:AD  1/1:254,255,0:242:0:0,121:0,121:0,242
     print $log "Reading bcf file.\n";
     my $count = 0; ## Use this to count the positions changed in the genome.
-    my $num_variants = 0; ## Use this to count the variant positions of reasonably high confidence.
+    my $num_variants = 0; ## Use this to count the lines read in the bcf file.
   READER: while (my $line = <$in_bcf>) {
+      $num_variants++;
       next READER if ($line =~ /^#/);
       ## When using samtools mpileup with the -t LIST, we get some extra
       ## fields at the end which are called tags and tag_info here.
@@ -612,6 +613,7 @@ sub SNP_Ratio_Worker {
     } ## End iterating over the tags in the data.
       push(@tag_observations, \%individual_tags);
   } ## End reading the bcf file.
+    print $log "Finished reading ${num_variants} entries in the bcf file.\n";
     $in_bcf->close();
     ## Now we should have a big array full of little hashes
     my @used_tags = ('position', );
@@ -663,8 +665,8 @@ sub SNP_Ratio_Worker {
       my $vcf_cutoff = $options->{vcf_cutoff};
       if (defined($vcf_cutoff)) {
           if ($datum->{$depth_tag} < $vcf_cutoff) {
-              print "Dropping $datum->{position} because depth ($datum->{$depth_tag}) is less than $vcf_cutoff.\n";
-              print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
+              print "Dropping $datum->{position} because depth ($datum->{$depth_tag}) is less than ${vcf_cutoff}.\n";
+              print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{$chosen}\n";
               next SHIFTER;
           }
       }
@@ -796,7 +798,8 @@ sub SNP_Ratio_Worker {
 
   } ## End looking at the each observation.
     $all_out->close();  ## Close out the matrix of observations.
-
+    print $log "Iterated over ${points} attempted variant modifications.\n";
+    print $log "Writing variants as (variants/kilobase gene)/megabase chromosome.\n";
     $output_by_gene->close();
     my $var_by_genelength = FileHandle->new(">$options->{output_pkm}");
     print $var_by_genelength qq"gene\tvars_by_length\n";
@@ -812,7 +815,7 @@ sub SNP_Ratio_Worker {
         print $var_by_genelength "${geneid}\t${gene_ratio}\n";
     }
     $var_by_genelength->close();
-
+    print $log "Writing out modified genome to $options->{output_genome}.\n";
     my $output_genome = FileHandle->new(">$options->{output_genome}");
     foreach my $ch (sort keys %{$input_genome}) {
         ## my $formatted = $text->format($input_genome->{$ch}->{sequence});
@@ -1468,8 +1471,8 @@ sub Snippy {
 
     my $snippy_input = $options->{input};
     my $test_file = "";
-    if ($snippy_input =~ /\:|\;|\,|\s+/) {
-        my @pair_listing = split(/\:|\;|\,|\s+/, $snippy_input);
+    if ($snippy_input =~ /$options->{delimiter}/) {
+        my @pair_listing = split(/$options->{delimiter}/, $snippy_input);
         $pair_listing[0] = File::Spec->rel2abs($pair_listing[0]);
         $pair_listing[1] = File::Spec->rel2abs($pair_listing[1]);
         $snippy_input = qq" --R1 $pair_listing[0] --R2 $pair_listing[1] ";

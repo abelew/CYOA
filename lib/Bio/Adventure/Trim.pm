@@ -42,7 +42,7 @@ sub Cogent {
     my $job_name = $class->Get_Job_Name();
     my $inputs = $class->Get_Paths($options->{input});
     my $cwd_name = basename(cwd());
-    my @input_filenames = split(/\:|\;|\,|\s+/, $options->{input});
+    my @input_filenames = split(/$options->{delimiter}/, $options->{input});
     my $output_dir = qq"outputs/$options->{jprefix}cogent";
     my $comment = qq!## This is a cogent demultiplexing/trimming job.
 !;
@@ -268,8 +268,8 @@ sub Fastp {
     my $stderr = qq"${out_dir}/fastp.stderr";
     my $stdout = qq"${out_dir}/fastp.stdout";
     my $input_flags = '';
-    if ($fastp_input =~ /\:|\;|\,|\s+/) {
-        my @pair_listing = split(/\:|\;|\,|\s+/, $fastp_input);
+    if ($fastp_input =~ /$options->{delimiter}/) {
+        my @pair_listing = split(/$options->{delimiter}/, $fastp_input);
         $pair_listing[0] = File::Spec->rel2abs($pair_listing[0]);
         $pair_listing[1] = File::Spec->rel2abs($pair_listing[1]);
         my $r1_outdir = dirname($pair_listing[0]);
@@ -335,7 +335,7 @@ sub Racer {
         required => ['input', ],);
     my $job_name = $class->Get_Job_Name();
     my $input = $options->{input};
-    my @input_list = split(/:|\,/, $input);
+    my @input_list = split(/$options->{delimiter}/, $input);
     my @suffixes = ('.fastq', '.gz', '.xz');
     my $decompress_input = 0;
     my @base_list = ();
@@ -428,7 +428,7 @@ sub Trimomatic {
         jprefix => '01',
         jwalltime => '36:00:00',);
     my $trim;
-    if ($options->{input} =~ /:|\,/) {
+    if ($options->{input} =~ /$options->{delimiter}/) {
         $trim = $class->Bio::Adventure::Trim::Trimomatic_Pairwise(%{$options});
     } else {
         $trim = $class->Bio::Adventure::Trim::Trimomatic_Single(%{$options});
@@ -473,7 +473,7 @@ sub Trimomatic_Pairwise {
     }
     my $adapter_file = dist_file('Bio-Adventure', 'genome/adapters.fa');
     my $input = $options->{input};
-    my @input_list = split(/:|\,/, $input);
+    my @input_list = split(/$options->{delimiter}/, $input);
     if (scalar(@input_list) <= 1) {
         my $ret = $class->Bio::Adventure::Trim::Trimomatic_Single(input => $input,);
         return($ret);

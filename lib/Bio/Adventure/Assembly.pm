@@ -66,8 +66,8 @@ sub Abyss {
     my $name_string = qq"name=${outname} ";
     my $input_string = "";
     my $executable = "abyss-pe";
-    if ($options->{input} =~ /\:|\;|\,|\s+/) {
-        my @in = split(/\:|\;|\,|\s+/, $options->{input});
+    if ($options->{input} =~ /$options->{delimiter}/) {
+        my @in = split(/$options->{delimiter}/, $options->{input});
         my $r1 = abs_path($in[0]);
         my $r2 = abs_path($in[1]);
         $input_string = qq!in="${r1} ${r2}" !;
@@ -146,8 +146,8 @@ sub Assembly_Coverage {
     my $outname = basename(cwd());
     my $output_dir = qq"outputs/$options->{jprefix}assembly_coverage_${outname}";
     my $input_string = '';
-    if ($options->{input} =~ /\:|\;|\,|\s+/) {
-        my @in = split(/\:|\;|\,|\s+/, $options->{input});
+    if ($options->{input} =~ /$options->{delimiter}/) {
+        my @in = split(/$options->{delimiter}/, $options->{input});
         my $r1 = abs_path($in[0]);
         my $r2 = abs_path($in[1]);
         $input_string = qq" -1 <(less ${r1}) -2 <(less ${r2}) ";
@@ -550,8 +550,8 @@ sub Shovill {
     my $outname = basename(cwd());
     my $output_dir = qq"outputs/$options->{jprefix}shovill";
     my $input_string = "";
-    if ($options->{input} =~ /\:|\;|\,|\s+/) {
-        my @in = split(/\:|\;|\,|\s+/, $options->{input});
+    if ($options->{input} =~ /$options->{delimiter}/) {
+        my @in = split(/$options->{delimiter}/, $options->{input});
         $input_string = qq" -R1 $in[0] -R2 $in[1]";
     } else {
         $input_string = qq" -R1 $options->{input}";
@@ -622,8 +622,8 @@ sub Trinity {
     my $job_name = $class->Get_Job_Name();
     my $output_dir = qq"outputs/$options->{jprefix}trinity_${job_name}";
     my $input_string = '';
-    if ($options->{input} =~ /\:|\;|\,|\s+/) {
-        my @in = split(/\:|\;|\,|\s+/, $options->{input});
+    if ($options->{input} =~ /$options->{delimiter}/) {
+        my @in = split(/$options->{delimiter}/, $options->{input});
         $input_string = qq"--left <(less $in[0]) --right <(less $in[1]) ";
     } else {
         $input_string = qq"--single <(less $options->{input}) ";
@@ -714,8 +714,8 @@ sub Trinity_Post {
     my $trinity_path = which('Trinity');
     my $trinity_exe_dir = dirname($trinity_path);
     my $input_string = "";
-    if ($options->{input} =~ /\:|\;|\,|\s+/) {
-        my @in = split(/\:|\;|\,|\s+/, $options->{input});
+    if ($options->{input} =~ /$options->{delimiter}/) {
+        my @in = split(/$options->{delimiter}/, $options->{input});
         $input_string = qq"--left $in[0] --right $in[1] ";
     } else {
         $input_string = qq"--single $options->{input} ";
@@ -819,8 +819,8 @@ sub Unicycler {
     my $shovill_input = '';
     my $ln_string = '';
     my $backup_string = '';
-    if ($options->{input} =~ /\:|\;|\,|\s+/) {
-        my @in = split(/\:|\;|\,|\s+/, $options->{input});
+    if ($options->{input} =~ /$options->{delimiter}/) {
+        my @in = split(/$options->{delimiter}/, $options->{input});
         $input_string = qq" -1 ${output_dir}/r1.fastq -2 ${output_dir}/r2.fastq";
         $shovill_input = qq" --R1 ${output_dir}/r1.fastq --R2 ${output_dir}/r2.fastq ";
         $ln_string = qq"less $in[0] > ${output_dir}/r1.fastq
@@ -927,8 +927,8 @@ sub Velvet {
     my $job_name = $class->Get_Job_Name();
     my $output_dir = qq"outputs/velvet_${job_name}";
     my $input_string = "";
-    if ($options->{input} =~ /\:|\;|\,|\s+/) {
-        my @in = split(/\:|\;|\,|\s+/, $options->{input});
+    if ($options->{input} =~ /$options->{delimiter}/) {
+        my @in = split(/$options->{delimiter}/, $options->{input});
         $input_string = qq" -fastq -short2 -separate <(less $in[0]) <(less $in[1])";
     } else {
         $input_string = qq" -fastq -short <(less $options->{input})";

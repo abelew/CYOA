@@ -40,7 +40,7 @@ sub Biopieces_Graph {
     my $input = $options->{input};
     my $jname = $class->Get_Job_Name();
     $jname = qq"biop_${jname}";
-    my @inputs = split(/\,|\:|\;/, $input);
+    my @inputs = split(/$options->{delimiter}/, $input);
     my $comment = '## This script uses biopieces to draw some simple graphs of the sequence.';
     my $output_dir = 'output/biopieces';
     my $stdout = qq"${output_dir}/biopieces.stdout";

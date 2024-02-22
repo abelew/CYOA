@@ -737,7 +737,7 @@ sub Jellyfish {
         required => ['input'],
         length => '9,11,13,15',
         jprefix => 18,);
-    my @kmer_array = split(/\,|:/, $options->{length});
+    my @kmer_array = split(/[:;,]/, $options->{length});
     my $count = 0;
     my $ret;
     if (scalar(@kmer_array) > 1) {
@@ -768,9 +768,9 @@ sub Jellyfish {
     my $output_dir = qq"outputs/$options->{jprefix}jellyfish_${cwd_name}";
 
     my $input_string = qq"<(less $options->{input})";
-    if ($options->{input} =~ /\:|\;|\,|\s+/) {
+    if ($options->{input} =~ /$options->{delimiter}/) {
         ## Then multiple files were provided.
-        my @file_list = split(/\:|\;|\,|\s+/, $options->{input});
+        my @file_list = split(/$options->{delimiter}/, $options->{input});
         $input_string = '';
         for my $f (@file_list) {
             $input_string .= qq"<(less $f) ";
@@ -825,7 +825,7 @@ jellyfish dump ${count_file} > ${count_fasta} \\
     if ($options->{jprefix} =~ /_/) {
         my ($pre, $post) = split(/_/, $options->{jprefix});
         $post = $post + 1;
-        $new_prefix = qq"$Ppre}_${post}";
+        $new_prefix = qq"${pre}_${post}";
     } else {
         $new_prefix = $options->{jprefix} + 1;
     }
@@ -969,8 +969,8 @@ sub Kraken {
     my $output_dir = qq"outputs/$options->{jprefix}kraken_$options->{library}";
     make_path($output_dir);
     my $input_string = "";
-    if ($options->{input} =~ /\:|\;|\,|\s+/) {
-        my @in = split(/\:|\;|\,|\s+/, $options->{input});
+    if ($options->{input} =~ /$options->{delimiter}/) {
+        my @in = split(/$options->{delimiter}/, $options->{input});
         $input_string = qq" --paired <(less $in[0]) <(less $in[1]) ";
         if ($in[0] =~ /\.fastq$/) {
             $input_string = qq" --paired $in[0] $in[1] ";
@@ -1758,8 +1758,8 @@ sub SLSearch_Worker {
     ## read which matches the forward or RC versions of the SL and
     ## a summary txt file of the result.
     my @input_lst = ();
-    if ($options->{input} =~ /\:|\;|\,|\s+/) {
-        my @tmp_lst = split(/\:|\;|\,|\s+/, $options->{input});
+    if ($options->{input} =~ /$options->{delimiter}/) {
+        my @tmp_lst = split(/$options->{delimiter}/, $options->{input});
         for my $i (@tmp_lst) {
             push (@input_lst, $i) if (-r $i);
         }
@@ -1947,8 +1947,8 @@ sub SL_UTR_Worker {
     ## read which matches the forward or RC versions of the SL and
     ## a summary txt file of the result.
     my @input_lst = ();
-    if ($options->{input} =~ /\:|\;|\,|\s+/) {
-        my @tmp_lst = split(/\:|\;|\,|\s+/, $options->{input});
+    if ($options->{input} =~ /$options->{delimiter}/) {
+        my @tmp_lst = split(/$options->{delimiter}/, $options->{input});
         for my $i (@tmp_lst) {
             push (@input_lst, $i) if (-r $i);
         }
