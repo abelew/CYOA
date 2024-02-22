@@ -13,6 +13,7 @@ use Bio::Seq;
 use Bio::SeqIO;
 use Bio::SeqFeature::Generic;
 use Bio::Tools::GFF;
+use Cwd qw"abs_path getcwd cwd";
 use File::Basename;
 use File::Which qw"which";
 use List::MoreUtils qw"uniq";
@@ -33,6 +34,53 @@ no warnings qw"experimental::try";
 =head1 METHODS
 
 =cut
+
+sub Bam2Coverage {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['input',],
+        ## input is the corrected/filtered reads, library is the assembly
+        jmem => 12,
+        jprefix => 14,);
+    my $job_name = $class->Get_Job_Name();
+    my $outname = basename(cwd());
+    my $output_dir = qq"outputs/$options->{jprefix}bam2coverage_${outname}";
+    my $comment = qq!## This reads a bam alignment and prints out coverage/base.
+!;
+    my $stdout = qq"${output_dir}/coverage.stdout";
+    my $stderr = qq"${output_dir}/coverage.stderr";
+    my $output = qq"${output_dir}/coverage.tsv";
+    my $jstring = qq!start=\$(pwd)
+mkdir -p ${output_dir}
+pileup.sh in=$options->{input} \\
+  out=${output} \\
+  basecov=${output_dir}/base_coverage.tsv \\
+  covwindow=100 \\
+  k=19 \\
+  overwrite=true \\
+  2>>${stderr} \\
+  1>>${stdout}
+xz -9e -f ${output} ${output_dir}/base_coverage.tsv
+!;
+    my $coverage = $class->Submit(
+        comment => $comment,
+        jcpu => 6,
+        jdepends => $options->{jdepends},
+        jname => qq"bam2cov_${job_name}",
+        jprefix => $options->{jprefix},
+        jstring => $jstring,
+        jmem => $options->{jmem},
+        jwalltime => '4:00:00',
+        output => $output,
+        output_bam => qq"${output_dir}/coverage.bam",
+        output_tsv => qq"${output_dir}/coverage.tsv",
+        prescript => $options->{prescript},
+        postscript => $options->{postscript},
+        stdout => $stdout,
+        stderr => $stderr);
+    return($coverage);
+}
 
 =head2 C<Fasta2Gff>
 

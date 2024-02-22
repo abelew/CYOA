@@ -1074,8 +1074,8 @@ hisat2 -x ${hisat_reflib} ${hisat_args} \\
         $aligned_filenames .= qq":${the_dirname}/${aligned_base}.1.fastq:${the_dirname}/${aligned_base}.2.fastq";
         $aligned_xz = qq"${the_dirname}/${aligned_base}.1.fastq.xz:${the_dirname}/${aligned_base}.2.fastq.xz";
 
-        $unaligned_filenames = qq"${the_dirname}/${unaligned_base}.1.fastq:${the_dirname}/${unaligned_base}.2.fastq";
-        $unaligned_xz = qq"${the_dirname}/${unaligned_base}.1.fastq.xz:${the_dirname}/${unaligned_base}.2.fastq.xz";
+        $unaligned_filenames = qq"${the_dirname}/${unaligned_base}.1.fastq:${the_dirname}/${unaligned_base}.2.fastq:${unaligned_discordant_filename}";
+        $unaligned_xz = qq"${the_dirname}/${unaligned_base}.1.fastq.xz:${the_dirname}/${unaligned_base}.2.fastq.xz:${unaligned_discordant_filename}.xz";
     }
     my $all_filenames = qq"${aligned_filenames}:${unaligned_filenames}";
     $jstring .= qq!  -S ${sam_filename} \\
