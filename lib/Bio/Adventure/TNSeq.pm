@@ -96,7 +96,7 @@ sub Consolidate_TAs_Worker {
         output => 'consolidated.fastq',
         nota => 'nota.fastq',
         minlength => 14,);
-    my ($first, $second) = split(/:|\;|\,/, $options->{input});
+    my ($first, $second) = split(/$options->{delimiter}/, $options->{input});
     my $ta_out = Bio::SeqIO->new(-file => ">$options->{output}", -format => 'Fastq');
     my $nota_out = Bio::SeqIO->new(-file => ">$options->{nota}", -format => 'Fastq');
     my $result = {
@@ -606,10 +606,10 @@ sub Read_Indexes {
         chomp $line;
         next if ($line =~ /^#/);
         next unless ($line =~ /^A|T|G|C|a|t|g|c/);
-        my ($ind, $sample) = split(/\s+|\,|;/, $line);
+        my ($ind, $sample) = split(/[,;\s+]/, $line);
         ## Add a quick piece of logic in case I flip the indexes.txt file
         if ($ind =~ /^h|H/ && $sample =~ /^A|T|G|C/) {
-            ($sample, $ind) = split(/\s+|\,|;/, $line);
+            ($sample, $ind) = split(/[,;\s+]/, $line);
         }
         my $output_filename = qq"$options->{outdir}/${sample}.fastq.xz";
         unlink($output_filename) if (-r $output_filename);
@@ -1162,9 +1162,9 @@ sub Transit_TPP {
     my $paired = 0;
     ## I think these libraries are either forward stranded or not, never reverse.
     my $stranded = $options->{stranded};
-    if ($tpp_input =~ /\:|\;|\,|\s+/) {
+    if ($tpp_input =~ /$options->{delimiter}/) {
         $paired = 1;
-        my @pair_listing = split(/\:|\;|\,|\s+/, $tpp_input);
+        my @pair_listing = split(/$options->{delimiter}/, $tpp_input);
         $pair_listing[0] = File::Spec->rel2abs($pair_listing[0]);
         $pair_listing[1] = File::Spec->rel2abs($pair_listing[1]);
         $tpp_pre = qq"less $pair_listing[0] > ${tpp_dir}/r1.fastq

@@ -272,11 +272,11 @@ sub Fastq_Dump {
     my $fastq_comment = qq"## This script should download an sra accession to local fastq.gz files.
 ";
     my $job_basename = $class->Get_Job_Name();
-    my @inputs = split(/\,|\;|\:/, $options->{input});
+    my @inputs = split(/$options->{delimiter}/, $options->{input});
     my @outputs = ();
     my $first_output = undef;
     if (defined($options->{output})) {
-        @outputs = split(/\,|\;|\:/, $options->{output});
+        @outputs = split(/$options->{delimiter}/, $options->{output});
         $first_output = $outputs[0];
     }
 

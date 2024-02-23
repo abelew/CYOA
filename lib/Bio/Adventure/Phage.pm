@@ -742,12 +742,12 @@ sub Filter_Kraken_Worker {
 
     ## The final output filenames, which may be invoked early
     ## if it is not possible to perform the filtering.
-    my ($out_r1, $out_r2) = split(/\:|\;|\,|\s+/, $options->{output});
+    my ($out_r1, $out_r2) = split(/$options->{delimiter}/, $options->{output});
     my $out_r1_base = basename($out_r1);
     my $out_r2_base = basename($out_r2);
     ## The input fastq files, split here in case we need to symlink them
     ## back due to failure.
-    my ($in_r1_fastq, $in_r2_fastq) = split(/\:|\;|\,|\s+/, $options->{input_fastq});
+    my ($in_r1_fastq, $in_r2_fastq) = split(/$options->{delimiter}/, $options->{input_fastq});
     $in_r1_fastq = File::Spec->rel2abs($in_r1_fastq);
     $in_r2_fastq = File::Spec->rel2abs($in_r2_fastq);
 
@@ -954,7 +954,7 @@ sub Filter_Kraken_Worker {
         species => $host_species_accession,
         stranded => $options->{stranded},);
     my $filtered_reads = $filter->{unaligned};
-    my ($in_r1, $in_r2) = split(/\:|\;|\,|\s+/, $filtered_reads);
+    my ($in_r1, $in_r2) = split(/$options->{delimiter}/, $filtered_reads);
     $in_r1 = File::Spec->rel2abs($in_r1);
     $in_r2 = File::Spec->rel2abs($in_r2);
     unlink $out_r1 if (-l $out_r1);
@@ -1228,8 +1228,8 @@ sub Phageterm_Worker {
     my $phage_log = FileHandle->new(">${workdir}/phageterm_worker.log");
     my $read_string = '';
     ## Step1: Decompress the reads so phageterm doesn't cry.
-    if ($options->{input} =~ /\:|\;|\,|\s+/) {
-        my @in = split(/\:|\;|\,|\s+/, $options->{input});
+    if ($options->{input} =~ /$options->{delimiter}/) {
+        my @in = split(/$options->{delimiter}/, $options->{input});
         ## I think abs_path only works on things which already exist.
         ## Which is a problem if we are running this in the middle of a pipeline
         ## Add a check to see if we are rerunning phageterm following the compression of the inputs.

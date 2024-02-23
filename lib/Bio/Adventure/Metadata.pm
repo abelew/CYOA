@@ -222,7 +222,7 @@ sub Get_Aragorn {
       if ($line =~ /^\d+\s+\S+\s+\S+\s+\d+\s+\(\w+\)$/) {
           $counter = 1;
           ($number, $type, $coords, $unknown, $anticodon) = split(/\s+/, $line);
-          ($start, $end) = split(/\,/, $coords);
+          ($start, $end) = split(/[,]/, $coords);
           my $complement = $start;
           $complement =~ s/^(\w*).*$/$1/g;
           $strand = '+1';
@@ -335,8 +335,8 @@ sub Kraken_Best_Hit {
     my $stderr = qq"${output_dir}/kraken_best.stderr";
     make_path($output_dir);
     my $input_string = "";
-    if ($options->{input} =~ /\:|\;|\,|\s+/) {
-        my @in = split(/\:|\;|\,|\s+/, $options->{input});
+    if ($options->{input} =~ /$options->{delimiter}/) {
+        my @in = split(/$options->{delimiter}/, $options->{input});
         $input_string = qq" --paired <(less $in[0]) <(less $in[1]) ";
     } else {
         $input_string = qq"<(less $options->{input}) ";

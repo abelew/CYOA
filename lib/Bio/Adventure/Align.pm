@@ -542,8 +542,8 @@ sub OrthoFinder {
     my $month_date = strftime "%h%d", localtime;
 
     ## Check that it is not a set of files
-    if ($options->{input} =~ /\:|\,|\;/) {
-        my @inputs = split(/\:|\,|\;/, $options->{input});
+    if ($options->{input} =~ /$options->{delimiter}/) {
+        my @inputs = split(/$options->{delimiter}/, $options->{input});
         for my $in (@inputs) {
             my $copied = copy($in, qq"${outdir}/input");
         }
@@ -694,7 +694,7 @@ sub Orthofinder_Names_Worker {
         my @species_gene_ids = ();
         my $species_gene_id = '';
         if ($group_ids) {
-            @species_gene_ids = split(/\,/, $group_ids);
+            @species_gene_ids = split(/[:;,]/, $group_ids);
         } else {
             print "I do not have group IDs for $species on line $line_count\n";
             print "$line\n";

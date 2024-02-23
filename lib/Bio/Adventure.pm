@@ -715,8 +715,8 @@ sub Get_Job_Name {
         args => \%args);
     my $name = 'unknown';
     $name = $options->{input} if ($options->{input});
-    if ($name =~ /[:;,\s]+/) {
-        my @namelst = split(/[:;,\s+]+/, $name);
+    if ($name =~ /[:;,\s+]/) {
+        my @namelst = split(/[:;,\s+]/, $name);
         $name = $namelst[0];
     }
     $name = basename($name, split(/,/, $class->{suffixes}));
@@ -950,8 +950,8 @@ sub Get_Vars {
             if ($returned_vars{jname} eq '') {
                 my $name = 'unknown';
                 $name = $returned_vars{input} if ($returned_vars{input});
-                if ($name =~ /[:;,\s]+/) {
-                    my @namelst = split(/[:;,\s]+/, $name);
+                if ($name =~ /[:;,\s+]/) {
+                    my @namelst = split(/[:;,\s+]/, $name);
                     $name = $namelst[0];
                 }
                 $name = basename($name, (".gz", ".xz", ".bz2", ".bai", ".fai"));
@@ -962,6 +962,20 @@ sub Get_Vars {
         } ## End checking on job name
     } ## End final iteration over the options keeps.
     ## End special cases.
+
+    ## A Little sanity checking:
+    if (defined($returned_vars{input})) {
+        $returned_vars{input} =~ s/[:;,]+$//g;
+        ## Add a quick check for reversed R1/R2 or forward/reverse
+        my @tmp = split(/[:;,]+/, $returned_vars{input});
+        if (scalar(@tmp) == 2 && $tmp[0] =~ /R2|reverse/ && $tmp[1] =~ /R1|forward/) {
+            warn("It seriously looks like forward and reverse are flipped: $returned_vars{input}.\n");
+            warn("Flipping the inputs and waiting 5 seconds to see if you kill this.\n");
+            $returned_vars{input} = qq"$tmp[1]:$tmp[0]";
+            warn("The input has been changed to: $returned_vars{input}\n");
+            sleep(5);
+        }
+    }
 
     ## So at this point we should have the full set of defaults + function + overrides.
     ## However, we need to ensure that child functions get this information, but
@@ -1193,7 +1207,7 @@ sub Passthrough_Args {
     my ($class, %args) = @_;
     my $argstring = $args{arbitrary};
     my $new_string = '';
-    my $splitter = qr/[;,]/;
+    my $splitter = qr/[:;,]/;
     for my $arg (split($splitter, $argstring)) {
         if ($arg =~ /^\w{1}$|^\w{1}\W+/) {
             ## print "Single letter arg passthrough\n";

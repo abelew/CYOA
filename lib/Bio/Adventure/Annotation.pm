@@ -714,7 +714,7 @@ sub Read_Write_Annotation {
                     $fullname =~ s/RecName: //g;
                     $fullname =~ s/Full=//g;
                     $fullname =~ s/\;//g;
-                    my ($query, $h) = split(/\,/, $query_coords);
+                    my ($query, $h) = split(/[,]/, $query_coords);
                     $query =~ s/Q\://g;
                     $h =~ s/H\://g;
                     $name =~ s/Full=//g;

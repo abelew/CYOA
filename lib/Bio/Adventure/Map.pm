@@ -91,9 +91,9 @@ sub Bowtie {
     my $stranded = $options->{stranded};
     my $paired = 0;
     my $test_file = "";
-    if ($bt_input =~ /\:|\;|\,|\s+/) {
+    if ($bt_input =~ /$options->{delimiter}/) {
         $paired = 1;
-        my @pair_listing = split(/\:|\;|\,|\s+/, $bt_input);
+        my @pair_listing = split(/$options->{delimiter}/, $bt_input);
         $pair_listing[0] = File::Spec->rel2abs($pair_listing[0]);
         $pair_listing[1] = File::Spec->rel2abs($pair_listing[1]);
         $bt_input = qq" <(less $pair_listing[0]) <(less $pair_listing[1]) ";
@@ -308,8 +308,8 @@ sub Bowtie2 {
     my $stranded = $options->{stranded};
     my $bt_input = $options->{input};
     my $test_file = '';
-    if ($bt_input =~ /\:|\;|\,|\s+/) {
-        my @pair_listing = split(/\:|\;|\,|\s+/, $bt_input);
+    if ($bt_input =~ /$options->{delimiter}/) {
+        my @pair_listing = split(/$options->{delimiter}/, $bt_input);
         $pair_listing[0] = File::Spec->rel2abs($pair_listing[0]);
         $pair_listing[1] = File::Spec->rel2abs($pair_listing[1]);
         $bt_input = qq" -1 <(less $pair_listing[0]) -2 <(less $pair_listing[1]) ";
@@ -552,8 +552,8 @@ sub BWA {
     my $test_file = '';
     my $forward_reads = '';
     my $reverse_reads = undef;
-    if ($bwa_input =~ /\:|\;|\,|\s+/) {
-        my @pair_listing = split(/\:|\;|\,|\s+/, $bwa_input);
+    if ($bwa_input =~ /$options->{delimiter}/) {
+        my @pair_listing = split(/$options->{delimiter}/, $bwa_input);
         $pair_listing[0] = File::Spec->rel2abs($pair_listing[0]);
         $pair_listing[1] = File::Spec->rel2abs($pair_listing[1]);
         $test_file = $pair_listing[0];
@@ -607,7 +607,7 @@ sub BWA {
     }
 
     my $method = $options->{bwa_method};
-    my @bwa_methods = split(/\,/, $options->{bwa_method});
+    my @bwa_methods = split(/[:;,]/, $options->{bwa_method});
     my $job_string = '';
     my $comment = '## A series of bwa commands.';
     my $sam_outs = '';
@@ -820,8 +820,8 @@ sub Downsample_Guess_Strand {
     my $sa_rm = qq"rm ${outdir}/r1_downsampled.fastq
 ";
     my $downsample_commands = '';
-    if ($sa_input =~ /\:|\;|\,|\s+/) {
-        my @pair_listing = split(/\:|\;|\,|\s+/, $sa_input);
+    if ($sa_input =~ /$options->{delimiter}/) {
+        my @pair_listing = split(/$options->{delimiter}/, $sa_input);
         $sa_args .= qq" -1 ${outdir}/r1_downsampled.fastq -2 ${outdir}/r2_downsampled.fastq ";
         $input_name = $pair_listing[0];
         $downsample_commands .= qq"sampled_r1=\$( { less $pair_listing[0] ||:; } |\\
@@ -970,8 +970,8 @@ sub Hisat2 {
     my $paired = 0;
     my $stranded = $options->{stranded};
     my @pair_listing;
-    if ($hisat_input =~ /\:|\;|\,|\s+/) {
-        @pair_listing = split(/\:|\;|\,|\s+/, $hisat_input);
+    if ($hisat_input =~ /$options->{delimiter}/) {
+        @pair_listing = split(/$options->{delimiter}/, $hisat_input);
         $paired = 1;
         $pair_listing[0] = File::Spec->rel2abs($pair_listing[0]);
         $pair_listing[1] = File::Spec->rel2abs($pair_listing[1]);
@@ -1231,8 +1231,8 @@ sub Kallisto {
     my $ka_args = '';
     my $ka_input = $options->{input};
     my $input_name = $ka_input;
-    if ($ka_input =~ /\:|\;|\,|\s+/) {
-        my @pair_listing = split(/\:|\;|\,|\s+/, $ka_input);
+    if ($ka_input =~ /$options->{delimiter}/) {
+        my @pair_listing = split(/$options->{delimiter}/, $ka_input);
         $ka_args .= ' --bias ';
         if ($options->{stranded} != 0) {
             $ka_args .= " --$options->{stranded} ";
@@ -1364,8 +1364,8 @@ sub RSEM {
 
     my $rsem_input = $options->{input};
     my $test_file = "";
-    if ($rsem_input =~ /\:|\;|\,|\s+/) {
-        my @pair_listing = split(/\:|\;|\,|\s+/, $rsem_input);
+    if ($rsem_input =~ /$options->{delimiter}/) {
+        my @pair_listing = split(/$options->{delimiter}/, $rsem_input);
         $rsem_input = qq"--paired-end <(less $pair_listing[0]) <(less $pair_listing[1])";
         $test_file = $pair_listing[0];
     } else {
@@ -1442,8 +1442,8 @@ sub Salmon {
     my $sa_args = '';
     my $sa_input = $options->{input};
     my $input_name = $sa_input;
-    if ($sa_input =~ /\:|\;|\,|\s+/) {
-        my @pair_listing = split(/\:|\;|\,|\s+/, $sa_input);
+    if ($sa_input =~ /$options->{delimiter}/) {
+        my @pair_listing = split(/$options->{delimiter}/, $sa_input);
         $sa_args .= qq" -1 <(less $pair_listing[0]) -2 <(less $pair_listing[1]) ";
         $input_name = $pair_listing[0];
     } else {
@@ -1530,8 +1530,8 @@ sub STAR {
     my $star_inputstring = qq"";
     my $star_input = $options->{input};
     my $input_name = $star_input;
-    if ($star_input =~ /\:|\;|\,|\s+/) {
-        my @pair_listing = split(/\:|\;|\,|\s+/, $star_input);
+    if ($star_input =~ /$options->{delimiter}/) {
+        my @pair_listing = split(/$options->{delimiter}/, $star_input);
         $star_inputstring = qq"$pair_listing[0],$pair_listing[1]";
         $input_name = $pair_listing[0];
     } else {
