@@ -18,7 +18,7 @@ my $phix_gff = qq"${start_dir}/genome/phix.gff";
 use Bio::Adventure;
 
 my $start = getcwd();
-my $new = 'test_output';
+my $new = 'test_output_async';
 mkdir($new);
 chdir($new);
 

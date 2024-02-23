@@ -8,7 +8,7 @@ use vars qw"$VERSION";
 use feature qw"try";
 no warnings qw"experimental::try";
 use Exporter;
-our @EXPORT = qw"Submit Wait";
+our @EXPORT = qw"Submit Wait Extra_Options";
 our @ISA = qw"Exporter";
 
 use AppConfig qw":argcount :expand";
@@ -154,7 +154,7 @@ has cutoff => (is => 'rw', default => 0.05); ## Default cutoff (looking at your 
 has decoy => (is => 'rw', default => 1); ## Add decoys
 has debug => (is => 'rw', default => 0); ## Print debugging information.
 has deduplicate => (is => 'rw', default => 1); ## Perform deduplication when using fastp
-has delimiter => (is => 'rw', default => '\,|\;|:');
+has delimiter => (is => 'rw', default => '[;:,]');
 has directories => (is => 'rw', default => undef); ## Apply a command to multiple input directories.
 has do_umi => (is => 'rw', default => 1); ## Extract UMIs when using fastp
 has download => (is => 'rw', default => 1);
@@ -346,6 +346,16 @@ sub scalar_which {
     return($path);
 }
 
+sub Extra_Options {
+    my ($class, %args) = @_;
+    my %opt = %{$args{options}};
+    my $extras = $args{extras};
+    for my $k (keys %{$extras}) {
+        $opt{$k} = $extras->{$k};
+    }
+    return(%opt);
+}
+
 =head2 C<Help>
 
     Help() always gives 0.
@@ -389,7 +399,7 @@ $ENV{PATH}.") unless($check);
 
     my @ignored;
     if (defined($class->{slots_ignored})) {
-        @ignored = split(/\,/, $class->{slots_ignored});
+        @ignored = split(/[,]/, $class->{slots_ignored});
     }
     foreach my $k (keys %{$class}) {
         for my $ignore (@ignored) {
@@ -442,7 +452,7 @@ $ENV{PATH}.") unless($check);
     ## Take just hpgl0523 as the job basename
     my $job_basename = '';
     my @suffixes = ('.gz', '.xz', '.bz2');
-    my $splitter = qq"/:|\;|\,/";
+    my $splitter = qq"/[;:,]/";
     if (defined($class->{suffixes})) {
         @suffixes = split($splitter, $class->{suffixes});
     }
@@ -505,9 +515,9 @@ sub Check_Input {
     my ($class, %args) = @_;
     my $file_list;
     if (ref($args{files}) eq 'SCALAR' || ref($args{files}) eq '') {
-        if ($args{files} =~ /:|\;|\,/) {
-            $args{files} =~ s/:|\;|\,$//g;
-            my @tmp = split(/:|\;|\,/, $args{files});
+        if ($args{files} =~ /[:,;]/) {
+            $args{files} =~ s/[:,;]//g;
+            my @tmp = split(/[:,;]/, $args{files});
             $file_list = \@tmp;
         } else {
             $file_list->[0] = $args{files};
@@ -628,8 +638,8 @@ this function is a good candidate for replacing Check_Input() below.
 sub Get_Paths {
     my ($class, @inputs) = @_;
     my %ret = ();
-    if ($inputs[0] =~ /:|\,|\s+/) {
-        @inputs = split(/:|\,|\s+/, $inputs[0]);
+    if ($inputs[0] =~ /[:;,\s]+/) {
+        @inputs = split(/[:;,\s]+/, $inputs[0]);
     }
     my $num_inputs = scalar(@inputs);
     if ($num_inputs == 0) {
@@ -705,8 +715,8 @@ sub Get_Job_Name {
         args => \%args);
     my $name = 'unknown';
     $name = $options->{input} if ($options->{input});
-    if ($name =~ /\:|\s+|\,/) {
-        my @namelst = split(/\:|\s+|\,/, $name);
+    if ($name =~ /[:;,\s]+/) {
+        my @namelst = split(/[:;,\s+]+/, $name);
         $name = $namelst[0];
     }
     $name = basename($name, split(/,/, $class->{suffixes}));
@@ -940,8 +950,8 @@ sub Get_Vars {
             if ($returned_vars{jname} eq '') {
                 my $name = 'unknown';
                 $name = $returned_vars{input} if ($returned_vars{input});
-                if ($name =~ /\:|\s+|\,/) {
-                    my @namelst = split(/\:|\s+|\,/, $name);
+                if ($name =~ /[:;,\s]+/) {
+                    my @namelst = split(/[:;,\s]+/, $name);
                     $name = $namelst[0];
                 }
                 $name = basename($name, (".gz", ".xz", ".bz2", ".bai", ".fai"));
@@ -967,7 +977,7 @@ sub Get_Vars {
     $class->{variable_current_state} = \%returned_vars;
     ## Quick sanitization of the input.
     if ($returned_vars{input}) {
-        $returned_vars{input} =~ s/(:|\;|\,|\.)$//g;
+        $returned_vars{input} =~ s/[:;,\s\.]+$//g;
     }
     return(\%returned_vars);
 }
@@ -1183,7 +1193,7 @@ sub Passthrough_Args {
     my ($class, %args) = @_;
     my $argstring = $args{arbitrary};
     my $new_string = '';
-    my $splitter = qr/\,|\;/;
+    my $splitter = qr/[;,]/;
     for my $arg (split($splitter, $argstring)) {
         if ($arg =~ /^\w{1}$|^\w{1}\W+/) {
             ## print "Single letter arg passthrough\n";

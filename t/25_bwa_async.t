@@ -14,7 +14,7 @@ my $phix_fasta = qq"${start_dir}/genome/phix.fasta";
 my $phix_gff = qq"${start_dir}/genome/phix.gff";
 
 my $start = getcwd();
-my $new = 'test_output';
+my $new = 'test_output_async';
 mkdir($new);
 chdir($new);
 
@@ -53,7 +53,7 @@ ok(-f $index->{output_amb}, "The .sa index file was created: $index->{output_amb
 ok(-f $index->{output_fa}, "The .sa index file was created: $index->{output_fa}");
 
 my $bwa = $cyoa->Bio::Adventure::Map::BWA(
-    input => qq'test_forward.fastq.gz',
+    input => 'test_forward.fastq.gz',
     jprefix => 25,);
 ok($bwa, 'Submitted bwa jobs.');
 $status = $cyoa->Wait(job => $bwa);

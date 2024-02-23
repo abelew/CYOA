@@ -1,4 +1,4 @@
-[% INCLUDE header.sh %]
+[% INCLUDE bash_header.sh %]
 
 ## Did the header get included?
 
@@ -7,4 +7,4 @@
 /bin/ls
 
 
-[% INCLUDE footer.sh %]
+[% INCLUDE bash_footer.sh %]

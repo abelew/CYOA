@@ -597,11 +597,12 @@ sub BWA {
     my $bwa_reftest = qq"${bwa_reflib}.sa";
     my $index_job;
     if (!-r $bwa_reftest) {
-        $index_job = $class->Bio::Adventure::Index::BWA_Index(
+        my $index_extras = {
             input => $bwa_reflib,
-            jdepends => $options->{jdepends},
             jprefix => $options->{jprefix} - 1,
-            libtype => $options->{libtype},);
+        };
+        my %index_args = $class->Extra_Options(options => $options, extras => $index_extras);
+        $index_job = $class->Bio::Adventure::Index::BWA_Index(%index_args);
         $options->{jdepends} = $index_job->{job_id};
     }
 
@@ -740,43 +741,37 @@ fi
         }
     } ## End iterating over potential bwa methods.
     $sam_outs =~ s/:$//g;
-    my $bwa_job = $class->Submit(
+    my %submit_extras = (
         comment => $comment,
         input => $bwa_input,
-        jdepends => $options->{jdepends},
         jname => qq"bwa_$options->{species}",
-        jprefix => $options->{jprefix},
         jstring => $job_string,
-        jmem => $options->{jmem},
-        output => $sam_outs,
-        postscript => $options->{postscript},
-        prescript => $options->{prescript},
         stdout => $stdout,
         stderr => $stderr,);
-
+    my $bwa_job = $class->Submit(%submit_extras);
     my @samtools_jobs = ();
     my $sam_count = 0;
     for my $sam (@sam_files) {
         my $sam_method = $bwa_methods[$sam_count];
-        my $sam_job = $class->Bio::Adventure::Convert::Samtools(
+        my %sam_extras = (
             input => $sam,
             jdepends => $bwa_job->{job_id},
             jname => qq"s2b_${sam_method}",
-            jmem => '30',
-            jprefix => $options->{jprefix},
-            samtools_mapped => $options->{samtools_mapped},
-            samtools_unmapped => $options->{samtools_unmapped},);
+            jmem => '30',);
+        my $sam_job = $class->Bio::Adventure::Convert::Samtools(%sam_extras);
         my $sam_name = qq"samtools_${sam_method}";
         my $htseq_name = qq"htseq_${sam_method}";
         $bwa_job->{$sam_name} = $sam_job;
         if ($options->{count}) {
-            my $htmulti = $class->Bio::Adventure::Count::HT_Multi(
+            my $htseq_extras = {
                 input => $sam_job->{output},
                 jdepends => $sam_job->{job_id},
                 jname => $htseq_name,
-                jprefix => $options->{jprefix},
                 mapper => 'bwa',
-                stranded => $stranded,);
+                stranded => $stranded,
+            };
+            my %htseq_args = $class->Extra_Options(options => $options, extras => $htseq_extras);
+            my $htmulti = $class->Bio::Adventure::Count::HT_Multi(%htseq_args);
             $bwa_job->{$htseq_name} = $htmulti;
         }
         $sam_count++;
@@ -1429,7 +1424,7 @@ sub Salmon {
         foreach my $sp (@species_lst) {
             print "Invoking salmon on ${sp}\n";
             $options->{species} = $sp;
-            my $result = Bio::Adventure::Map::Salmon($class, %{$options});
+            my $result = $class->Bio::Adventure::Map::Salmon(%{$options});
             push (@result_lst, $result);
         }
         $options->{species} = $start_species;
@@ -1460,10 +1455,9 @@ sub Salmon {
     my $index_job;
     if (!-r $sa_reflib) {
         my $transcript_file = qq"$options->{libpath}/${libtype}/$options->{species}_cds.fasta";
-        $index_job = $class->Bio::Adventure::Index::Salmon_Index(
-            input => $transcript_file,
-            depends => $options->{jdepends},
-            libtype => $libtype,);
+        my $index_extras = { input => $transcript_file };
+        my %index_args = $class->Extra_Options(options => $options, extras => $index_extras);
+        $index_job = $class->Bio::Adventure::Index::Salmon_Index(%index_args);
         $options->{jdepends} = $index_job->{job_id};
     }
 
@@ -1482,25 +1476,22 @@ salmon quant -i ${sa_reflib} \\
   1>${stdout}
 !;
 
-    my $salmon = $class->Submit(
+    my %submit_extras = (
         comment => $comment,
         input => $sa_input,
-        jdepends => $options->{jdepends},
-        jname => qq"${jname}",
-        jprefix => $options->{jprefix},
+        jname => $jname,
         jstring => $jstring,
-        jmem => $options->{jmem},
         output => qq"${outdir}/quant.sf",
         stderr => $stderr,
         stdout => $stdout,
-        prescript => $args{prescript},
-        postscript => $args{postscript},);
+        jtemplate => 'salmon.sh', );
+    my $salmon = $class->Submit(%submit_extras);
     $salmon->{index_job} = $index_job;
-    my $stats = $class->Bio::Adventure::Metadata::Salmon_Stats(
+    my %stat_args = $class->Extra_Options(options => $options, extras => {
         input => qq"${outdir}/lib_format_counts.json",
         jdepends => $salmon->{job_id},
-        jname => qq"sastats_$options->{species}",
-        jprefix => '33',);
+        jname => qq"sastats_$options->{species}", });
+    my $stats = $class->Bio::Adventure::Metadata::Salmon_Stats(%stat_args);
     $salmon->{stats} = $stats;
     return($salmon);
 }

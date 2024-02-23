@@ -566,6 +566,7 @@ sub Process_DNASeq {
     my $options = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species'],
+        coverage => 1,
         freebayes => 1,
         host_filter => 0,
         input_paired => undef,
@@ -610,7 +611,7 @@ sub Process_DNASeq {
         $ret->{$jobid} = $trim;
         $map_input = $trim->{output};
         sleep($options->{jsleep});
-        my $last_job = $trim->{job_id};
+        $last_job = $trim->{job_id};
         $map_prereq = $last_job;
     }
 
@@ -678,6 +679,18 @@ sub Process_DNASeq {
         $ret->{$jobid} = $first_map;
         sleep($options->{jsleep});
         $last_sam_job = $first_map->{samtools}->{job_id};
+
+        if ($options->{coverage}) {
+            $prefix = sprintf("%02d", ($prefix + 1));
+            print "\n${prefix}: Printing coverage/base with bbmap.\n";
+            my $bbmap_cov = $class->Bio::Adventure::Convert::Bam2Coverage(
+                jdepends => $last_sam_job,
+                input => $first_map->{samtools}->{paired_output},
+                jprefix => $prefix);
+            $jobid = qq"${prefix}bam2cov";
+            $ret->{$jobid} = $bbmap_cov;
+            sleep($options->{jsleep});
+        }
 
         if ($options->{freebayes}) {
             $prefix = sprintf("%02d", ($prefix + 1));
@@ -807,6 +820,7 @@ sub Process_RNAseq {
     my $options = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species'],
+        compress => 0,
         freebayes => 0,
         input_paired => undef,
         sra => 0,
@@ -843,7 +857,7 @@ sub Process_RNAseq {
         $prefix = sprintf("%02d", ($prefix + 1));
         print "\n${prefix}: Starting trimmer.\n";
         $trim = $class->Bio::Adventure::Trim::Trimomatic(
-            compress => 0,
+            compress => $options->{compress},
             input => $options->{input},
             input_paired => $options->{input_paired},
             jprefix => $prefix,
@@ -852,7 +866,7 @@ sub Process_RNAseq {
         $ret->{$jobid} = $trim;
         $map_input = $trim->{output};
         sleep($options->{jsleep});
-        my $last_job = $trim->{job_id};
+        $last_job = $trim->{job_id};
         $map_prereq = $last_job;
     }
 
@@ -903,7 +917,7 @@ sub Process_RNAseq {
     if ($options->{mapper} eq 'hisat2') {
         print "\n${prefix}: Starting hisat2 with $map_input.\n";
         $first_map = $class->Bio::Adventure::Map::Hisat2(
-            compress => 0,
+            compress => $options->{compress},
             gff_type => $first_type,
             gff_tag => $first_id,
             input => $map_input,
@@ -1031,26 +1045,29 @@ sub Process_RNAseq {
             $c++;
         } ## End iterating over extra species
     } ## End checking for extra species
-    $prefix = sprintf("%02d", ($prefix + 1));
-    my $compress_input = $class->Bio::Adventure::Compress::Compress(
-        input => $map_input,
-        jdepends => $last_job,
-        jname => 'comp_trimmed',
-        jprefix => $prefix,);
-    $last_job = $compress_input->{job_id};
-    $prefix = sprintf("%02d", ($prefix + 1));
-    $jobid = qq"${prefix}comptrim";
-    $ret->{$jobid} = $compress_input;
-    sleep($options->{jsleep});
-    if ($options->{mapper} eq 'hisat2') {
-        my $compress_first_map = $class->Bio::Adventure::Compress::Compress(
-            input => qq"$first_map->{unaligned}:$first_map->{aligned}",
+
+    unless ($options->{compress}) {
+        $prefix = sprintf("%02d", ($prefix + 1));
+        my $compress_input = $class->Bio::Adventure::Compress::Compress(
+            input => $map_input,
             jdepends => $last_job,
-            jname => 'comp_hisat',
+            jname => 'comp_trimmed',
             jprefix => $prefix,);
-        $jobid = qq"${prefix}compin";
+        $last_job = $compress_input->{job_id};
+        $prefix = sprintf("%02d", ($prefix + 1));
+        $jobid = qq"${prefix}comptrim";
         $ret->{$jobid} = $compress_input;
-        $last_job = $compress_first_map->{job_id};
+        sleep($options->{jsleep});
+        if ($options->{mapper} eq 'hisat2') {
+            my $compress_first_map = $class->Bio::Adventure::Compress::Compress(
+                input => qq"$first_map->{unaligned}:$first_map->{aligned}",
+                jdepends => $last_job,
+                jname => 'comp_hisat',
+                jprefix => $prefix,);
+            $jobid = qq"${prefix}compin";
+            $ret->{$jobid} = $compress_input;
+            $last_job = $compress_first_map->{job_id};
+        }
     }
     return($ret);
 }

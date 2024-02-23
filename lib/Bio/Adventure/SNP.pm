@@ -719,6 +719,8 @@ sub SNP_Ratio_Worker {
       my $delta_length = $replace_length - $orig_length;
       my $relative_pos = $report_pos + $total_delta;
       ## First pull the entire contig sequence.
+      ## Keep in mind that we are changing the value of the genome in 'input_genome'
+      ## because we aren't dereferencing it.
       my $starting_seq = $input_genome->{$chr}->{sequence};
       my $original_seq = $original_genome{$chr}{sequence};
       ## Give it a useful name, extract the length.

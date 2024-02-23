@@ -6,6 +6,7 @@ use warnings qw"all";
 use Moo;
 extends 'Bio::Adventure';
 use Bio::Adventure::Config;
+use Cwd qw"abs_path getcwd cwd";
 use File::Basename;
 use File::Copy qw"cp";
 use File::Path qw"make_path";
@@ -140,13 +141,14 @@ sub BWA_Index {
     if (!-f $copied_location) {
         cp($options->{input}, $copied_location);
     }
+    my $full_input = abs_path($options->{input});
     my $output_dir = qq"$options->{basedir}/outputs/$options->{jprefix}bwa_index";
     my $stdout = qq"${output_dir}/bwa_index.stdout";
     my $stderr = qq"${output_dir}/bwa_index.stderr";
     my $jstring = qq!mkdir -p ${output_dir}
 start=\$(pwd)
 cd $options->{libdir}/$options->{libtype}/indexes
-ln -sf $options->{input} ${species}.fa
+ln -sf ${full_input} ${species}.fa
 bwa index ${species}.fa \\
   2>${stderr} \\
   1>${stdout}

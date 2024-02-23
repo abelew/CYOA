@@ -146,8 +146,7 @@ sub BUILD {
 =cut
 sub Check_Job {
     my ($class, %args) = @_;
-    my $options = $class->Bio::Adventure::Get_Vars(
-        args => \%args);
+    my $options = $class->Bio::Adventure::Get_Vars(args => \%args);
     my $id = $options->{input};
     my $write = $options->{write};
     $write = 0 if (!defined($write));
@@ -186,7 +185,8 @@ sub Check_Job {
       next IDS if (!defined($id));
       my $job_info = {};
       ## my $info = FileHandle->new("sacct -l -j ${id} --json |");
-      my $info = FileHandle->new("sacct -l -j ${id} -p |");
+      my $cmd = qq"sacct -l -j ${id} -p";
+      my $info = FileHandle->new("${cmd} |");
       my $line_count = 0;
       my @header_array = ();
       while (my $line = <$info>) {
@@ -1656,6 +1656,10 @@ sub Wait {
     } else {
         $id = $job;
     }
+    if (!defined($id)) {
+        print "There is no job to wait on.\n";
+        return(undef);
+    }
 
     my $datum;
     my $wait_count = {
@@ -1665,7 +1669,7 @@ sub Wait {
         cancelled => 0,
         failed => 0,
     };
-    while ($wait_count->{finished} < 1 && $wait_count->{failed} < 1) {
+    WAITLOOP: while ($wait_count->{finished} < 1 && $wait_count->{failed} < 1) {
         sleep(10);
         my $info = $class->Bio::Adventure::Slurm::Check_Job(input => $id, write => 0);
         $datum = $info->[0];
