@@ -179,14 +179,16 @@ sub Check_Job {
               print "This entry is not in the expected format: ${line}\n";
               next JOBLOG;
           }
-          $job_file->close();
       }
+      $job_file->close();
     }
   IDS: for my $id (@ids) {
       next IDS if (!defined($id));
       my $job_info = {};
+      my $command = qq"sacct -l -j ${id} -p";
+      print "Running: $command\n";
       ## my $info = FileHandle->new("sacct -l -j ${id} --json |");
-      my $info = FileHandle->new("sacct -l -j ${id} -p |");
+      my $info = FileHandle->new("${command} |");
       my $line_count = 0;
       my @header_array = ();
       while (my $line = <$info>) {
