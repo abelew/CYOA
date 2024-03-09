@@ -506,7 +506,6 @@ sub Check_Input {
     my $file_list;
     if (ref($args{files}) eq 'SCALAR' || ref($args{files}) eq '') {
         if ($args{files} =~ /:|\;|\,/) {
-            $args{files} =~ s/:|\;|\,$//g;
             my @tmp = split(/:|\;|\,/, $args{files});
             $file_list = \@tmp;
         } else {
