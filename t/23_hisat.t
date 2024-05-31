@@ -15,20 +15,6 @@ my $new = 'test_output';
 mkdir($new);
 chdir($new);
 
-make_path('genome/indexes'); ## Make a directory for the phix indexes.
-my $input_file = qq"${start_dir}/test_forward.fastq.gz";
-my $phix_fasta = qq"${start_dir}/genome/phix.fasta";
-my $phix_gff = qq"${start_dir}/genome/phix.gff";
-if (!-r 'test_forward.fastq.gz') {
-    ok(cp($input_file, 'test_forward.fastq.gz'), 'Copying data.');
-}
-if (!-r 'genome/phix.fasta') {
-    ok(cp($phix_fasta, 'genome/phix.fasta'), 'Copying phix fasta file.');
-}
-if (!-r 'genome/phix.gff') {
-    ok(cp($phix_gff, 'genome/phix.gff'), 'Copying phix gff file.');
-}
-
 my $cyoa = Bio::Adventure->new(
     cluster => 0,
     basedir => cwd(),
@@ -37,8 +23,24 @@ my $cyoa = Bio::Adventure->new(
     libdir => cwd(),
     species => 'phix',
     stranded => 'no',);
+my $paths = $cyoa->Bio::Adventure::Config::Get_Paths(subroutine => 'Hisat2');
+make_path($paths->{index_dir}); ## Make a directory for the phix indexes.
+my $input_file = qq"${start_dir}/test_forward.fastq.gz";
+if (!-r 'test_forward.fastq.gz') {
+    ok(cp($input_file, 'test_forward.fastq.gz'), 'Copying data.');
+}
+my $phix_fasta = qq"${start_dir}/genome/phix.fasta";
+if (!-r $paths->{fasta}) {
+    ok(cp($phix_fasta, $paths->{fasta}), 'Copying phix fasta file.');
+}
+my $phix_gff = qq"${start_dir}/genome/phix.gff";
+if (!-r $paths->{gff}) {
+    ok(cp($phix_gff, $paths->{gff}), 'Copying phix gff file.');
+}
+
 my $hisat = $cyoa->Bio::Adventure::Map::Hisat2(
-    input => 'test_forward.fastq.gz',);
+    input => 'test_forward.fastq.gz',
+    jprefix => '23',);
 ok($hisat, 'Run Hisat2');
 my $sam_file = $hisat->{samtools}->{output};
 my $htseq_file = $hisat->{htseq}->[0]->{output};

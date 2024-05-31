@@ -13,9 +13,13 @@ use Acme::Tools qw"btw";
 use Cwd qw"abs_path getcwd cwd";
 use File::Basename;
 use File::Which qw"which";
+use IO::String;
+use List::Util qw"sum";
 use Math::Round qw":all";
 use POSIX qw"floor";
 use Bio::DB::SeqFeature::Store;
+use Bio::Matrix::IO;
+use Bio::Matrix::Scoring;
 use Bio::SeqIO;
 use Bio::Seq;
 
@@ -339,23 +343,33 @@ sub SNP_Ratio {
     my $print_output = qq"${output_dir}";
     my $genome = qq"$options->{libpath}/$options->{libtype}/$options->{species}.fasta";
     my $samplename = basename(cwd());
+
+    my $output_suffix = '';
+    $output_suffix .= qq"_q-$options->{qual}" if ($options->{qual});
+    $output_suffix .= qq"_c-$options->{vcf_cutoff}" if ($options->{vcf_cutoff});
+    $output_suffix .= qq"_m$options->{min_value}" if ($options->{min_value});
+    $output_suffix .= qq"_ctag-$options->{coverage_tag}" if ($options->{coverage_tag});
+    $output_suffix .= qq"_mtag-$options->{chosen_tag}" if ($options->{chosen_tag});
     my $stdout = qq"${print_output}/stdout";
     my $stderr = qq"${print_output}/stderr";
-    my $output_all = qq"${print_output}/all_tags.txt";
-    my $output_count = qq"${print_output}/count.txt";
-    my $output_genome = qq"${print_output}/$options->{species}-${samplename}.fasta";
-    my $output_by_gene = qq"${print_output}/variants_by_gene.txt";
-    my $output_penetrance = qq"${print_output}/variants_penetrance.txt";
-    my $output_pkm = qq"${print_output}/pkm.txt";
+    my $output_all = qq"${print_output}/all_tags${output_suffix}.txt";
+    my $output_count = qq"${print_output}/count${output_suffix}.txt";
+    my $output_genome = qq"${print_output}/$options->{species}-${samplename}${output_suffix}.fasta";
+    my $output_by_gene = qq"${print_output}/variants_by_gene${output_suffix}.txt";
+    my $output_penetrance = qq"${print_output}/variants_penetrance${output_suffix}.txt";
+    my $output_pkm = qq"${print_output}/pkm${output_suffix}.txt";
+    my $output_types = qq"${print_output}/count_types${output_suffix}.txt";
 
     my $comment_string = qq!
 ## Parse the SNP data and generate a modified $options->{species} genome.
 ##  This should read the file:
 ## ${print_input}
-##  and provide 4 new files:
-## ${print_output}/count.txt
-## ${print_output}/all_tags.txt
-## and a modified genome: ${output_genome}
+##  and provide some new files:
+## ${output_genome}
+## ${output_by_gene}
+## ${output_penetrance}
+## ${output_count}
+## ${output_pkm}
 !;
     my $jstring = qq"
 use Bio::Adventure::SNP;
@@ -375,6 +389,7 @@ my \$result = \$h->Bio::Adventure::SNP::SNP_Ratio_Worker(
   output_by_gene => '${output_by_gene}',
   output_penetrance => '${output_penetrance}',
   output_pkm => '${output_pkm}',
+  output_types => '${output_types}',
 );
 ";
     my $parse_job = $class->Submit(
@@ -434,6 +449,8 @@ sub SNP_Ratio_Worker {
     my $out_dir = dirname($options->{output});
     my $log_file = qq"${out_dir}/snp_ratio.stdout";
     my $log = FileHandle->new(">${log_file}");
+    my $subst_matrix = $class->Bio::Adventure::Align::Get_Substitution_Matrix(matrix => $options->{matrix});
+
     my $genome = qq"$options->{libpath}/$options->{libtype}/${species}.fasta";
     my $gff = qq"$options->{libpath}/$options->{libtype}/${species}.gff";
     print $log "Reading gff: ${gff}, extracting type: $options->{gff_type} features tagged $options->{gff_tag}.\n";
@@ -638,7 +655,7 @@ sub SNP_Ratio_Worker {
         gff => $gff, gff_tag => $options->{gff_tag},
         gff_type => $options->{gff_type}, %args);
     my $output_by_gene = FileHandle->new(">$options->{output_by_gene}");
-    print $output_by_gene qq"gene\tchromosome\tposition\tfrom_to\taa_subst\n";
+    print $output_by_gene qq"gene\tchromosome\tposition\tfrom_to\taa_subst\tsynonymousp\tblosum_delta\n";
     my $output_penetrance = FileHandle->new(">$options->{output_penetrance}");
     print $output_penetrance qq"chromosome\tposition\tfrom_to\tpenetrance\n";
     my $filtered_coverage = FileHandle->new(">${filtered_coverage_log}");
@@ -857,19 +874,20 @@ sub SNP_Ratio_Intron {
         gff_cds_type => 'CDS',
         jprefix => '80',
         jname => 'parsenp',
-        min_value => 0.5,
+        min_value => 0.1,
         qual => 10,
         vcf_cutoff => 5,
         vcf_cutoff => 5,
-        vcf_minpct => 0.8,);
+        vcf_minpct => 0.1,);
     my $print_input = $options->{input};
     my $output_dir = dirname($print_input);
     my $print_output = qq"${output_dir}";
     my $samplename = basename(cwd());
+
     my $output_suffix = '';
     $output_suffix .= qq"_q-$options->{qual}" if ($options->{qual});
     $output_suffix .= qq"_c-$options->{vcf_cutoff}" if ($options->{vcf_cutoff});
-    $output_suffix .= qq"_m$options->{min_value}" if ($options->{min_value});
+    $output_suffix .= qq"_m-$options->{min_value}" if ($options->{min_value});
     $output_suffix .= qq"_ctag-$options->{coverage_tag}" if ($options->{coverage_tag});
     $output_suffix .= qq"_mtag-$options->{chosen_tag}" if ($options->{chosen_tag});
     my $genome = qq"$options->{libpath}/$options->{libtype}/$options->{species}${output_suffix}.fasta";
@@ -961,7 +979,7 @@ sub SNP_Ratio_Intron_Worker {
         gff_cds_parent_type => 'mRNA',
         gff_cds_type => 'CDS',
         max_value => undef,
-        min_value => 0.5,
+        min_value => 0.1,
         output => 'all.txt',
         output_count => 'count.txt',
         output_genome => 'new_genome.fasta',
@@ -977,6 +995,8 @@ sub SNP_Ratio_Intron_Worker {
     my $output_dir = dirname($options->{output});
     my $log_file = qq"${output_dir}/snp_ratio_intron.stdout";
     my $log = FileHandle->new(">${log_file}");
+    my $subst_matrix = $class->Bio::Adventure::Align::Get_Substitution_Matrix(matrix => $options->{matrix});
+
     my $genome = qq"$options->{libpath}/$options->{libtype}/${species}.fasta";
     my $gff = qq"$options->{libpath}/$options->{libtype}/${species}.gff";
     print $log "Reading gff: ${gff}, extracting type: $options->{gff_type} features tagged $options->{gff_tag}.\n";
@@ -1220,7 +1240,7 @@ sub SNP_Ratio_Intron_Worker {
     ## I saved the set of tags as @tag_observations, use that now in order to
     ## write out the modified genome/CDS/translation.
     my $output_by_gene = FileHandle->new(">$options->{output_by_gene}");
-    print $output_by_gene qq"gene\tchromosome\tposition\tfrom_to\taa_subst\n";
+    print $output_by_gene qq"gene\tchromosome\tposition\tfrom_to\taa_subst\tsynonymousp\tblosum_delta\n";
     my $output_penetrance = FileHandle->new(">$options->{output_penetrance}");
     print $output_penetrance qq"chromosome\tposition\tfrom_to\n";
     my $vars_by_gene = {};
@@ -1239,7 +1259,7 @@ sub SNP_Ratio_Intron_Worker {
       my $vcf_cutoff = $options->{vcf_cutoff};
       if (defined($vcf_cutoff)) {
           if ($datum->{$depth_tag} < $vcf_cutoff) {
-              print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
+              print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t${chosen}\n";
               next SHIFTER;
           }
       }
@@ -1247,17 +1267,17 @@ sub SNP_Ratio_Intron_Worker {
           if (defined($options->{min_value}) && defined($options->{max_value})) {
               if ($datum->{chosen} > $options->{max_value} ||
                   $datum->{chosen} < $options->{min_value}) {
-                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
+                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t${chosen}\n";
                   next SHIFTER;
               }
           } elsif (defined($options->{min_value})) {
               if ($datum->{chosen} < $options->{min_value}) {
-                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
+                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t${chosen}\n";
                   next SHIFTER;
               }
           } elsif (defined($options->{max_value})) {
               if ($datum->{chosen} > $options->{max_value}) {
-                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
+                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t${chosen}\n";
                   next SHIFTER;
               }
           }
@@ -1277,6 +1297,11 @@ sub SNP_Ratio_Intron_Worker {
       print $all_out $datum_line;
       my $position_data = $datum->{position};
       my ($chr, $pos, $orig, $alt) = $position_data =~ m/^chr_(.*)_pos_(.*)_ref_(.*)_alt_(.*)$/;
+      ## 1 entry in one sample has a weird whitespace in it, do a little cleaning therefore.
+      $chr =~ s/^\s+//g;
+      $chr =~ s/\s+$//g;
+      $pos =~ s/^\s+//g;
+      $pos =~ s/\s+//g;
 
       ## Take a moment to write a copy of the chromosome with the
       ## new nucleotide which passed our filters.
@@ -1347,10 +1372,14 @@ sub SNP_Ratio_Intron_Worker {
                     aa => $mRNA_datum{aa}, relative => $relative_position,
                     genome_from => $orig, genome_to => $alt,
                     feature_strand => $mRNA_datum{strand});
-
+                my $synonymousp = 'S';
+                if ($substitution->{aa_from} ne $substitution->{aa_to}) {
+                    $synonymousp = 'NS';
+                }
+                my $subst_score = $subst_matrix->entry($substitution->{aa_from}, $substitution->{aa_to});
                 my $aa_delta_string = $substitution->{aa};
                 my $nt_delta_string = $substitution->{nt};
-                my $report_string = qq"${name}\t${chr}\t${pos}\t${nt_delta_string}\t${aa_delta_string}\n";
+                my $report_string = qq"${name}\t${chr}\t${pos}\t${nt_delta_string}\t${aa_delta_string}\t${synonymousp}\t${subst_score}\n";
                 print $output_by_gene $report_string;
             } else {
                 ## If the current variant is not within this exon, then add its length to
@@ -1362,7 +1391,7 @@ sub SNP_Ratio_Intron_Worker {
         ## individual mRNA
     } ## End looking at all the mRNAs
       ## Then this variant is in an inter-cds region, so lets record it as such.
-      my $report_string = qq"$chr\t$pos\t${orig}_${alt}\n";
+      my $report_string = qq"${chr}\t${pos}\t${orig}_${alt}\n";
       print $output_penetrance $report_string;
   } ## End looking at each line from bcftools
     $all_out->close();  ## Close out the matrix of observations.
@@ -1443,7 +1472,11 @@ sub Swap_Sequence {
     my $nt_delta_string = qq"${from}${swap_position}${to}";
     my $report = {
         aa => $aa_delta_string,
+        aa_from => $original_aa,
+        aa_to => $new_aa,
         nt => $nt_delta_string,
+        nt_from => $from,
+        nt_to => $to,
     };
     return($report);
 }
@@ -1522,16 +1555,11 @@ Email  <abelew@gmail.com>
 L<samtools> L<snippy> L<vcfutils>
 
 =cut
-
-
-use Bio::LiveSeq::Mutation;
-use Bio::LiveSeq::DNA;
-
 sub Test_Worker {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
-        required => ['species', 'input'],
+        ## required => ['species', 'input'],
         chosen_tag => 'PAIRED',
         coverage_tag => 'DP',
         gff_tag => 'ID',
@@ -1541,6 +1569,7 @@ sub Test_Worker {
         output => 'all.txt',
         output_count => 'count.txt',
         output_genome => 'new_genome.fasta',
+        output_gff => 'new_genome.gff',
         output_by_gene => 'counts_by_gene.txt',
         output_penetrance => 'variants_penetrance.txt',
         output_pkm => 'by_gene_length.txt',
@@ -1548,90 +1577,169 @@ sub Test_Worker {
         penetrance_tag => 'SAP',
         qual => 10,
         vcf_cutoff => 1,
-        vcf_method => 'freebayes',);
+        vcf_method => 'freebayes',
+        verbose => 1,);
+    $options->{input} = 'phix.vcf';
+    my $genome = 'phix.fasta';
+    my $species_gff = 'phix.gff';
+    $class->{species} = 'phix';
+    $options->{species} = 'phix';
     my $reader = qq"<$options->{input}";
     if ($options->{input} =~ /\.bcf$/) {
         $reader = qq"bcftools view $options->{input} |";
     }
-    my $species = $options->{species};
     my $out_dir = dirname($options->{output});
     my $log_file = qq"${out_dir}/snp_ratio.stdout";
     my $log = FileHandle->new(">${log_file}");
-    ##my $genome = qq"$options->{libpath}/$options->{libtype}/${species}.fasta";
-    my $genome = 'phix.fasta';
-    ##my $species_gff = qq"$options->{libpath}/$options->{libtype}/${species}.gff";
-    my $species_gff = 'phix.gff';
     my $gff = FileHandle->new(qq!less $species_gff | grep -v "^#" |!);
     print $log "Reading gff: ${species_gff}, extracting type: $options->{gff_type} features tagged $options->{gff_tag}.\n";
-    $reader = "bcftools view phix.bcf |";
-    my $in_bcf = FileHandle->new($reader);
     print $log "The large matrix of data will be written to: $options->{output}\n";
     my $all_out = FileHandle->new(">$options->{output}");
     my $filtered_coverage_log = qq"${out_dir}/filtered_coverage.tsv";
+    my $output_by_gene = FileHandle->new(">$options->{output_by_gene}");
+    print $output_by_gene qq"gene\tchromosome\tposition\tfrom_to\taa_subst\n";
+    my $output_penetrance = FileHandle->new(">$options->{output_penetrance}");
+    print $output_penetrance qq"chromosome\tposition\tfrom_to\tpenetrance\n";
+    my $filtered_coverage = FileHandle->new(">${filtered_coverage_log}");
 
-    ## Here is the idea: when we start dealing with indels, we will do the following:
-    ## 1.  Pick out the contig id
-    ## 2.  Iterate over every element of the array in features_by_contig->{contig}
-    ##   a.  If the position of the indel is before both start/end of the current feature,
-    ##       then add/delete the appropriate amount to the start/end of the array element.
-    ##   b.  If the indel position is before only the end, then add/delete the appropriate amount.
-    ##   c.  If the indel position is after both start/end, then shift the array element off
-    ##       and push it to finished_by_contig->{contig}
-    ##  As a result, this painfully recursive process should speed up fairly quickly.
-    my $features_by_contig = {};
-    my $finished_by_contig = {};
-    my $input_gff = Bio::FeatureIO->new(-format => 'GFF', -version => 3, -fh => $gff);
-  INFEAT: while (my $feature = $input_gff->next_feature()) {
-      my @tmp_features = ();
-      my $contig_id = $feature->seq_id;
-      my $feature_start = $feature->start;
-      #use Data::Dumper;
-      #print Dumper $feature;
-      #my $feature_start = 1;
-      if (defined($features_by_contig->{$contig_id})) {
-          @tmp_features = $features_by_contig->{$contig_id};
-      } else {
-          $finished_by_contig->{$contig_id} = ();
-      }
-      push(@tmp_features, $feature);
-      $features_by_contig->{$contig_id} = @tmp_features;
-  }
-    $gff->close();
+    ## This function returns a 3 element hash:
+    ##  contigs: 1 feature / contig
+    ##  sf_sequences: The seq objects for each contig (should not be needed)
+    ##  sf_by_contig: The seqfeatures which effectively combine the above.
+    my $species2sf = $class->Bio::Adventure::Convert::Species2SF();
+    my $contig_features = $species2sf->{contigs};
+    my $sf_sequences = $species2sf->{sf_sequences};
+    my $seqfeatures = $species2sf->{sf_by_contig};
 
-    my @contig_ids = sort keys %{$features_by_contig};
-    my $num_contigs = scalar(@contig_ids);
-    print "TESTME: $num_contigs and first: $contig_ids[0] vs last: $contig_ids[$#contig_ids]\n";
+    ## The following funciton dumps the observed variants in a (v|b)cf file into memory.
+    my $bcf_data = Extract_Variants(input => $reader, vcf_method => 'freebayes', qual => $options->{qual});
+    my %observations = %{$bcf_data->{observations}};
+    my @tag_observations = @{$bcf_data->{tag_observations}};
+    my @tag_order = @{$bcf_data->{tag_order}};
+    my %num_observed = %{$bcf_data->{num_observed}};
+    print "Finished read the bcf file, observed: $observations{snp} SNPS\n";
+    ## Now we should have a big array full of little hashes
 
-    print "Reading genome.\n";
-    my $input_genome = Bio::SeqIO->new(-file => $genome, -format => 'Fasta');
-    my $input_sequences = {};
-  GENOME: while (my $seq = $input_genome->next_seq()) {
-      my $id = $seq->id;
-      my $contig_info = {
-          offset => 0,
-          current_pos => 0,
-          features => $features_by_contig->{$id},
-          seq => $seq,
-      };
-      $input_sequences->{$id} = $contig_info;
-  }
-    print "Finished reading genome.\n";
-    print "The first 80 nt of phix are:
-GAGTTTTATCGCTTCCATGACGCAGAAGTTAACACTTTCGGATATTTCTGATGAGTCGAA";
+    ## Use the tags from the (v|b)cf file to write the observation tsv header line.
+    my @used_tags = ('position', );
+    ## First collect the set of tags of interest.
+    my $header_line = "position\t";
+    for my $k (@tag_order) {
+        if ($num_observed{$k} > 0) {
+            push(@used_tags, $k);
+            $header_line .= "$k\t";
+        }
+    }
+    $header_line =~ s/\t$/\n/;
+    ## Write out the observations, starting with a header line comprised of the position information
+    ## followed by the tags.
+    print $all_out qq"${header_line}\n";
 
-    ## Ok, so I want to simplify the vcf output so that I can create a pseudo
-    ## count table of every potential SNP position I want to create a 2 column
-    ## file where the first column is a unique ID containing 'chr_pos_ref_new'
-    ## and the second column is some sort of score which I will be able to use
-    ## for a PCA when I merge a bunch of these together.  Candidates include:
-    ## quality score, DP*AF1 (depth * max likelihood estimate) Maybe also consider
-    ## DP4 column which is comma separated: #forward-ref, #reverse-ref, #forward-alt, #reverse-alt
-    ## If that, then sum all 4 and only take those greater than x (20?), then take
-    ## forward-alt+reverse-alt/(sum of all) to get simple SNP ratio
-    ## I am going to change my writer of the all.txt file so that it prints out the
-    ## values of every observed tag.  For now I am just going to hard-code the order,
-    ## but it should not be difficult to parse this out of the header lines of the
-    ## bcf file.
+
+    my $vars_by_gene = {};
+    my $all_count = 0;
+    print "Filtering variant observations and writing a new genome.\n";
+    my $modified = Modify_Features(observations => \@tag_observations,
+                                   seqfeatures => $sf_sequences,
+                                   contig_features => $contig_features,
+                                   penetrance_tag => $options->{penetrance_tag},
+                                   chosen_tag => $options->{chosen_tag},
+                                   coverage_tag => $options->{coverage_tag},
+                                   vcf_cutoff => $options->{vcf_cutoff},
+                                   filtered_coverage => $filtered_coverage,
+                                   min_value => $options->{min_value},
+                                   max_value => $options->{max_value},
+                                   used_tags => \@used_tags,
+                                   all_out => $all_out,
+                                   output_by_gene => $output_by_gene,
+                                   output_penetrance => $output_penetrance,
+                                   verbose => $options->{verbose},);
+
+    $all_out->close();  ## Close out the matrix of observations.
+    $output_by_gene->close();
+    my $var_by_genelength = FileHandle->new(">$options->{output_pkm}");
+    print $var_by_genelength qq"gene\tvars_by_length\n";
+    foreach my $geneid (keys %{$vars_by_gene}) {
+        my $gene_ratio = 0;
+        my $good = 1;
+        $good = 0 if (! $vars_by_gene->{$geneid}->{count});
+        $good = 0 if (! $vars_by_gene->{$geneid}->{length});
+        $good = 0 if (! $vars_by_gene->{$geneid}->{length});
+        if ($good) {
+            $gene_ratio = ($vars_by_gene->{$geneid}->{count} / $vars_by_gene->{$geneid}->{length}) * 1000.0;
+        }
+        print $var_by_genelength "${geneid}\t${gene_ratio}\n";
+    }
+    $var_by_genelength->close();
+
+    my $output_genome = new Bio::SeqIO(-file => ">$options->{output_genome}",
+                                       -format => 'Fasta');
+    my $string = qq!##gff-version 3
+!;
+    my $final_write = new FileHandle(">$options->{output_gff}");
+    my $stringio = new IO::String($string);
+    for my $ch (sort keys %{$sf_sequences}) {
+        ## my $formatted = $text->format($input_genome->{$ch}->{sequence});
+        my $seq_obj = $sf_sequences->{$ch};
+        my $written = $output_genome->write_seq($seq_obj);
+        my $seq_string = $seq_obj->seq;
+        my $seq_id = $seq_obj->id;
+        my $seq_name = $seq_obj->display_name;
+        print "TESTME: ID: $seq_id NAME: $seq_name\n";
+        ## Take from: https://www.biostars.org/p/70448/
+        #foreach my $seq_line (unpack('(a[80])*', $seq_string)) {
+        #    print $output_genome "${seq_line}\n";
+        #}
+        my $contig_sf = $contig_features->{$ch};
+        for my $top_feature ($contig_sf->get_SeqFeatures()) {
+            print "TESTME TOP: Got feature\n";
+        }
+        my $all_sf = $seqfeatures->{$ch};
+        for my $thingie (@{$all_sf}) {
+            my @tags = sort $thingie->get_all_tags();
+            my $suffix = '';
+          TAGS: for my $t (@tags) {
+              next TAGS if ($t eq 'phase');
+              next TAGS if ($t eq 'score');
+              next TAGS if ($t eq 'seq_id');
+              next TAGS if ($t eq 'source');
+              next TAGS if ($t eq 'type');
+              my @values = $thingie->get_tag_values($t);
+              print "Hoping to add tag: $t with value: $values[0]\n";
+              $suffix .= qq"${t}=$values[0];";
+          }
+            $suffix =~ s/;$/\n/;
+            my $gffout = new Bio::FeatureIO(-fh => $stringio,
+                                            -format => 'GFF',
+                                            -version => 3);
+            ## This sends the gff to my string IO, so I can add the tags to it...
+            my $written = $gffout->write_feature($thingie);
+            $string =~ s/$/$suffix/;
+            print "TESTME: \n$string\n\n";
+
+        }  ## End for every feature
+    } ## End for every contig
+    print $final_write $string;
+    $final_write->close();
+    $output_penetrance->close();
+
+    ## Write the modified gff with the sequence features
+    print $log "Compressing matrix of all metrics.\n";
+    qx"xz -9e -f $options->{output}";
+    print $log "Compressing output by gene.\n";
+    qx"xz -9e -f $options->{output_by_gene}";
+    qx"xz -9e -f $options->{output_penetrance}";
+    print $log "Compressing output pkm file.\n";
+    qx"xz -9e -f $options->{output_pkm}";
+    $log->close();
+    $filtered_coverage->close();
+    return(@tag_observations);
+}
+
+
+sub Extract_Variants {
+    my %args = @_;
+    my $in_bcf = FileHandle->new($args{input});
     my @mpileup_tag_order = (
         'DP', 'ADF', 'AD', 'VDB', 'SGB', 'MQ0F', 'RPB', 'MQB', 'BQB', 'MQSB', 'ADR', 'GT',
         'ICB', 'HOB', 'AC', 'AN', 'DP4', 'MQ',);
@@ -1646,7 +1754,7 @@ GAGTTTTATCGCTTCCATGACGCAGAAGTTAACACTTTCGGATATTTCTGATGAGTCGAA";
     ## Make a data structure containing arrays for the set of observed tags in the vcf file.
     ## It should be an array which ends at length of the number of bcf entries.
     my @tag_order = ();
-    if ($options->{vcf_method} eq 'freebayes') {
+    if ($args{vcf_method} eq 'freebayes') {
         @tag_order = @freebayes_tag_order;
     } else {
         @tag_order = @mpileup_tag_order;
@@ -1661,7 +1769,8 @@ GAGTTTTATCGCTTCCATGACGCAGAAGTTAACACTTTCGGATATTTCTGATGAGTCGAA";
 
     ## Here is an arbitrary vcf line as a refresher to make sure I grabbed them all:
     ## NC_045512.2     3037    .       C       T       224     PASS    DP=244;ADF=0,121;ADR=0,121;AD=0,242;VDB=0;SGB=-0.693147;MQSB=0.976205;MQ0F=0;AC=2;AN=2;DP4=0,0,121,121;MQ=42    GT:PL:DP:SP:ADF:ADR:AD  1/1:254,255,0:242:0:0,121:0,121:0,242
-    print "Reading bcf file.\n";
+
+    ## FIXME: Redo this to use Bio::DB::HTS::VCF
     my $current_contig = '';
     my $current_position = 0;
     my $current_offset = 0;
@@ -1672,8 +1781,7 @@ GAGTTTTATCGCTTCCATGACGCAGAAGTTAACACTTTCGGATATTTCTGATGAGTCGAA";
         complex => 0,
         multi => 0,
         combined => 0,
-        other => 0,
-        );
+        other => 0,);
     my $count = 0; ## Use this to count the positions changed in the genome.
     my $num_variants = 0; ## Use this to count the variant positions of reasonably high confidence.
   READER: while (my $line = <$in_bcf>) {
@@ -1683,8 +1791,8 @@ GAGTTTTATCGCTTCCATGACGCAGAAGTTAACACTTTCGGATATTTCTGATGAGTCGAA";
       ## fields at the end which are called tags and tag_info here.
       my ($chr, $pos, $id, $ref, $alt, $qual, $filt, $info, $tags, $tag_info) = split(/\s+/, $line);
       ## Only accept the simplest non-indel mutations.
-      if ($options->{qual} ne '' && defined($qual)) {
-          if ($qual < $options->{qual}) {
+      if ($args{qual} ne '' && defined($qual)) {
+          if ($qual < $args{qual}) {
               next READER;
           }
       }
@@ -1699,7 +1807,7 @@ GAGTTTTATCGCTTCCATGACGCAGAAGTTAACACTTTCGGATATTTCTGATGAGTCGAA";
         my ($element_type, $element_value) = split(/=/, $element);
 
         ## At this point, add some post-processing for tags which are multi-element.
-        if ($options->{vcf_method} eq 'mpileup' && $element_type eq 'DP4') {
+        if ($args{vcf_method} eq 'mpileup' && $element_type eq 'DP4') {
             my ($same_forward, $same_reverse, $alt_forward, $alt_reverse) = split(/,/, $element_value);
             $diff_sum = $alt_forward + $alt_reverse;
             $all_sum = $same_forward + $same_reverse + $diff_sum;
@@ -1733,77 +1841,83 @@ GAGTTTTATCGCTTCCATGACGCAGAAGTTAACACTTTCGGATATTTCTGATGAGTCGAA";
           $observations{other}++;
       }
   } ## End reading the bcf file.
-    $in_bcf->close();
-    print "Finished read the bcf file, observed:\n";
-    use Data::Dumper;
-    print Dumper %observations;
-    ## Now we should have a big array full of little hashes
-    my @used_tags = ('position', );
-    ## First collect the set of tags of interest.
-    my $header_line = "position\t";
-    for my $k (@tag_order) {
-        if ($num_observed{$k} > 0) {
-            push(@used_tags, $k);
-            $header_line .= "$k\t";
-        }
-    }
-    $header_line =~ s/\t$/\n/;
-    ## Write out the observations, starting with a header line comprised of the position information
-    ## followed by the tags.
-    print $all_out qq"${header_line}\n";
+    my $closed = $in_bcf->close();
+    my $ret = {
+        tag_observations => \@tag_observations,
+        observations => \%observations,
+        tag_order => \@tag_order,
+        num_observed => \%num_observed,
+  };
+    return($ret);
+}
 
-    my $output_by_gene = FileHandle->new(">$options->{output_by_gene}");
-    print $output_by_gene qq"gene\tchromosome\tposition\tfrom_to\taa_subst\n";
-    my $output_penetrance = FileHandle->new(">$options->{output_penetrance}");
-    print $output_penetrance qq"chromosome\tposition\tfrom_to\tpenetrance\n";
-    my $filtered_coverage = FileHandle->new(">${filtered_coverage_log}");
-    my $vars_by_gene = {};
-    my $all_count = 0;
-    ## Make a copy of the genome so that we can compare before/after the mutation(s)
+sub Modify_Features {
+    my %args = @_;
+    my @observations = @{$args{observations}};
+    my $seqfeatures = $args{seqfeatures};
+    my $contig_features = $args{contig_features};
+    my $penetrance_tag = $args{penetrance_tag};
+    my $chosen_tag = $args{chosen_tag};
+    my $coverage_tag = $args{coverage_tag};
+    my $vcf_cutoff = $args{vcf_cutoff};
+    my $filtered_coverage = $args{filtered_coverage};
+    my $min_value = $args{min_value};
+    my $max_value = $args{max_value};
+    my @used_tags = @{$args{used_tags}};
+    my $all_out = $args{all_out};
+    my $output_by_gene = $args{output_by_gene};
+    my $output_penetrance = $args{output_penetrance};
 
-    print "Filtering variant observations and writing a new genome.\n";
+    ## The following SHIFTER loop is responsible for:
+    ##  1. Excluding variants with insufficient depth and/or other tags
+    ##  2. Writing a line to the tsv file containing all the tags/observation.
+    ##  3. Adding new entries to the @{$deltas->{contig}} and @{$positions->{contig}}
+    ##     Any time an observed variant is not 1:1, this should note the contig location
+    ##     and the amount every following feature should be shifted.
+    ##     It therefore starts at position 0 with a shift of 0.
     my $shifters = 0;
     my $points = 0; ## Number of point mutations observed.
-    my $total_delta = 0;
-  SHIFTER: while (scalar(@tag_observations)) {
-      my $datum = shift(@tag_observations);
+    my $deltas = {};
+    my $positions = {};
+    my $total_delta = 0; ## I think I do not need this anymore?
+    my $current_position = 0;
+    my $current_delta = 0;
+    my $var_features = {};
+  SHIFTER: for my $datum (@observations) {
       my $difference_type = $datum->{TYPE};
       $shifters++;
       ## Now decide if we actually want to write this difference into
       ## a new genome and record it
-      my $pen_tag = $options->{penetrance_tag};
-      my $penetrance = $datum->{$pen_tag};
-      my $chosen = $options->{chosen_tag};
-      my $depth_tag = $options->{coverage_tag};
-      my $vcf_cutoff = $options->{vcf_cutoff};
+      my $penetrance = $datum->{$penetrance_tag};
+      my $chosen = $chosen_tag;
       if (defined($vcf_cutoff)) {
-          if ($datum->{$depth_tag} < $vcf_cutoff) {
-              print "Dropping $datum->{position} because depth ($datum->{$depth_tag}) is less than $vcf_cutoff.\n";
-              print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
+          if ($datum->{$coverage_tag} < $vcf_cutoff) {
+              print "Dropping $datum->{position} because depth ($datum->{$coverage_tag}) is less than $vcf_cutoff.\n" if ($args{verbose});
+              print $filtered_coverage "$datum->{position}\t$datum->{$coverage_tag}\t$datum->{chosen}\n";
               next SHIFTER;
           }
       }
       if (defined($chosen) && defined($datum->{chosen})) {
-          if (defined($options->{min_value}) && defined($options->{max_value})) {
-              if ($datum->{chosen} > $options->{max_value}) {
-                  print "$datum->{position} has exceeded max value: $options->{max_value}\n";
-                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
+          if (defined($min_value) && defined($max_value)) {
+              if ($datum->{chosen} > $max_value) {
+                  print "$datum->{position} has exceeded max value: $max_value\n" if ($args{verbose});
+                  print $filtered_coverage "$datum->{position}\t$datum->{$coverage_tag}\t$datum->{chosen}\n";
                   next SHIFTER;
-              } elsif ($datum->{chosen} < $options->{min_value}) {
-                  print "$datum->{position} is less than min value: $options->{min_value}\n";
-                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
-                  next SHIFTER;
-              }
-          } elsif (defined($options->{min_value})) {
-              if ($datum->{chosen} < $options->{min_value}) {
-                  print "$datum->{position} is less than min value: $options->{min_value}\n";
-                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
+              } elsif ($datum->{chosen} < $min_value) {
+                  print "$datum->{position} is less than min value: $min_value\n" if ($args{verbose});
+                  print $filtered_coverage "$datum->{position}\t$datum->{$coverage_tag}\t$datum->{chosen}\n";
                   next SHIFTER;
               }
-          } elsif (defined($options->{max_value})) {
-              if ($datum->{chosen} > $options->{max_value}) {
-                  print "$datum->{position} has exceeded max value: $options->{max_value}\n";
-                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
+          } elsif (defined($min_value)) {
+              if ($datum->{chosen} < $min_value) {
+                  print "$datum->{position} is less than min value: $min_value\n" if ($args{verbose});
+                  print $filtered_coverage "$datum->{position}\t$datum->{$coverage_tag}\t$datum->{chosen}\n";
+                  next SHIFTER;
+              }
+          } elsif (defined($max_value)) {
+              if ($datum->{chosen} > $max_value) {
+                  print "$datum->{position} has exceeded max value: $max_value\n" if ($args{verbose});
+                  print $filtered_coverage "$datum->{position}\t$datum->{$coverage_tag}\t$datum->{chosen}\n";
                   next SHIFTER;
               }
           }
@@ -1827,141 +1941,241 @@ GAGTTTTATCGCTTCCATGACGCAGAAGTTAACACTTTCGGATATTTCTGATGAGTCGAA";
           my @tmp = split(/\,/, $alt);
           $alt = $tmp[0];
       }
-      my $orig_length = length($orig);
-      my $replace_length = length($alt);
-      my $delta_length = $replace_length - $orig_length;
-      my $relative_pos = $report_pos + $total_delta;
-      ## First pull the entire contig sequence.
-      my $starting_seqio = $input_sequences->{$chr}->{seq};
-      my $original_seq = $starting_seqio->seq;
+      my $orig_variant_length = length($orig);
+      my $alt_variant_length = length($alt);
+      my $delta_variant_length = $alt_variant_length - $orig_variant_length;
+      $report_pos = $report_pos + $total_delta;
+      if ($delta_variant_length != 0) {
+          print "The delta variant length is: $delta_variant_length\n" if ($args{verbose});
+          ($positions, $deltas) = Update_Delta_Position(positions => $positions, deltas => $deltas,
+                                                        position => $report_pos,
+                                                        delta => $delta_variant_length);
+      }
 
-      ## Give it a useful name, extract the length.
-      my $chromosome_length = length($original_seq);
-      ## Search a little bit of context, create a new copy of the contig to
-      ## replace the nucleotide of interest.
-      my $found_nt = substr($original_seq, $report_pos - 2, 5);
-      my $replaced = substr($original_seq, $relative_pos - 1, $delta_length, $alt);
-      my $test_nt = substr($replaced, $relative_pos - 2, 5);
-      $total_delta = $total_delta + $delta_length;
+      ## Create a feature object for each observation and use it later for recording the results.
+      my $var_feature = Bio::SeqFeature::Generic->new(
+          -start => $report_pos,
+          -end => $report_pos,
+          -id => $chr,
+          -strand => 0,
+          -display_name => $position_data,
+          -tag => { ref => $orig, alt => $alt });
+      my @vfs = ();
+      if (defined($var_features->{$chr})) {
+          @vfs = @{$var_features->{$chr}};
+      }
+      push(@vfs, $var_feature);
+      $var_features->{$chr} = \@vfs;
+
+      ## Now modify the contigs with the variant information.
+      my $contig_sf = $contig_features->{$chr};
+      my $seqio = $contig_sf->seq;
+      my $seq = $seqio->seq;
+      my $current_len = length($seq);
+
+      ## The following couple of lines are a little silly, but I want to have
+      ## one temporary copy of the sequence so I can check my work and another
+      ## upon which to actually apply the variant, thus leaving the original
+      ## sequence untouched.
+
+      ## This first copy is named 'tmp' because I will destroy it without consideration.
+      my $tmp_seq = $seq;
+      my $found_nt = substr($tmp_seq, $report_pos - 2, 5);
+      ## This copy is named 'rw' because it is the copy of the sequence which is actually changed.
+      my $rw_copy = $seq;
+      my $replaced = substr($rw_copy, $report_pos - 1, $orig_variant_length, $alt);
+      my $replaced_len = length($replaced);
+      ## Copy the modified sequence to tmp and extract the region of interest to compare.
+      $tmp_seq = $rw_copy;
+      my $test_nt = substr($tmp_seq, $report_pos - 2, 5);
       ## Swap out the reference with the alt, $replace_seq gets the new data.
       ## Make a new variable so we can see the change, and
       ## replace the contig in the reference database.
-      print "Original region at pos: ${report_pos} are: ${found_nt}, changing ${orig} to ${alt}.  Now they are ${test_nt}. for chr: ${chr} with $total_delta\n";
-      ## Make a new Bio::Seq with this new sequence.
-      $starting_seqio->seq($replaced);
-      my @finished_features = ();
-      my @working_features = @{$features_by_contig->{$chr}};
-      my $feat_count = -1;
-    MODIFYFEAT: for my $feat (@working_features) {
-        $feat_count++;
-        my $gene_id = $feat->display_name;
-        if ($report_pos > $feat->end) {
-            push(@finished_features, $feat);
-            splice(@working_features, $feat_count, $feat_count + 1);
-            $feat_count--;
-        } else {
-            $vars_by_gene->{$gene_id}->{length} = $feat->end - $feat->start;
-            if (!defined($vars_by_gene->{$gene_id}->{count})) {
-                $vars_by_gene->{$gene_id}->{count} = 1;
-            } else {
-                $vars_by_gene->{$gene_id}->{count}++;
-            }
-            ## Print the nucleotide changed by this position along with the amino acid substitution
+      print "Original region at pos: ${report_pos} are: ${found_nt}, changing ${orig} to ${alt}.  Now they are ${test_nt}. for chr: ${chr} with $total_delta\n" if ($args{verbose});
 
-            my $new_chr_string = $starting_seqio->seq;
-            ## my $original_chr = Bio::Seq->new(-display_id => $chr, -seq => $original_genome{$chr}{sequence});
-            my $original_chr = Bio::Seq->new(-display_id => $chr, -seq => $original_seq);
-            ## my $new_chr = Bio::Seq->new(-display_id => $chr, -seq => $input_genome->{$chr}->{sequence});
-            my $new_chr = Bio::Seq->new(-display_id => $chr, -seq => $new_chr_string);
+      ## At this point, a little reminder to self about the datastructures:
+      ## The top-level structure is a hashref of contigs pointing to SeqFeatures, 1/contig.
+      ## Each contig's seqfeature has a slot named (annoyingly) 'seq' which may be used
+      ## to access the underlying SeqIO object containing the actual sequence.
+      ## I will therefore do the following:
+      ##  1: replace the seqio's sequence with my rw_copy
+      ##  2: Update the total position shift (usually by 0)
+      ##  3: Record the penetrance (which can probably be put somewhere else)
+      ##  4: Atttach the new sequence to the contig's SeqFeature
+      ##  5: Put the modified SeqFeature back on the contig hash.
 
-            my $cds_relative_position;
-            if ($feat->strand > 0) {
-                $cds_relative_position = $report_pos - $feat->start;
-            } else {
-                $cds_relative_position = $feat->end - $report_pos;
-            }
-            my $relative_aminos = floor($cds_relative_position / 3);
-
-            my $original_cds = $original_chr->trunc($feat->start, $feat->end);
-            my $new_cds = $new_chr->trunc($feat->start + $total_delta, $feat->end + $total_delta);
-            if ($feat->strand < 0) {
-                $original_cds = $original_cds->revcom;
-                $new_cds = $new_cds->revcom;
-            }
-            my $original_aa = $original_cds->translate;
-            my $new_aa = $new_cds->translate;
-            my $original_aa_string = $original_aa->seq;
-            my $new_aa_string = $new_aa->seq;
-            my $original_aa_position = substr($original_aa_string, $relative_aminos, 1);
-            my $new_aa_position = substr($new_aa_string, $relative_aminos, 1);
-            my $aa_delta_string = qq"${original_aa_position}${relative_aminos}${new_aa_position}";
-            my $report_string = qq"${gene_id}\t${chr}\t${report_pos}\t${orig}_${alt}\t${aa_delta_string}\n";
-            print $output_by_gene $report_string;
-            last FIND_GENE;
-
-            if ($report_pos > $feat->start) {
-                next MODIFYFEAT if ($difference_type eq 'snp');
-                my $end = $feat->end;
-                $feat->end($end + $total_delta);
-                $features_by_contig->{$chr}->[$feat_count] = $feat;
-            } elsif ($report_pos <= $feat->start) {
-                next MODIFYFEAT if ($difference_type eq 'snp');
-                my $end = $feat->end;
-                my $start = $feat->start;
-                $feat->end($end + $total_delta);
-                $feat->start($start + $total_delta);
-                $features_by_contig->{$chr}->[$feat_count] = $feat;
-            } else {
-                print "WTF I do not know what happened\n";
-            }
-        }
-    } ## End making sure the chromosome/contig has information
-      ## We have looked over all of our annotations at this point, if this variant was not
-      ## in any of them, assume it is intercds.
-      ## Then this variant is in an inter-cds region, so lets record it as such.
-      my $penetrance_string = qq"$chr\t${report_pos}\t${orig}_${alt}\t${penetrance}\n";
+      ## $replaced_seqio is either 0 or 1, $seqio gets changed.
+      my $replaced_seqio = $seqio->seq($rw_copy);
+      $total_delta = $total_delta + $delta_variant_length;
+      my $penetrance_string = qq"${chr}\t${report_pos}\t${orig}_${alt}\t${penetrance}\n";
       print $output_penetrance $penetrance_string;
 
-  } ## End looking at the each observation.
-    $all_out->close();  ## Close out the matrix of observations.
+      ## I think doing sf->seq will replace the seqio
+      ## portion of this seqfeature object with the new sequence.
+      my $swapping_in = $contig_sf->attach_seq($seqio);
+      $contig_features->{$chr} = $contig_sf;
 
-    $output_by_gene->close();
-    my $var_by_genelength = FileHandle->new(">$options->{output_pkm}");
-    print $var_by_genelength qq"gene\tvars_by_length\n";
-    foreach my $geneid (keys %{$vars_by_gene}) {
-        my $gene_ratio = 0;
-        my $good = 1;
-        $good = 0 if (! $vars_by_gene->{$geneid}->{count});
-        $good = 0 if (! $vars_by_gene->{$geneid}->{length});
-        $good = 0 if (! $vars_by_gene->{$geneid}->{length});
-        if ($good) {
-            $gene_ratio = ($vars_by_gene->{$geneid}->{count} / $vars_by_gene->{$geneid}->{length}) * 1000.0;
-        }
-        print $var_by_genelength "${geneid}\t${gene_ratio}\n";
-    }
-    $var_by_genelength->close();
+  }  ## End iterating over the observations, now modify the features
 
-    my $output_genome = FileHandle->new(">$options->{output_genome}");
-    foreach my $ch (sort keys %{$input_genome}) {
-        ## my $formatted = $text->format($input_genome->{$ch}->{sequence});
-        print $output_genome ">${ch}\n";
-        ## Take from: https://www.biostars.org/p/70448/
-        foreach my $seq_line (unpack('(a[80])*', $input_genome->{$ch}->{sequence})) {
-            print $output_genome "$seq_line\n";
-        }
+
+    ## The following ~50 lines could probably be moved to a separate function, but they are making
+    ## use of enough difference pieces from above they I am worried I will mess it up.
+    ## Here is the idea:
+    ##  1.  Iterate over the contigs and associated SeqFeatures.
+    ##  2.  Iterate over the set of positions/deltas
+    ##      (recall that these are arrays recording where on each contig the sequence grew or shrank).
+    ##  3.  For any feature (gene/mRNA/CDS/exon/etc) which has a delta event inside it,
+    ##      move the end coordinate by the appropriate amount.
+    ##  4.  For any feature which is _after_ a delta event, moved the start and end coordinates.
+    my @contig_ids = sort keys %{$seqfeatures};
+    print "Moving features when the positions have changed.\n" if ($args{verbose});
+    ## Whenever we have a change in the offset != 0, modify the start/end positions
+    ## of the relevant features.
+    my $changed_starts = 0;
+    my $changed_ends = 0;
+    ## Reset total delta back to 0 and use it again when moving features.
+    $total_delta = 0;
+  CHR: for my $chr (@contig_ids) {
+      print "Moving gff feature positions: starting $chr\n" if ($args{verbose});
+      my $chr_sf = $seqfeatures->{$chr};
+      my @chr_features = $chr_sf->get_SeqFeatures();
+      my $seqio = $chr_sf->seq;
+      my @chr_positions = @{$positions->{$chr}};
+      my @chr_deltas = @{$deltas->{$chr}};
+
+    POS: for my $d (0 .. $#chr_positions) {
+        my $this_position = $chr_positions[$d];
+        my $this_delta = $chr_deltas[$d];
+        $total_delta = $total_delta + $this_delta;
+        next POS if ($total_delta == 0);
+      MODIFYPOS: for my $rw_feat (@chr_features) {
+          my $feat_seq = $rw_feat->seq;
+          my $gene_id = $rw_feat->display_name;
+          my $gene_end = $rw_feat->end;
+          my $gene_start = $rw_feat->start;
+          if ($this_position > $gene_end) {
+              next MODIFYPOS;
+          } elsif ($this_position > $gene_start &&
+                   $this_position <= $gene_end) {
+              my $new_end = $gene_end + $total_delta;
+              $rw_feat->end($new_end);
+              $changed_ends++;
+          } elsif ($this_position < $gene_start &&
+                   $this_position < $gene_end) {
+              my $new_start = $gene_start + $total_delta;
+              $changed_starts++;
+              my $new_end = $gene_end + $total_delta;
+              $changed_ends++;
+              $rw_feat->start($new_start);
+              $rw_feat->end($new_end);
+          } else {
+              carp("I do not think this should ever happen!\n");
+          }
+          ## Print the nucleotide changed by this position along with the amino acid substitution
+      } ## End iterating over features/contig
+    } ## End iterating over delta positions.
+  } ## End iterating over contigs.
+    print "Modified: $changed_starts and $changed_ends\n" if ($args{verbose});
+
+    ## Once the starts/ends are set, use the new set of coordinates to find the changed codons
+    ## and amino acids.
+    ## In order to do this, use the variant feature created above and check if it is
+    ## contained within every feature; if so pull the sequence and report it.
+
+    ## I once again split the features to copies prefixed with rw and ro.
+    ## This may not be needed.
+    print "Extracting modified nucleotides/amino acids.\n" if ($args{verbose});
+  CHR2: for my $chr (@contig_ids) {
+      my $sfs = $seqfeatures->{$chr};
+      my @seqfeats = $sfs->get_SeqFeatures;
+      my $feat_count = -1;
+    FEATS: for my $e (0 .. $#seqfeats) {
+        my $ro_feat = $seqfeats[$e];
+        my $rw_feat = $ro_feat;
+        my $feat_annot = $ro_feat->annotation;
+        my @gene_ids = $feat_annot->get_Annotations('gene_id');
+        next FEATS unless (scalar(@gene_ids) > 0);
+        my $name = $gene_ids[0]->as_text;
+        my @chr_vfs = @{$var_features->{$chr}};
+      VF: for my $vf (@chr_vfs) {
+          my $inter = $rw_feat->contains($vf);
+          next VF unless ($inter);
+          my @refs = $vf->get_tag_values('ref');
+          my @alts = $vf->get_tag_values('alt');
+
+          ## Add the alt/ref to the gene feature.
+          my $absolute_pos = $vf->start;
+          my $rel_pos = ($absolute_pos - $rw_feat->start) + 1;
+          my $ref = $refs[0];
+          my $alt = $alts[0];
+          my $mut_string = qq"${ref}${rel_pos}${alt}";
+          my $added = $rw_feat->add_tag_value('variants', $mut_string);
+
+          ## Now Extract the new amino acid/CDS sequences.
+          ## This is why I made it ro/rw earlier, to make sure
+          ## I don't accidently mess up the actual sequence objects when playing with substr()
+          ## I was considering the possibility of writing out the full sequence of the
+          ## CDS nucleotides or translated amino acids before/after this process
+          ## Currently, the only thing done is to record the AUG/M relative position changes.
+          my $report_pos = $vf->start;
+          my $ro_cds_seq = $ro_feat->seq;
+          my $rw_cds_seq = $rw_feat->seq;
+          my $cds_relative_position;
+          if ($ro_feat->strand > 0) {
+              $cds_relative_position = $report_pos - $ro_feat->start;
+          } else {
+              $cds_relative_position = $ro_feat->end - $report_pos;
+          }
+          my $relative_aminos = floor($cds_relative_position / 3);
+          my $ro_cds_seqstring;
+          my $rw_cds_seqstring;
+          if ($ro_feat->strand < 0) {
+              $ro_cds_seqstring = $ro_cds_seq->revcom->seq;
+              $rw_cds_seqstring = $rw_cds_seq->revcom->seq;
+          } else {
+              $ro_cds_seqstring = $ro_cds_seq->seq;
+              $rw_cds_seqstring = $rw_cds_seq->seq;
+          }
+
+          my $ro_aa_seq = $ro_cds_seq->translate;
+          my $rw_aa_seq = $rw_cds_seq->translate;
+          my $ro_aa_string = $ro_aa_seq->seq;
+          my $rw_aa_string = $rw_aa_seq->seq;
+          my $ro_aa_position = substr($ro_aa_string, $relative_aminos, 1);
+          my $rw_aa_position = substr($rw_aa_string, $relative_aminos, 1);
+          my $aa_delta_string = qq"${ro_aa_position}${relative_aminos}${rw_aa_position}";
+          my $report_string = qq"${name}\t${chr}\t${report_pos}\t${ref}_${alt}\t${aa_delta_string}\n";
+          print $output_by_gene $report_string;
+      } ## End iterating over the variant features per contig
+    } ## End iterating over the sequence features per contig (e.g. genes/mRNAs/etc)
+  } ## End iterating over the contigs.
+    return($seqfeatures);
+}
+
+sub Update_Delta_Position {
+    my %args = @_;
+    my $positions = $args{positions};
+    my $deltas = $args{deltas};
+    my $new_position = $args{position};
+    my $new_delta = $args{delta};
+    my $chr = $args{chr};
+    my $delta_variant_length = $args{delta_variant_length};
+
+    my (@delts, @posits);
+    if (!defined($deltas->{$chr})) {
+        @delts = (0);
+        @posits = (0);
+    } else {
+        @delts = @{$deltas->{$chr}};
+        @posits = @{$positions->{$chr}};
     }
-    $output_genome->close();
-    $output_penetrance->close();
-    print $log "Compressing matrix of all metrics.\n";
-    qx"xz -9e -f $options->{output}";
-    print $log "Compressing output by gene.\n";
-    qx"xz -9e -f $options->{output_by_gene}";
-    qx"xz -9e -f $options->{output_penetrance}";
-    print $log "Compressing output pkm file.\n";
-    qx"xz -9e -f $options->{output_pkm}";
-    $log->close();
-    $filtered_coverage->close();
-    return($count);
+    my $current_delta = sum(@delts) + $delta_variant_length;
+    print "Pushing $current_delta to the position arrays.\n";
+    push(@delts, $current_delta);
+    push(@posits, $new_position);
+    $deltas->{$chr} = \@delts;
+    $positions->{$chr} = \@posits;
+    return($positions, $deltas);
 }
 
 1;

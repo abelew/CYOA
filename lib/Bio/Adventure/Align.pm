@@ -5,6 +5,7 @@ use diagnostics;
 use warnings qw"all";
 use Moo;
 extends 'Bio::Adventure';
+use Bio::Matrix::IO;
 use Bio::SearchIO::fasta;
 use Bio::Seq;
 use Cwd;
@@ -15,6 +16,7 @@ use File::Path qw"make_path remove_tree";
 use File::Temp qw"tmpnam";
 use File::Which qw"which";
 use POSIX qw"ceil strftime";
+use WWW::Mechanize;
 
 =head1 NAME
 
@@ -131,6 +133,33 @@ sub Duplicate_Remove {
     }
     $out->close();
     return($num_found);
+}
+
+=head2 C<Get_Substitution_Matrix>
+
+  Download a substitution matrix and load it via Bio::Matrix
+
+  I think that if this is given just a name like 'BLOSUM50', then it should grab a copy
+  from NCBI, otherwise it should assume the request is to download whatever path is provided.
+
+=cut
+sub Get_Substitution_Matrix {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        matrix => 'BLOSUM50',
+    );
+    my $download_url = $options->{matrix};
+    unless ($options->{matrix} =~ /^http/) {
+        $download_url = qq"ftp://ftp.ncbi.nlm.nih.gov/blast/matrices/$options->{matrix}";
+    }
+    ## For now, just download it to the cwd.
+    my $mech = WWW::Mechanize->new;
+    my $downloaded = $mech->get($download_url, ':content_file' => $options->{matrix});
+    my $parser = Bio::Matrix::IO->new(-format => 'scoring',
+                                      -file => $options->{matrix},);
+    my $matrix = $parser->next_matrix;
+    return($matrix);
 }
 
 =head2 C<Get_Split>
@@ -481,6 +510,19 @@ sub Map_Accession {
     return($map);
 }
 
+=head2 C<ProgressiveMauve>
+
+  Invoke Mauve on a set of assemblies to look for synteny/gain/loss/rearrangements.
+  10.1371/journal.pone.0011147
+
+=over
+
+=item C<Arguments>
+
+  input(required): Directory containing a series of assemblies to compare.
+  reference(required): Reference genome to use as the root.
+
+=cut
 sub ProgressiveMauve {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
@@ -520,6 +562,21 @@ location=\$(dirname Mauve)
     return($mauve);
 }
 
+=head2 C<OrthoFinder>
+
+  Search for orthologs across an arbitrary number of cds/amino acid sequence sets.
+  10.1186/s13059-019-1832-y
+
+  Given a directory of nucleotide/amino acid fasta files, invoke orthofinder to look for
+  ortholog families.
+
+=over
+
+=item C<Arguments>
+
+  input(required): Directory name containing input fasta files.
+
+=cut
 sub OrthoFinder {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
@@ -601,6 +658,7 @@ my \$result = \$h->Bio::Adventure::Align::Orthofinder_Names_Worker(
         jstring => $jstring,
         jdepends => $ortho->{job_id},
         jname => $jname,
+        jprefix => $options->{jprefix},
         language => 'perl',
         single_input => $orthofinder_single_output,
         output => $orthofinder_all_output,
@@ -613,6 +671,17 @@ my \$result = \$h->Bio::Adventure::Align::Orthofinder_Names_Worker(
     return($ortho);
 }
 
+=head2 C<Orthofinder_Names_Worker>
+
+  Associate gene names with the ortholog families produced by orthofinder.
+
+  Orthofinder produces really interesting outputs, but there is one conspicuously missing:
+  a file which provides gene names/descriptions associated with the gene groups in each
+  family.  This function seeks to ameliorate this problem by reading the input fasta files
+  to extract some helpful information and appending the result to the tsv ortholog family
+  files.
+
+=cut
 sub Orthofinder_Names_Worker {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
@@ -628,7 +697,6 @@ sub Orthofinder_Names_Worker {
     my $outdir = dirname($all_groups);
     my $all_out = $options->{named_out};
     my $single_out = $options->{single_name_out};
-    print "TESTME: $all_out and $single_out\n";
     my $fasta_dir = $options->{fasta_dir};
     my @input_files = glob("${fasta_dir}/*.fa*");
     for my $in (@input_files) {
@@ -660,9 +728,12 @@ sub Orthofinder_Names_Worker {
       }
         print "Finished extracting ids from: ${species_name}.\n";
     }
-    print "Opening: ${all_groups}\n";
+
+    die("Could not find the file of all groups.") unless (-f $all_groups);
+    die("Could not find the file of all outputs.") unless (-f $all_out);
+    print "Opening all_groups: ${all_groups}\n";
     my $orth = FileHandle->new("<${all_groups}");
-    print "Opening: ${all_out}\n";
+    print "Opening all_out: ${all_out}\n";
     my $new_orth = FileHandle->new(">${all_out}");
     print $new_orth "Orthogroup\t";
     for my $n (sort keys %{$protein_desc}) {

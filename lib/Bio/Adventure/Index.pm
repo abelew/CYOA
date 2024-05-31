@@ -360,10 +360,8 @@ sub Hisat2_Index {
         output_dir => undef,
         required => ['input'],
         jprefix => '21',);
-    my $libtype = $options->{libtype};
-    my $libdir = File::Spec->rel2abs($options->{libpath});
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $species = basename($options->{input}, ('.fasta', '.fa', '.fsa'));
-    my $copied_location = qq"$options->{libpath}/$options->{libtype}/${species}.fasta";
     my $stdout = qq"hisat2_index_${species}.stdout";
     my $stderr = qq"hisat2_index_${species}.stderr";
     my $output_dir;
@@ -377,20 +375,21 @@ sub Hisat2_Index {
     make_path($output_dir, {verbose => 0}) unless (-r $output_dir);
 
     my $copied = undef;
-    if (-r $copied_location) {
-        print "The index fasta file appears to exist at: ${copied_location}.\n";
+    if (-r $paths->{fasta}) {
+        print "The index fasta file appears to exist at: $paths->{fasta}.\n";
     } else {
-        print "Copying $options->{input} to ${copied_location}\n";
-        $copied = cp($options->{input}, $copied_location);
+        print "Copying $options->{input} to $paths->{fasta}\n";
+        $copied = cp($options->{input}, $paths->{fasta});
     }
     my $jstring = qq!mkdir -p ${output_dir}
+mkdir -p \$(dirname $paths->{index})
 hisat2-build $options->{input} \\
-  $options->{libdir}/${libtype}/indexes/${species} \\
+  $paths->{index} \\
   2>${stderr} \\
   1>${stdout}
 !;
     my $comment = qq!## Generating hisat2 indexes for species: ${species}
-## in $options->{libdir}/${libtype}/indexes!;
+## in $paths->{index}!;
     my $indexer = $class->Submit(
         comment => $comment,
         jdepends => $options->{jdepends},

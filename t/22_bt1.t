@@ -13,6 +13,7 @@ my $input_file = qq"${start_dir}/test_forward.fastq.gz";
 my $phix_fasta = qq"${start_dir}/genome/phix.fasta";
 my $phix_gff = qq"${start_dir}/genome/phix.gff";
 
+
 my $start = getcwd();
 my $new = 'test_output';
 mkdir($new);

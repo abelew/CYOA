@@ -337,7 +337,7 @@ sub HT_Multi {
     my $options = $class->Get_Vars(
         args => \%args,
         required => ['species', 'input',],);
-
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my %ro_opts = %{$options};
     my $species = $options->{species};
     my $htseq_input = $options->{input};
@@ -369,7 +369,8 @@ sub HT_Multi {
     my $output_name = basename($htseq_input, ('.bam', '.sam'));
 
     foreach my $gff_type (@gff_types) {
-        my $gff = qq"$options->{libpath}/genome/${species}_${gff_type}.gff";
+        my $gff = $paths->{gff};
+        $gff =~ s/\.gff$/_${gff_type}\.gff/g;
         my $gtf = $gff;
         $gtf =~ s/\.gff/\.gtf/g;
         my $htseq_jobname = qq"hts_${output_name}_$options->{species}_s${stranded}_${gff_type}_${gff_tag}";
@@ -406,14 +407,11 @@ sub HT_Multi {
         }
     } ## End foreach type
     ## Also perform a whole genome count
-    my $gff = qq"$options->{libpath}/genome/${species}.gff";
-    my $gtf = $gff;
-    $gtf =~ s/\.gff/\.gtf/g;
     my $htall_jobname = qq"htall_${output_name}_$options->{species}_s${stranded}_$ro_opts{gff_type}_$ro_opts{gff_tag}";
-    if (-r "$gff") {
-        print "Found ${gff}, performing htseq_all with it.\n";
+    if (-r "$paths->{gff}") {
+        print "Found $paths->{gff}, performing htseq_all with it.\n";
         my $ht = $class->Bio::Adventure::Count::HTSeq(
-            htseq_gff => $gff,
+            htseq_gff => $paths->{gff},
             gff_tag => $ro_opts{gff_tag},
             gff_type => $ro_opts{gff_type},
             input => $htseq_input,
@@ -425,10 +423,10 @@ sub HT_Multi {
             prescript => $options->{prescript},
             suffix => $options->{suffix},);
         push(@jobs, $ht);
-    } elsif (-r "${gtf}") {
-        print "Found ${gtf}, performing htseq_all with it.\n";
+    } elsif (-r "$paths->{gtf}") {
+        print "Found $paths->{gtf}, performing htseq_all with it.\n";
         my $ht = $class->Bio::Adventure::Count::HTSeq(
-            htseq_gff => $gff,
+            htseq_gff => $paths->{gff},
             gff_type => 'none',
             input => $htseq_input,
             jcpu => 1,
@@ -440,7 +438,7 @@ sub HT_Multi {
             suffix => $args{suffix},);
         push(@jobs, $ht);
     } else {
-        print "Did not find ${gff} nor ${gtf}, not running htseq_all.\n";
+        print "Did not find $paths->{gff} nor $paths->{gtf}, not running htseq_all.\n";
     }
     return(\@jobs);
 }
@@ -591,6 +589,7 @@ sub HTSeq {
         jmem => 20,
         jname => '',
         jprefix => '',);
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $stranded = $options->{stranded};
     if ($stranded eq '1') {
         $stranded = 'yes';
@@ -622,7 +621,7 @@ sub HTSeq {
     ## And directory containing it.
     my $output_dir = dirname($htseq_input);
     my $output = qq"${output_dir}/${output_name}";
-    my $gff = qq"$options->{libpath}/$options->{libtype}/$options->{species}.gff";
+    my $gff = $paths->{gff};
     $gff = $args{htseq_gff} if ($args{htseq_gff});
     my $gtf = $gff;
     $gtf =~ s/\.gff/\.gtf/g;
@@ -634,7 +633,7 @@ sub HTSeq {
     ## This is imperfect to say the nicest thing possible, I need to consider more appropriate ways of handling this.
     my $gff_type_arg = '';
     my $gff_tag_arg = '';
-    my $annotation = $gtf;
+    my $annotation = $paths->{gtf};
     if (!-r "${gtf}") {
         $annotation = $gff;
     }
@@ -1667,391 +1666,6 @@ DANGER Single-host, multi-parasite: $result->{single_host_multi_para}
 Multi-both: $result->{both_multi}\n";
     $out->close();
     return($result);
-}
-
-=head2 C<SLSearch>
-
- Search a pile of reads for the trypanosome spliced leader.
-
- Use some simple pattern matching on a pile of reads to look for
- sequences of interest.  By default this looks for a portion of the
- spliced leader sequence from Leishmania major.  Having written and
- used this, I realized that it is ... dumb.  I should have used
- jellyfish and simply counted up the hits across a range of the SL.
- Doing this with jellyfish would also let me count up each window of
- the SL and plot a histogram of the occurrences, thus showing the
- optimal starting point to discriminate the SL as opposed to my ad hoc
- choice of position generated via repeated invocations of 'grep | wc'.
-
- With that in mind, this counts up the number of times a string of
- interest appears in the input files in the forward and RC directions,
- and prints that in an easy-to-read format.
-
-=over
-
-=item C<Arguments>
-
- input(required): Set of input files to read.
- search('AGTTTCTGTACTTTATTGG'): SL substring to search.
- jmem(24): Memory to allocate for this task.
- jprefix(50): Default jobname/output prefix.
-
-=back
-
-=cut
-sub SLSearch {
-    my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
-        args => \%args,
-        required => ['input'],
-        jmem => 24,
-        jprefix => '50',
-        search => 'AGTTTCTGTACTTTATTGG',);
-    my $output_dir =  qq"outputs/$options->{jprefix}SL_search";
-    my $output_made = make_path($output_dir);
-    my $comment = '## Search for SL sub-sequences.';
-    my $stdout = qq"${output_dir}/slsearch.stdout";
-    my $stderr = qq"${output_dir}/slsearch.stderr";
-    my $jstring = qq?
-use Bio::Adventure::Count;
-my \$result = \$h->Bio::Adventure::Count::SLSearch_Worker(
-  input => '$options->{input}',
-  output => '${output_dir}',
-  jprefix => '$options->{jprefix}',
-  jname => 'slsearch',);
-?;
-    my $slsearch = $class->Submit(
-        comment => $comment,
-        input => $options->{input},
-        jcpu => 1,
-        jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => 'slsearch',
-        jprefix => $options->{jprefix},
-        jstring => $jstring,
-        language => 'perl',
-        output => $output_dir,
-        stderr => $stderr,
-        stdout => $stdout,);
-    return($slsearch);
-}
-
-=head2 C<SLSearch_Worker>
-
- This function does the actual work for SLSearch().
-
-=cut
-sub SLSearch_Worker {
-    my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
-        args => \%args,
-        required => ['input', 'output'],
-        jmem => 24,
-        jprefix => '50',
-        search => 'AGTTTCTGTACTTTAT',);
-    ## Ideally, I would like to run this function on the mapping
-    ## directories and search the aligned/unaligned sequences
-    ## separately.
-    ## Unfortunately, in our cleaning, we deleted those files.
-    ## Therefore it (for the moment) will instead just read over the
-    ## trimmed files.
-    ## I think I will write the following: the read IDs for every
-    ## read which matches the forward or RC versions of the SL and
-    ## a summary txt file of the result.
-    my @input_lst = ();
-    if ($options->{input} =~ /$options->{delimiter}/) {
-        my @tmp_lst = split(/$options->{delimiter}/, $options->{input});
-        for my $i (@tmp_lst) {
-            push (@input_lst, $i) if (-r $i);
-        }
-    } else {
-        if (-r $options->{input}) {
-            push(@input_lst, $options->{input});
-        }
-    }
-    if (scalar(@input_lst) == 0) {
-        return(undef);
-    }
-
-    my $fwd_search = $options->{search};
-    my $rc_search = reverse($fwd_search);
-    $rc_search =~ tr/ATGCUatgcu/TACGAtacga/;
-    my $search_length = length($fwd_search);
-
-    my $log_fh = FileHandle->new(">$options->{output}/slsearch_log.txt");
-    print $log_fh qq"Starting search for a portion of the SL sequence: $options->{search}
-in the file(s): $options->{input}.\n";
-    ## Now start the main loop, open file handles for a main log
-    ## and for the per-input outputs.  Create a couple of global counters.
-
-    my %global_search_result = (
-        found => 0,  ## The total number of observed SL.
-        fwd_found => 0,  ## The number found in the forward orientation.
-        rc_found => 0,  ## The number of revcomp found.
-        searched => 0); ## The total number of sequences searched.
-    ## One may reasonably ask why all_found is not just the sum of the next two.
-    ## I am thinking to catch the pathological case where a single input sequence
-    ## has both the forward and RC sequences.
-
-    for my $i (@input_lst) {
-        my $ind_name = basename($i, ('.gz', '.bz2', '.xz'));
-        my $format = 'Fastq';
-        $format = 'Fasta' if ($i =~ /\.fasta/);
-
-        $ind_name = basename($ind_name, ('.fastq', '.fasta'));
-        my $ind_result = FileHandle->new(">$options->{output}/${ind_name}.tsv");
-        ## I want to save the position information too so that I can see if I my search string
-        ## is too close to the beginning of the read.
-        print $ind_result "ReadID\tposition\torientation\n";
-        my %ind_search_result = (
-            found => 0,
-            fwd_found => 0,
-            rc_found => 0,
-            searched => 0);
-        my $reader = FileHandle->new("less ${i} |");
-        my $seqio = Bio::SeqIO->new(-format => $format, -fh => $reader);
-      FSA: while (my $seq = $seqio->next_seq) {
-          $ind_search_result{searched}++;
-          $global_search_result{searched}++;
-          my $seq_id = $seq->id;
-          my $read_seq = $seq->seq;
-          my $fwd_end = undef;
-          if ($read_seq =~ m/$fwd_search/g) {
-              $fwd_end = pos($read_seq);
-          }
-          my $rc_end = undef;
-          if ($read_seq =~ m/$rc_search/g) {
-              $rc_end = pos($read_seq);
-          }
-          ## Get out if we do not find the SL portion.
-          if (!defined($fwd_end) && !defined($rc_end)) {
-              next FSA;
-          }
-
-          if ($fwd_end) {
-              my $fwd_start = $fwd_end - ($search_length - 1);
-              print $ind_result "${seq_id}\t${fwd_start}\tFWD\n";
-              $ind_search_result{found}++;
-              $ind_search_result{fwd_found}++;
-              $global_search_result{found}++;
-              $global_search_result{fwd_found}++;
-          }
-
-          if ($rc_end) {
-              my $rc_start = $rc_end - ($search_length - 1);
-              print $ind_result "${seq_id}\t${rc_start}\tRC\n";
-              $ind_search_result{found}++;
-              $ind_search_result{rc_found}++;
-              $global_search_result{found}++;
-              $global_search_result{rc_found}++;
-          }
-      } ## End reading the input fastq/fasta file.
-
-        print $log_fh qq"
-${ind_name} results:
-  sequences searched: $ind_search_result{searched}
-  subsequences observed: $ind_search_result{found}
-  forward observed: $ind_search_result{fwd_found}
-  reverse-complement observed: $ind_search_result{rc_found}\n";
-        $ind_result->close();
-        $reader->close();
-    } ## End of the input loop
-        print $log_fh qq"
-Total results:
-  sequences searched: $global_search_result{searched}
-  subsequences observed: $global_search_result{found}
-  forward observed: $global_search_result{fwd_found}
-  reverse-complement observed: $global_search_result{rc_found}\n";
-    $log_fh->close();
-}
-
-=head2 C<SL_UTR>
-
- Search a pile of reads for UTR boundaries with the SL/polyA.
-
- I have been rereading Keith's code for gathering UTRs from SL sites.
- I like it quite a lot and would like to use it to improve my python
- style, but it will require quite a bit of retooling to work with the
- newer generation of tools/methods.  As a result I am thinking I will
- first port the logic here, then once I am reasonably confident I can
- get a 'correct' answer I will turn back to that code.
-
-=over
-
-=item C<Arguments>
-
- input(required): Set of input files to read.
- search('AGTTTCTGTACTTTATTGG'): SL substring to search.
- jmem(24): Memory to allocate for this task.
- jprefix(50): Default jobname/output prefix.
-
-=back
-
-=cut
-sub SL_UTR {
-    my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
-        args => \%args,
-        required => ['input'],
-        jmem => 24,
-        jprefix => '50',
-        search => 'AGTTTCTGTACTTTATTGG',);
-    my $output_dir =  qq"outputs/$options->{jprefix}SL_UTR";
-    my $output_made = make_path($output_dir);
-    my $comment = '## Search for SL sub-sequences.';
-    my $stdout = qq"${output_dir}/sl_utr.stdout";
-    my $stderr = qq"${output_dir}/sl_utr.stderr";
-    my $jstring = qq?
-use Bio::Adventure::Count;
-my \$result = \$h->Bio::Adventure::Count::SL_UTR_Worker(
-  input => '$options->{input}',
-  output => '${output_dir}',
-  jprefix => '$options->{jprefix}',
-  jname => 'slsearch',);
-?;
-    my $sl_utr = $class->Submit(
-        comment => $comment,
-        input => $options->{input},
-        jcpu => 1,
-        jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => 'sl_utr',
-        jprefix => $options->{jprefix},
-        jstring => $jstring,
-        language => 'perl',
-        output => $output_dir,
-        stderr => $stderr,
-        stdout => $stdout,);
-    return($sl_utr);
-}
-
-=head2 C<SL_UTR_Worker>
-
- This function does the actual work for SL_UTR().
-
-=cut
-sub SL_UTR_Worker {
-    my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
-        args => \%args,
-        required => ['input', 'output'],
-        jmem => 24,
-        jprefix => '50',
-        search => 'AGTTTCTGTACTTTAT',);
-    ## Ideally, I would like to run this function on the mapping
-    ## directories and search the aligned/unaligned sequences
-    ## separately.
-    ## Unfortunately, in our cleaning, we deleted those files.
-    ## Therefore it (for the moment) will instead just read over the
-    ## trimmed files.
-    ## I think I will write the following: the read IDs for every
-    ## read which matches the forward or RC versions of the SL and
-    ## a summary txt file of the result.
-    my @input_lst = ();
-    if ($options->{input} =~ /$options->{delimiter}/) {
-        my @tmp_lst = split(/$options->{delimiter}/, $options->{input});
-        for my $i (@tmp_lst) {
-            push (@input_lst, $i) if (-r $i);
-        }
-    } else {
-        if (-r $options->{input}) {
-            push(@input_lst, $options->{input});
-        }
-    }
-    if (scalar(@input_lst) == 0) {
-        return(undef);
-    }
-
-    my $fwd_search = $options->{search};
-    my $rc_search = reverse($fwd_search);
-    $rc_search =~ tr/ATGCUatgcu/TACGAtacga/;
-    my $search_length = length($fwd_search);
-
-    my $log_fh = FileHandle->new(">$options->{output}/slsearch_log.txt");
-    print $log_fh qq"Starting search for a portion of the SL sequence: $options->{search}
-in the file(s): $options->{input}.\n";
-    ## Now start the main loop, open file handles for a main log
-    ## and for the per-input outputs.  Create a couple of global counters.
-
-    my %global_search_result = (
-        found => 0,  ## The total number of observed SL.
-        fwd_found => 0,  ## The number found in the forward orientation.
-        rc_found => 0,  ## The number of revcomp found.
-        searched => 0); ## The total number of sequences searched.
-    ## One may reasonably ask why all_found is not just the sum of the next two.
-    ## I am thinking to catch the pathological case where a single input sequence
-    ## has both the forward and RC sequences.
-
-    for my $i (@input_lst) {
-        my $ind_name = basename($i, ('.gz', '.bz2', '.xz'));
-        my $format = 'Fastq';
-        $format = 'Fasta' if ($i =~ /\.fasta/);
-
-        $ind_name = basename($ind_name, ('.fastq', '.fasta'));
-        my $ind_result = FileHandle->new(">$options->{output}/${ind_name}.tsv");
-        ## I want to save the position information too so that I can see if I my search string
-        ## is too close to the beginning of the read.
-        print $ind_result "ReadID\tposition\torientation\n";
-        my %ind_search_result = (
-            found => 0,
-            fwd_found => 0,
-            rc_found => 0,
-            searched => 0);
-        my $reader = FileHandle->new("less ${i} |");
-        my $seqio = Bio::SeqIO->new(-format => $format, -fh => $reader);
-      FSA: while (my $seq = $seqio->next_seq) {
-          $ind_search_result{searched}++;
-          $global_search_result{searched}++;
-          my $seq_id = $seq->id;
-          my $read_seq = $seq->seq;
-          my $fwd_end = undef;
-          if ($read_seq =~ m/$fwd_search/g) {
-              $fwd_end = pos($read_seq);
-          }
-          my $rc_end = undef;
-          if ($read_seq =~ m/$rc_search/g) {
-              $rc_end = pos($read_seq);
-          }
-          ## Get out if we do not find the SL portion.
-          if (!defined($fwd_end) && !defined($rc_end)) {
-              next FSA;
-          }
-
-          if ($fwd_end) {
-              my $fwd_start = $fwd_end - ($search_length - 1);
-              print $ind_result "${seq_id}\t${fwd_start}\tFWD\n";
-              $ind_search_result{found}++;
-              $ind_search_result{fwd_found}++;
-              $global_search_result{found}++;
-              $global_search_result{fwd_found}++;
-          }
-
-          if ($rc_end) {
-              my $rc_start = $rc_end - ($search_length - 1);
-              print $ind_result "${seq_id}\t${rc_start}\tRC\n";
-              $ind_search_result{found}++;
-              $ind_search_result{rc_found}++;
-              $global_search_result{found}++;
-              $global_search_result{rc_found}++;
-          }
-      } ## End reading the input fastq/fasta file.
-
-        print $log_fh qq"
-${ind_name} results:
-  sequences searched: $ind_search_result{searched}
-  subsequences observed: $ind_search_result{found}
-  forward observed: $ind_search_result{fwd_found}
-  reverse-complement observed: $ind_search_result{rc_found}\n";
-        $ind_result->close();
-        $reader->close();
-    } ## End of the input loop
-        print $log_fh qq"
-Total results:
-  sequences searched: $global_search_result{searched}
-  subsequences observed: $global_search_result{found}
-  forward observed: $global_search_result{fwd_found}
-  reverse-complement observed: $global_search_result{rc_found}\n";
-    $log_fh->close();
 }
 
 =head1 AUTHOR - atb

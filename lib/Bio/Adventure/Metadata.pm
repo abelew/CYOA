@@ -133,6 +133,7 @@ sub Generate_Samplesheet {
     my $options = $class->Get_Vars(
         args => \%args,
         required => ['input'],
+        type => 'rnaseq',
         jmem => 12,);
     my $job_name = $class->Get_Job_Name();
     my $inputs = $class->Get_Paths($options->{input});
@@ -142,9 +143,15 @@ sub Generate_Samplesheet {
     my $stdout = qq"${output_dir}/create_samplesheet.stdout";
     my $stderr = qq"${output_dir}/create_samplesheet.stderr";
     my $output_file = qq"${output_dir}/${output_filename}_modified.xlsx";
+    my $species_string = 'NULL';
+    $species_string = $options->{species} if (defined($options->{species}));
+    my $spec_string = 'make_rnaseq_spec()';
+    $spec_string = 'make_rnaseq_spec()' if ($options->{type} eq 'dnaseq');
     my $jstring = qq!
 library(hpgltools)
-meta_written <- gather_preprocessing_metadata("$options->{input}")
+meta_written <- gather_preprocessing_metadata(basedir = "$options->{input}",
+                                              specification = "${spec_string}",
+                                              species = "${species_string}")
 !;
     my $sample_sheet = $class->Submit(
         jcpu => 1,

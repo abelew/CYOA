@@ -961,6 +961,65 @@ xz -9e -f ${unmapped}
     return($samtools);
 }
 
+sub Species2SF {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['species'],);
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+
+    ## Read the GFF
+    print "Reading $paths->{gff}\n";
+    my $gff_fh = FileHandle->new(qq!less $paths->{gff} | grep -v "^#" |!);
+    my $sf_by_contig = {};
+    my $input_gff = new Bio::FeatureIO(-format => 'GFF', -version => 3, -fh => $gff_fh);
+  INFEAT: while (my $feature = $input_gff->next_feature()) {
+      my @sf_tmp_features = ();
+      my $contig_id = $feature->seq_id;
+      if (defined($sf_by_contig->{$contig_id})) {
+          @sf_tmp_features = @{$sf_by_contig->{$contig_id}};
+      } else {
+          $sf_by_contig->{$contig_id} = ();
+      }
+      push(@sf_tmp_features, $feature);
+      $sf_by_contig->{$contig_id} = \@sf_tmp_features;
+  }
+    $gff_fh->close();
+    my @contig_ids = sort keys %{$sf_by_contig};
+    my $num_contigs = scalar(@contig_ids);
+
+    ## Read the genome
+    print "Reading genome: $paths->{fasta}\n";
+    my $input_genome = Bio::SeqIO->new(-file => $paths->{fasta}, -format => 'Fasta');
+    my $sf_sequences = {};
+    my $contig_features = {};
+  GENOME: while (my $in_seq = $input_genome->next_seq()) {
+      ## Create a feature containing the entire contig.
+      my $id = $in_seq->id;
+      my $contig_feature = new Bio::SeqFeature::Generic(
+          -start => 1,
+          -end => $in_seq->length,
+          -id => $id,
+          -strand => 0,
+          -primary => 'contig',
+          -display_name => $in_seq->display_name,);
+      my $attached = $in_seq->add_SeqFeature($contig_feature);
+      $contig_features->{$id} = $contig_feature;
+      my @in_contig_features = @{$sf_by_contig->{$id}};
+      my $num_gff_features = scalar(@in_contig_features);
+      for my $in_feature (@in_contig_features) {
+          my $in_gff_attached = $in_seq->add_SeqFeature($in_feature);
+      }
+      $sf_sequences->{$id} = $in_seq;
+
+  }
+    my $ret = {
+        contigs => $contig_features,
+        sf_sequences => $sf_sequences,
+        sf_by_contig => $sf_by_contig, };
+    return($ret);
+}
+
 =back
 
 =head1 AUTHOR - atb

@@ -172,13 +172,16 @@ bowtie \\
         $bt_job->{index} = $index_job;
     }
 
+    my $expected_hours = $class->Bio::Adventure::Config::Estimate_Time();
+    my $time_string = qq"${expected_hours}:00:00";
+    print "TESTME: The time string is: $time_string\n";
     my $compress_files = qq"${bt_dir}/$options->{jbasename}-${bt_type}_unaligned_${species}.fastq:${bt_dir}/$options->{jbasename}-${bt_type}_aligned_${species}.fastq";
     my $comp = $class->Bio::Adventure::Compress::Recompress(
         comment => '## Compressing the sequences which failed to align against ${bt_reflib} using options ${bt_args}.',
         jdepends => $bt_job->{job_id},
         jname => qq"${jname}_xzun",
         jprefix => $options->{jprefix} + 1,
-        jwalltime => '24:00:00',
+        jwalltime => $time_string,
         input => $compress_files,);
     $bt_job->{compression} = $comp;
 
@@ -921,7 +924,7 @@ sub Hisat2 {
         count => 1,
         jcpu => 8,
         jmem => 48,
-        jname => 'hisat2',
+        jname => 'hisat',
         jprefix => '40',
         jwalltime => '36:00:00',
         maximum => undef,
@@ -944,6 +947,12 @@ sub Hisat2 {
         return(@result_lst);
     }
 
+    unless ($options->{introns}) {
+        print "It appears that introns are disabled for this hisat run, is this correct?\n";
+        sleep(5);
+    }
+
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $ready;
     if (!$options->{jdepends}) {
         $ready = $class->Check_Input(files => $options->{input},);
@@ -953,7 +962,7 @@ sub Hisat2 {
     if ($options->{task} eq 'dnaseq' or !$options->{introns}) {
         $hisat_args .= qq" --no-spliced-alignment ";
     }
-    my $prefix_name = 'hisat2';
+    my $prefix_name = 'hisat';
     $prefix_name .= qq"_k$options->{maximum}" if (defined($options->{maximum}));
     my $hisat_name = qq"${prefix_name}_$options->{species}_$options->{libtype}";
     my $xz_jname = qq"xz_${hisat_name}";
@@ -962,9 +971,6 @@ sub Hisat2 {
     my $htmulti_jname = qq"htmulti_${hisat_name}";
     my $stat_jname = qq"${hisat_name}_stat";
 
-    my $hisat_dir = qq"outputs/$options->{jprefix}hisat2_$options->{species}";
-    ## Make it possible to put the hisat outputs in another directory (phage filtering)
-    $hisat_dir = $options->{output_dir} if (defined($options->{output_dir}));
     my $hisat_input = $options->{input};
     my $test_file = '';
     my $paired = 0;
@@ -998,16 +1004,12 @@ sub Hisat2 {
     }
 
     ## Check that the indexes exist
-    my $hisat_reflibpath = qq"$options->{libpath}/$options->{libtype}/indexes/$options->{species}";
-    my $hisat_reflib = qq"$options->{libdir}/$options->{libtype}/indexes/$options->{species}";
-    my $hisat_reftest = qq"${hisat_reflibpath}.1.ht2";
-    my $hisat_reftestl = qq"${hisat_reflibpath}.1.ht2l";
-    if (!-r $hisat_reftest && !-r $hisat_reftestl) {
-        my $genome_fasta = qq"$options->{libpath}/$options->{libtype}/$options->{species}.fasta";
+    if (!-r $paths->{index_file} && !-r $paths->{index_file2}) {
+        my $genome_fasta = $paths->{fasta};
         my $index_job = $class->Bio::Adventure::Index::Hisat2_Index(
             input => $genome_fasta,
             jprefix => $options->{jprefix} - 1,
-            output_dir => $options->{output_dir},
+            output_dir => $paths->{output_dir},
             jdepends => $options->{jdepends},
             libtype => $options->{libtype},);
         ## The following line inserts the indexer into the dependency chain
@@ -1019,7 +1021,7 @@ sub Hisat2 {
     $hisat_input_flag = '-f ' if (${hisat_input} =~ /\.fasta$/);
     my $jcpu = $options->{jcpu};
 
-    my $stderr = qq"${hisat_dir}/hisat2_$options->{species}_$options->{libtype}";
+    my $stderr = qq"$paths->{output_dir}/hisat_$options->{species}_$options->{libtype}";
     my $stdout = $stderr;
     if (defined($options->{jbasename})) {
         $stderr .= "_$options->{jbasename}.stderr";
@@ -1028,22 +1030,22 @@ sub Hisat2 {
         $stderr .= ".stderr";
         $stdout .= ".stdout";
     }
-    my $comment = qq!## This is a hisat2 alignment of ${hisat_input} against ${hisat_reflib}
+    my $comment = qq!## This is a hisat2 alignment of ${hisat_input} against $paths->{index_shell}
 !;
     $comment .= qq"## This alignment is using arguments: ${hisat_args}.\n" unless ($hisat_args eq '');
-    my $aligned_discordant_filename = qq"${hisat_dir}/aldis_$options->{species}_$options->{libtype}.fastq";
-    my $unaligned_discordant_filename = qq"${hisat_dir}/unaldis_$options->{species}_$options->{libtype}.fastq";
+    my $aligned_discordant_filename = qq"$paths->{output_dir}/aldis_$options->{species}_$options->{libtype}.fastq";
+    my $unaligned_discordant_filename = qq"$paths->{output_dir}/unaldis_$options->{species}_$options->{libtype}.fastq";
     if (defined($options->{unaligned_discordant})) {
         $unaligned_discordant_filename = $options->{unaligned_discordant};
     }
-    my $aligned_concordant_filename = qq"${hisat_dir}/alcon_$options->{species}_$options->{libtype}.fastq";
-    my $unaligned_concordant_filename = qq"${hisat_dir}/unalcon_$options->{species}_$options->{libtype}.fastq";
+    my $aligned_concordant_filename = qq"$paths->{output_dir}/alcon_$options->{species}_$options->{libtype}.fastq";
+    my $unaligned_concordant_filename = qq"$paths->{output_dir}/unalcon_$options->{species}_$options->{libtype}.fastq";
     if (defined($options->{unaligned_output})) {
         $unaligned_concordant_filename = $options->{unaligned_output};
     }
-    my $sam_filename = qq"${hisat_dir}/$options->{species}_$options->{libtype}.sam";
-    my $jstring = qq!mkdir -p ${hisat_dir}
-hisat2 -x ${hisat_reflib} ${hisat_args} \\
+    my $sam_filename = qq"$paths->{output_dir}/$options->{species}_$options->{libtype}.sam";
+    my $jstring = qq!mkdir -p $paths->{output_dir}
+hisat2 -x $paths->{index_shell} ${hisat_args} \\
   -p ${jcpu} \\
   ${hisat_input_flag} ${hisat_input} \\
   --phred$options->{phred} \\
@@ -1168,7 +1170,7 @@ hisat2 -x ${hisat_reflib} ${hisat_args} \\
         jdepends => $hisat_job->{job_id},
         jname => $stat_jname,
         jprefix => $new_jprefix,
-        output_dir => $hisat_dir,);
+        output_dir => $paths->{output_dir},);
     $hisat_job->{stats} = $stats;
     ## If this is not the final job in a chain, then make sure
     ## that any jobs queued after it do not start until

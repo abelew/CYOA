@@ -242,7 +242,60 @@ xz -9e -f ${too_long}
  Invoke fastp on a sequence dataset.
  10.1093/bioinformatics/bty560
 
- Fastp is an excellent trimomatic alternative.
+ Fastp is an excellent trimomatic alternative.  A version of this invocation was
+ taken from one of the kmcp tutorials and provides flags suitable for short read
+ removal, adapter trimming, and the html report:
+
+ https://bioinf.shenwei.me/kmcp/tutorial/profiling/
+
+ Here are some of the options which may be passed along:
+ * -i/-o/-I/-O: input/output r1/R2
+ * -m merge R1/R2
+ * -6 use phred64 instead of 33
+ * -A/--disable-adapter-trimming
+ * -a/--adapter_sequence R1 adapter provided
+ * --adapter_sequence_r2 R2 adapter provided
+ * --adapter_fasta fasta file containing adapters
+ * --detect_adapter_for_pe Turn on paired end auto-adapter-detection
+ * -f/--trim_front1/-F/--trim_front2  # bases to trim
+ * -t/--trim_tail1/-T/--trim_tail2   # bases to trim
+ * -b/--max_len1/-B/--max_len2     Maximum length
+ * -D/--dedub Deduplication
+ * --dup_calc_accuracy accuracy level to calculate duplicates
+ * --dont_eval_duplication
+ * -g/--trim_poly_g/--poly_g_min_len/-G/--disable_trim_poly_g  various polyG options
+ * -x/--trim_poly_x/--poly_x_min_len various polyX
+ * -5/--cut_front sliding window quality from front
+ * -3/--cut_tail from back
+ * -r/--cut_right
+ * -W/--cut_window_size
+ * -M/--cut_mean_quality
+ * --cut_front(tail)_window_size/--cut_front(tail)_mean_quality/--cut_front_mean_quality
+ * -Q/--disable_quality_filtering
+ * -q/--qualified_quality_phred (15)
+ * -u/--unqualified_percent_limit %bases < threshold to drop read
+ * -n/--n_base_limit max N
+ * -e/--average_qual
+ * -L/--disable_length_filtering
+ * -l/--length_required/--length_limit
+ * -y/--low_complexity_filter
+ * -Y/--complexity_threshold
+ * --filter_by_index1/--filter_by_index2 1 barcode/line to filter out
+ * --filter_by_index_threshold
+ * -c/--correction base correction via overlaps
+ * --overlap_diff_limit/--overlap_diff_percent_limit Thresholds for correction
+ * -U/--umi Enable molecular identifier analysis
+ * --umi_loc/--umi_len/--umi_prefix/--umi_skip
+ * -p/--overrepresentation_analysis Enable over representation analysis
+ * -P/--overrepresentation_sampling Sample 1/x reads
+ * -j/--json json report
+ * -h/--htlp html report
+ * -R/--report_title Report title
+ * -w/--thread # threads
+ * -s/--split/-S/--split_by_lines/-d/--spit_prefix_digits Splitting output file stuff
+
+One note: it appears that fastp is unable to successfully read from a bash subshell:
+   <(less file.fastq.gz)
 
 =cut
 sub Fastp {
@@ -259,6 +312,7 @@ sub Fastp {
     my $extra_args = $class->Passthrough_Args(arbitrary => $options->{arbitrary});
     $extra_args .= ' -D ' if ($options->{deduplication});
     $extra_args .= ' -c ' if ($options->{correction});
+    $extra_args .= ' -y ' if ($options->{complexity});
 
     my $fastp_input = $options->{input};
     my @suffixes = split(/\,/, $options->{suffixes});
@@ -277,16 +331,16 @@ sub Fastp {
         $r1_base = basename($r1_base, ('.fastq'));
         my $r2_base = basename($pair_listing[1], ('.gz', '.bz2', '.xz'));
         $r2_base = basename($r2_base, ('.fastq'));
-        my $output_r1 = qq"${r1_outdir}/${r1_base}-fastp.fastq";
-        my $output_r2 = qq"${r1_outdir}/${r2_base}-fastp.fastq";
-        $input_flags = qq" -i <(less $pair_listing[0]) -o ${output_r1} \\
-  -I <(less $pair_listing[1]) -O ${output_r2} ";
+        my $output_r1 = qq"${out_dir}/${r1_base}-fastp.fastq";
+        my $output_r2 = qq"${out_dir}/${r2_base}-fastp.fastq";
+        $input_flags = qq" -i $pair_listing[0] -o ${output_r1} \\
+  -I $pair_listing[1] -O ${output_r2} ";
     } else {
         my $r1_base = basename($fastp_input, ('.gz', '.bz2', '.xz'));
         my $r1_outdir = dirname($fastp_input);
         $r1_base = basename($r1_base, ('.fastq'));
         my $r1_out = qq"${r1_outdir}/${r1_base}-fastp.fastq";
-        $input_flags = qq" -i <(less ${fastp_input}) -o ${r1_out} ";
+        $input_flags = qq" -i ${fastp_input} -o ${r1_out} ";
     }
     my $umi_flags = '';
     if ($options->{do_umi}) {

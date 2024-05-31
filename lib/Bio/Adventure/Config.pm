@@ -4,10 +4,40 @@ use autodie qw":all";
 use diagnostics;
 use warnings qw"all";
 use Exporter;
+use File::Basename qw"basename dirname";
+use File::Path qw"make_path";
+use File::stat;
 use Getopt::Long qw"GetOptionsFromArray";
 
 our @EXPORT = qw"Get_Modules Get_Menus Get_TODOs";
 our @ISA = qw"Exporter";
+
+sub Get_Caller {
+    my %args = @_;
+    my $caller_number = 2;
+    $caller_number = $args{caller} if ($args{caller});
+    my $attempts = 4;
+    my $found_sub = undef;
+    my $subroutine;
+    my $last_attempt = $caller_number + $attempts;
+  COUNTER: for my $attempt ($caller_number .. $last_attempt) {
+        my ($package, $filename, $line, $sub, $hasargs,
+            $wantarray, $evaltext, $is_require, $hints, $bitmask, $hinthash) = caller($attempt);
+        if ($sub =~ /^Bio::.*Submit$/) {
+            next COUNTER;
+        }
+        if ($sub =~ /^Bio::.*Get_Caller$/) {
+            next COUNTER;
+        }
+        ## All callers which are needing modules have the form Bio::Adventure::Something::Something
+        my @pieces = split(/::/, $sub);
+        if (scalar(@pieces) == 4) {
+            $subroutine = $pieces[3];
+            last COUNTER;
+        }
+    }
+    return($subroutine);
+}
 
 =head2 C<Get_Menus>
 
@@ -106,7 +136,7 @@ sub Get_Menus {
                 '(mimap): Count mature miRNA species.' => \&Bio::Adventure::Count::Mi_Map,
                 '(mpileup): Count coverage with mpileup.' => \&Bio::Adventure::Count::Mpileup,
                 '(countstates): Count ribosome positions.' => \&Bio::Adventure::Riboseq::Count_States,
-                '(slsearch): Count frequency of SL (or an arbitrary) sequences.' => \&Bio::Adventure::Count::SLSearch,
+                '(slsearch): Count frequency of SL (or an arbitrary) sequences.' => \&Bio::Adventure::Splicing::SLSearch,
             },
         },
         FeaturePrediction => {
@@ -278,6 +308,8 @@ sub Get_Menus {
             message => 'Tools to consider splicing',
             choices => {
                 '(suppa): Quantify changes in transcript splicing events across samples.' => \&Bio::Adventure::Splicing::Suppa,
+                '(slsearch): Count frequency of SL (or an arbitrary) sequences.' => \&Bio::Adventure::Splicing::SLSearch,
+                '(slutr): Search for SL junction reads and use them to define UTRs.' => \&Bio::Adventure::Splicing::SL_UTR,
             },
         },
         Structure => {
@@ -305,35 +337,109 @@ sub Get_Menus {
     return($menus);
 }
 
+sub Estimate_Time_Single {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        process => 'xz',
+        species => '',
+    );
+
+    ## Approximate compression multipliers, taken from:
+    ## https://community.centminmod.com/threads/round-3-compression-comparison-benchmarks-zstd-vs-brotli-vs-pigz-vs-bzip2-vs-xz-etc.17259/
+    my $multipliers = {
+        xz => 4.4,
+        bz2 => 3.9,
+        gz => 3.1,
+    };
+    my $mb_per_sec = {
+        gz => 12.0 * 211957760 * 10000,
+        bz2 => 12.9 * 211957760 * 10000,
+        xz => 2.3 * 211957760 * 10000,
+    };
+    ## I need to acquire from slurm the relative cpu frequency, but assuming similar speeds
+    ## I should be able to get reasonable time estimates...
+    my @inputs = split(/[:;,\s+]/, $options->{input});
+    my $total_hours = 0;
+    for my $input (@inputs) {
+        my $st = stat($input);
+        my $size = $st->size;
+        my @pieces = split(/\./, $input);
+        my $ext = $pieces[$#pieces];
+        if (defined($multipliers->{$ext})) {
+            $size = $size * $multipliers->{$ext};
+        }
+        my $multi_key = $options->{process};
+        if (defined($mb_per_sec->{$multi_key})) {
+            my $needed = $size / $mb_per_sec->{$ext};
+            my $hours = ceil($needed * 60.0 * 60.0);
+            $total_hours = $total_hours + $hours;
+        }
+    }
+    return($total_hours);
+}
+
+sub Estimate_Time_Composite {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        process => 'xz',
+    );
+
+    my $species_file = qq"$options->{libpath}/$options->{libtype}/indexes/$options->{species}";
+    my $species_stat = stat($species_file);
+    my $species_size = $species_stat->size;
+
+    ## I need to acquire from slurm the relative cpu frequency, but assuming similar speeds
+    ## I should be able to get reasonable time estimates...
+    my @inputs = split(/[:;,\s+]/, $options->{input});
+    ## I am going to assume that the less preprocessor will make xz/gz/bz/uncomp
+    ## input file size differences negligible with respect to time to run.
+    my $total_input_size = 0;
+    for my $input (@inputs) {
+        my $st = stat($input);
+        my $size = $st->size;
+        $total_input_size = $total_input_size + $size;
+    }
+
+    # A genome multiplier should be used when the time estimate for a tool can be described as:
+    ## (input_size * constant) * (genome_size * constant)
+    ## Really it should be the index size, but I assume the fasta is a sufficient proxy.
+    my $genome_mult = {
+        hisat => 1.0,
+    };
+    ## Approximate compression multipliers, taken from:
+    ## https://community.centminmod.com/threads/round-3-compression-comparison-benchmarks-zstd-vs-brotli-vs-pigz-vs-bzip2-vs-xz-etc.17259/
+    my $multipliers = {
+        hisat => 4.4,
+    };
+
+    ## My current thinking is:
+    ## ((inputsize * constant) * (genomesize * constant)) -> seconds to finish job.
+    ## Once I get that nailed down, then I will scale the result by the slurm cpu frequency values.
+    ## For an example, a 300Mb (xz compressed) paired end sample against a 6.4Mb genome took 13 minutes on one of the old cbcb nodes.
+    ## Conversely, a 980Mb (xz) paired end sample against a 12Gb genome took 12 (720 seconds) minutes on one of the new nodes.
+    ## So, this is a case where I think we can assume IO is not limiting but cpu frequency is...
+    ## A more relevant comparison, another smaller sample on the new nodes:
+    ## 250Mb input (xz) paired end vs a 1.8Mb genome took 1 minute (60 seconds)
+    ## (/ 720.9 12000000.0) -> 6.0e-5
+    ## (/ 60 (* 250 18.0)) -> 0.013
+    my $key = $options->{process};
+    my $needed_input_mult = $total_input_size * $multipliers->{$key};
+    my $needed_genome_mult = $species_size * $genome_mult->{$key};
+    my $needed = ($needed_input_mult * $needed_genome_mult);
+    my $total_hours = ceil($needed * 60.0 * 60.0);
+    return($total_hours);
+}
+
 sub Get_Modules {
     my %args = @_;
-    my $caller_number = 1;
-    $caller_number = $args{caller} if ($args{caller});
-    my $attempts = 3;
-    my $found_sub = undef;
-    my $subroutine;
-    my $last_attempt = $caller_number + $attempts;
-  COUNTER: for my $attempt ($caller_number .. $last_attempt) {
-      my ($package, $filename, $line, $sub, $hasargs,
-          $wantarray, $evaltext, $is_require, $hints, $bitmask, $hinthash) = caller($attempt);
-      if ($sub =~ /^Bio::.*Submit$/) {
-          next COUNTER;
-      }
-      ## All callers which are needing modules have the form Bio::Adventure::Something::Something
-      my @pieces = split(/::/, $sub);
-      if (scalar(@pieces) == 4) {
-          $subroutine = $sub;
-          last COUNTER;
-      }
-  }
-
+    my $subroutine = Bio::Adventure::Config::Get_Caller();
     ## I think that with recent changes, one need no longer add 'cyoa' as a module.
     my %module_data = (
         'Example' => {
             modules => ['abricate'],
             conda => ['torsten'],
             exe => 'example' },
-        'Abricate' => {  ## Adding cyoa because Path::Tiny isn't in the abricate directory yet.
+        'Abricate' => { ## Adding cyoa because Path::Tiny isn't in the abricate directory yet.
             modules => ['cyoa', 'any2fasta', 'abricate', 'blast', 'blastdb',],
             exe => 'abricate' },
         'Abyss' => { modules => 'abyss' },
@@ -345,7 +451,7 @@ sub Get_Modules {
         'Bam2Coverage' => { modules => ['samtools', 'bbmap',] },
         'Bedtools_Coverage' =>  { modules => 'bedtools', exe => 'bedtools' },
         'Biopieces_Graph' => { modules => ['biopieces'] },
-        'Bowtie' => { modules => 'bowtie1' },
+        'Bowtie' => { modules => 'bowtie1', },
         'Bowtie2' => { modules => 'bowtie2' },
         'BT1_Index' => { modules => ['bowtie1'] },
         'BT2_Index' => { modules => ['bowtie2'] },
@@ -431,7 +537,8 @@ sub Get_Modules {
         'Salmon_Index' => { modules => ['salmon'], exe => ['salmon']},
         'Samtools' => { modules => ['samtools', 'bamtools'], exe => 'samtools' },
         'Shovill' => { modules => 'shovill', exe => 'shovill' },
-        'SLSearch' => { modules => 'cyoa' },
+        'SLSearch' => { modules => ['cutadapt'] },
+        'SL_UTR' => { modules => 'cyoa' },
         'Snippy' => { modules => ['snippy', 'gubbins', 'fasttree'],
                       exe => ['snippy', 'gubbins'], },
         'SNP_Ratio' => {
@@ -477,7 +584,7 @@ sub Get_Modules {
         'Unicycler_Filter_Depth' => { modules => 'cyoa', },
         'Velvet' => { modules => 'velvet', exe => 'velveth' },
         'Xref_Crispr' => { modules => 'cyoa', },
-        );
+    );
     my @function_array = split(/::/, $subroutine);
     my $function = $function_array[$#function_array];
     $function =~ s/_Worker$//g;
@@ -493,7 +600,8 @@ sub Get_Modules {
             if ($mod_name) {
                 push(@mod_lst, $mod_name);
                 $datum->{modules} = \@mod_lst;
-            } else {
+            }
+            else {
                 $datum = {};
             }
 
@@ -503,11 +611,139 @@ sub Get_Modules {
                 $datum->{conda} = \@conda_lst;
             }
         }
-    } else {
+    }
+    else {
         print "The function: $function does not appear to have defined modules.\n" if ($args{debug});
         $datum = {};
     }
     return(%{$datum});
+}
+
+sub Get_Paths {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(args => \%args);
+    my $subroutine = $args{subroutine};
+    $subroutine = Bio::Adventure::Config::Get_Caller() unless($subroutine);
+    my $libpath_prefix = qq"$options->{libpath}/$options->{libtype}";
+    my $libdir_prefix = qq"$options->{libdir}/$options->{libtype}";
+    my $output_prefix = qq"$options->{output_base}/$options->{jprefix}";
+    my $paths = {
+        fasta => qq"${libpath_prefix}/fasta/$options->{species}.fasta",
+        fasta_shell => qq"${libdir_prefix}/fasta/$options->{species}.fasta",
+        gff => qq"${libpath_prefix}/gff/$options->{species}.gff",
+        gff_shell => qq"${libdir_prefix}/gff/$options->{species}.gff",
+        gtf => qq"${libpath_prefix}/gtf/$options->{species}.gtf",
+        gtf_shell => qq"${libdir_prefix}/gtf/$options->{species}.gtf",
+        gbk => qq"${libpath_prefix}/genbank/$options->{species}.gbk",
+        gbk_shell => qq"${libdir_prefix}/genbank/$options->{species}.gbk",
+    };
+    my $fasta_check = dirname($paths->{fasta});
+    make_path($fasta_check) unless (-d $fasta_check);
+    my $gff_check = dirname($paths->{gff});
+    make_path($gff_check) unless (-d $gff_check);
+    my $gtf_check = dirname($paths->{gtf});
+    make_path($gtf_check) unless (-d $gtf_check);
+    my $gbk_check = dirname($paths->{gbk});
+    make_path($gbk_check) unless (-d $gbk_check);
+    my $index_prefix = qq"${libpath_prefix}/indexes";
+    my $index_prefix_shell = qq"${libdir_prefix}/indexes";
+    if ($subroutine eq 'Bowtie') {
+        $paths->{index} = qq"${index_prefix}/bt1/$options->{species}";
+        $paths->{index_shell} = qq"${index_prefix_shell}/bt1/$options->{species}";
+        $paths->{index_file} = qq"$paths->{index}.1.ebwt";
+        $paths->{index_file_shell} = qq"$paths->{index_shell}.1.ebwt";
+        $paths->{output_dir} = qq"${output_prefix}bowtie_$options->{species}";
+    }
+    elsif ($subroutine eq 'Bowtie2') {
+        $paths->{index} = qq"${index_prefix}/bt2/$options->{species}";
+        $paths->{index_shell} = qq"${index_prefix_shell}/bt2/$options->{species}";
+        $paths->{index_file} = qq"$paths->{index}.1.bt2";
+        $paths->{index_file_shell} = qq"$paths->{index_shell}.1.bt2";
+        $paths->{index_file2} = qq"$paths->{index}.1.bt2l";
+        $paths->{index_file2_shell} = qq"$paths->{index_shell}.1.bt2l";
+        $paths->{output_dir} = qq"${output_prefix}bowtie2_$options->{species}";
+    }
+    elsif ($subroutine eq 'BWA') {
+        $paths->{index} = qq"${index_prefix}/bwa/$options->{species}";
+        $paths->{index_shell} = qq"${index_prefix_shell}/bwa/$options->{species}";
+        $paths->{index_file} = qq"$paths->{index}.sa";
+        $paths->{index_file_shell} = qq"$paths->{index_shell}.sa";
+        $paths->{output_dir} = qq"${output_prefix}bwa_$options->{species}";
+    }
+    elsif ($subroutine eq 'Downsample_Guess_Strand') {
+        $paths->{index} = qq"${index_prefix}/salmon/$options->{species}";
+        $paths->{index_shell} = qq"${index_prefix_shell}/salmon/$options->{species}";
+        $paths->{output_dir} = qq"${output_prefix}salmon_downsample_$options->{species}";
+    }
+    elsif ($subroutine eq 'Hisat2' or $subroutine eq 'Hisat2_Index') {
+        $paths->{index_dir} = qq"${index_prefix}/hisat";
+        $paths->{index} = qq"$paths->{index_dir}/$options->{species}";
+        $paths->{index_shell} = qq"${index_prefix_shell}/hisat/$options->{species}";
+        $paths->{index_file} = qq"$paths->{index}.1.ht2";
+        $paths->{index_file_shell} = qq"$paths->{index_shell}.1.ht2";
+        $paths->{index_file2} = qq"$paths->{index}.1.ht2l";
+        $paths->{index_file2_shell} = qq"$paths->{index_shell}.1.ht2l";
+        $paths->{output_dir} = qq"${output_prefix}hisat_$options->{species}";
+    }
+    elsif ($subroutine eq 'Kallisto') {
+        $paths->{index_file} = qq"${index_prefix}/kallisto/$options->{species}.idx";
+        $paths->{index_file_shell} = qq"${index_prefix_shell}/kallisto/$options->{species}.idx";
+        $paths->{output_dir} = qq"${output_prefix}kallisto_$options->{species}";
+    }
+    elsif ($subroutine eq 'OrthoFinder') {
+        $paths->{output_dir} = qq"${output_prefix}orthofinder";
+    }
+    elsif ($subroutine eq 'Pairwise_Similarity_Matrix') {
+        $paths->{output_dir} = qq"${output_prefix}pairwise_blast";
+    }
+    elsif ($subroutine eq 'ProgressiveMauve') {
+        $paths->{output_dir} = qq"${output_prefix}/pmauve";
+    }
+    elsif ($subroutine eq 'RSEM') {
+        $paths->{index} = qq"${index_prefix}/rsem/$options->{species}";
+        $paths->{index_shell} = qq"${index_prefix_shell}/rsem/$options->{species}";
+        $paths->{index_file} = qq"$paths->{index}.transcripts.fa";
+        $paths->{index_file_shell} = qq"$paths->{index_shell}.transcripts.fa";
+        $paths->{output_dir} = qq"${output_prefix}rsem_$options->{species}";
+    }
+    elsif ($subroutine eq 'Run_Parse_Blast') {
+        my $libname = basename($options->{library}, $class->{suffixes});
+        $paths->{output_dir} = qq"${output_prefix}blast_$options->{input}_vs_${libname}";
+    }
+    elsif ($subroutine eq 'Salmon') {
+        $paths->{index} = qq"${index_prefix}/salmon/$options->{species}";
+        $paths->{index_shell} = qq"${index_prefix_shell}/salmon/$options->{species}";
+        $paths->{output_dir} = qq"${output_prefix}salmon_$options->{species}";
+    }
+    elsif ($subroutine eq 'SLSearch') {
+        $paths->{output_dir} = qq"${output_prefix}slsearch_$options->{species}";
+    }
+    elsif ($subroutine eq 'Split_Align_Blast') {
+        my $libname = basename($options->{library}, $class->{suffixes});
+        $paths->{output_dir} = qq"${output_prefix}blastsplit_$options->{input}_vs_${libname}";
+    }
+    elsif ($subroutine eq 'STAR') {
+        $paths->{index} = qq"${index_prefix}/star/$options->{species}";
+        $paths->{index_shell} = qq"${index_prefix_shell}/star/$options->{species}";
+        $paths->{index_file} = qq"$paths->{index}/SAindex";
+        $paths->{index_file_shell} = qq"$paths->{index_shell}/SAindex";
+        $paths->{output_dir} = qq"${output_prefix}star_$options->{species}";
+    }
+    elsif ($subroutine eq 'Tophat') {
+        $paths->{index} = qq"${index_prefix}/tophat/$options->{species}";
+        $paths->{index_shell} = qq"${index_prefix_shell}/tophat/$options->{species}";
+        $paths->{index_file} = qq"$paths->{index}.1.bt2";
+        $paths->{index_file_shell} = qq"$paths->{index_shell}.1.bt2";
+        $paths->{output_dir} = qq"${output_prefix}tophat_$options->{species}";
+    }
+    if ($paths->{index_file}) {
+        my $index_directory = dirname($paths->{index_file});
+        make_path($index_directory) unless (-d $index_directory);
+    }
+    if ($paths->{output_dir}) {
+        make_path($paths->{output_dir});
+    }
+    return($paths);
 }
 
 =head2 C<Get_TODOs>
@@ -649,7 +885,8 @@ sub Get_TODOs {
         "salmon+" => \$todo_list->{todo}{'Bio::Adventure::Map::Salmon'},
         "terminasereorder+" => \$todo_list->{todo}{'Bio::Adventure::Phage::Terminase_ORF_Reorder'},
         "shovill+" => \$todo_list->{todo}{'Bio::Adventure::Assembly::Shovill'},
-        "slsearch+" => \$todo_list->{todo}{'Bio::Adventure::Count::SLSearch'},
+        "slsearch+" => \$todo_list->{todo}{'Bio::Adventure::Splicing::SLSearch'},
+        "slutr+" => \$todo_list->{todo}{'Bio::Adventure::Splicing::SL_UTR'},
         "snippy+" => \$todo_list->{todo}{'Bio::Adventure::SNP::Snippy'},
         "alignsnpsearch+" => \$todo_list->{todo}{'Bio::Adventure::SNP::Align_SNP_Search'},
         "snpsearch+" => \$todo_list->{todo}{'Bio::Adventure::SNP::Mpileup_SNP_Search'},
@@ -708,7 +945,8 @@ sub Get_TODOs {
         if ($thing) {
             if (!defined($args{task})) {
                 print "Going on an adventure to ${job}.\n";
-            } else {
+            }
+            else {
                 print "Going on an adventure to ${job} in the $args{task} context.\n";
             }
             my $final = \&${job};
