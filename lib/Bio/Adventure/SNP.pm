@@ -84,7 +84,7 @@ sub Freebayes_SNP_Search {
         introns => 1,
         qual => 10,
         max_value => undef,
-        min_value => 0.5,
+        min_value => 0.8,
         vcf_cutoff => 5,
         jmem => 36,
         jcpu => 4,
@@ -1555,6 +1555,7 @@ Email  <abelew@gmail.com>
 L<samtools> L<snippy> L<vcfutils>
 
 =cut
+
 sub Test_Worker {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
