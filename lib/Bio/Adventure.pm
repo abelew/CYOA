@@ -1219,6 +1219,7 @@ sub Passthrough_Args {
   my ($class, %args) = @_;
   my $argstring = $args{arbitrary};
   my $new_string = '';
+  return($new_string) unless (defined($argstring));
   my $splitter = qr/[:;,]/;
   for my $arg (split($splitter, $argstring)) {
     if ($arg =~ /^\w{1}$|^\w{1}\W+/) {
