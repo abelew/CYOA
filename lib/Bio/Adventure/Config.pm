@@ -255,6 +255,7 @@ sub Get_Menus {
                 '(fastqc): Use fastqc to check the overall quality of the raw data.' => \&Bio::Adventure::QA::Fastqc,
                 '(racer): Perform sequence correction with hitec/RACER.' => \&Bio::Adventure::Trim::Racer,
                 '(trimomatic): Perform adapter trimming with Trimomatic.' => \&Bio::Adventure::Trim::Trimomatic,
+                '(umi_tools): Perform umi extraction/deduplication with umi_tools.' => \&Bio::Adventure::Trim::Umi_Tools,
             },
         },
         RiboSeq => {
@@ -581,6 +582,7 @@ sub Get_Modules {
             modules => ['trimomatic', 'bowtie2', 'spades', 'unicycler',
                         'flash', 'shovill', 'bwa', 'pilon'],
             exe => 'unicycler', },
+        'Umi_Tools' => { modules => 'umi_tools', },
         'Unicycler_Filter_Depth' => { modules => 'cyoa', },
         'Velvet' => { modules => 'velvet', exe => 'velveth' },
         'Xref_Crispr' => { modules => 'cyoa', },
@@ -735,6 +737,9 @@ sub Get_Paths {
         $paths->{index_file} = qq"$paths->{index}.1.bt2";
         $paths->{index_file_shell} = qq"$paths->{index_shell}.1.bt2";
         $paths->{output_dir} = qq"${output_prefix}tophat_$options->{species}";
+    }
+    elsif ($subroutine eq 'Umi_Tools') {
+        $paths->{output_dir} = qq"${output_prefix}umi_tools";
     }
     if ($paths->{index_file}) {
         my $index_directory = dirname($paths->{index_file});
@@ -908,6 +913,7 @@ sub Get_TODOs {
         "trinitypost+" => \$todo_list->{todo}{'Bio::Adventure::Assembly::Trinity_Post'},
         "trinotate+" => \$todo_list->{todo}{'Bio::Adventure::Annotation::Trinotate'},
         "trnascan+" => \$todo_list->{todo}{'Bio::Adventure::Feature_Prediction::tRNAScan'},
+        "umitools+" => \$todo_list->{todo}{'Bio::Adventure::Trim::Umi_Tools'},
         "unicycler+" => \$todo_list->{todo}{'Bio::Adventure::Assembly::Unicycler'},
         "variantgenome+" => \$todo_list->{todo}{'Bio::Adventure::SNP::Make_Genome'},
         "velvet+" => \$todo_list->{todo}{'Bio::Adventure::Assembly::Velvet'},
