@@ -255,8 +255,8 @@ sub Get_Menus {
                 '(fastqc): Use fastqc to check the overall quality of the raw data.' => \&Bio::Adventure::QA::Fastqc,
                 '(racer): Perform sequence correction with hitec/RACER.' => \&Bio::Adventure::Trim::Racer,
                 '(trimomatic): Perform adapter trimming with Trimomatic.' => \&Bio::Adventure::Trim::Trimomatic,
-                '(umi_tools): Perform umi extraction with umi_tools.' => \&Bio::Adventure::Trim::Umi_Tools,
-                '(umi_dedup): Perform umi deduplication with umi_tools following mapping.' => \&Bio::Adventure::Trim::Umi_Dedup,
+                '(umi_tools): Perform umi extraction with umi_tools.' => \&Bio::Adventure::Trim::Umi_Tools_Extract,
+                '(umi_dedup): Perform umi deduplication with umi_tools following mapping.' => \&Bio::Adventure::Trim::Umi_Tools_Dedup,
             },
         },
         RiboSeq => {
@@ -583,8 +583,8 @@ sub Get_Modules {
             modules => ['trimomatic', 'bowtie2', 'spades', 'unicycler',
                         'flash', 'shovill', 'bwa', 'pilon'],
             exe => 'unicycler', },
-        'Umi_Dedup' => { modules => 'umi_tools', },
-        'Umi_Tools' => { modules => 'umi_tools', },
+        'Umi_Tools_Dedup' => { modules => 'umi_tools', },
+        'Umi_Tools_Extract' => { modules => 'umi_tools', },
         'Unicycler_Filter_Depth' => { modules => 'cyoa', },
         'Velvet' => { modules => 'velvet', exe => 'velveth' },
         'Xref_Crispr' => { modules => 'cyoa', },
@@ -631,24 +631,25 @@ sub Get_Paths {
     my $libpath_prefix = qq"$options->{libpath}/$options->{libtype}";
     my $libdir_prefix = qq"$options->{libdir}/$options->{libtype}";
     my $output_prefix = qq"$options->{output_base}/$options->{jprefix}";
-    my $paths = {
-        fasta => qq"${libpath_prefix}/fasta/$options->{species}.fasta",
-        fasta_shell => qq"${libdir_prefix}/fasta/$options->{species}.fasta",
-        gff => qq"${libpath_prefix}/gff/$options->{species}.gff",
-        gff_shell => qq"${libdir_prefix}/gff/$options->{species}.gff",
-        gtf => qq"${libpath_prefix}/gtf/$options->{species}.gtf",
-        gtf_shell => qq"${libdir_prefix}/gtf/$options->{species}.gtf",
-        gbk => qq"${libpath_prefix}/genbank/$options->{species}.gbk",
-        gbk_shell => qq"${libdir_prefix}/genbank/$options->{species}.gbk",
-    };
-    my $fasta_check = dirname($paths->{fasta});
-    make_path($fasta_check) unless (-d $fasta_check);
-    my $gff_check = dirname($paths->{gff});
-    make_path($gff_check) unless (-d $gff_check);
-    my $gtf_check = dirname($paths->{gtf});
-    make_path($gtf_check) unless (-d $gtf_check);
-    my $gbk_check = dirname($paths->{gbk});
-    make_path($gbk_check) unless (-d $gbk_check);
+    my $paths = {};
+    if (defined($options->{species})) {
+        $paths->{fasta} = qq"${libpath_prefix}/fasta/$options->{species}.fasta";
+        $paths->{fasta_shell} = qq"${libdir_prefix}/fasta/$options->{species}.fasta";
+        $paths->{gff} = qq"${libpath_prefix}/gff/$options->{species}.gff";
+        $paths->{gff_shell} = qq"${libdir_prefix}/gff/$options->{species}.gff";
+        $paths->{gtf} = qq"${libpath_prefix}/gtf/$options->{species}.gtf";
+        $paths->{gtf_shell} = qq"${libdir_prefix}/gtf/$options->{species}.gtf";
+        $paths->{gbk} = qq"${libpath_prefix}/genbank/$options->{species}.gbk";
+        $paths->{gbk_shell} = qq"${libdir_prefix}/genbank/$options->{species}.gbk";
+        my $fasta_check = dirname($paths->{fasta});
+        make_path($fasta_check) unless (-d $fasta_check);
+        my $gff_check = dirname($paths->{gff});
+        make_path($gff_check) unless (-d $gff_check);
+        my $gtf_check = dirname($paths->{gtf});
+        make_path($gtf_check) unless (-d $gtf_check);
+        my $gbk_check = dirname($paths->{gbk});
+        make_path($gbk_check) unless (-d $gbk_check);
+    }
     my $index_prefix = qq"${libpath_prefix}/indexes";
     my $index_prefix_shell = qq"${libdir_prefix}/indexes";
     if ($subroutine eq 'Bowtie') {
@@ -740,10 +741,10 @@ sub Get_Paths {
         $paths->{index_file_shell} = qq"$paths->{index_shell}.1.bt2";
         $paths->{output_dir} = qq"${output_prefix}tophat_$options->{species}";
     }
-    elsif ($subroutine eq 'Umi_Tools') {
+    elsif ($subroutine eq 'Umi_Tools_Extract') {
         $paths->{output_dir} = qq"${output_prefix}umi_tools";
     }
-    elsif ($subroutine eq 'Umi_Dedup') {
+    elsif ($subroutine eq 'Umi_Tools_Dedup') {
         $paths->{output_dir} = qq"${output_prefix}umi_dedup";
     }
     if ($paths->{index_file}) {
@@ -918,8 +919,8 @@ sub Get_TODOs {
         "trinitypost+" => \$todo_list->{todo}{'Bio::Adventure::Assembly::Trinity_Post'},
         "trinotate+" => \$todo_list->{todo}{'Bio::Adventure::Annotation::Trinotate'},
         "trnascan+" => \$todo_list->{todo}{'Bio::Adventure::Feature_Prediction::tRNAScan'},
-        "umitools+" => \$todo_list->{todo}{'Bio::Adventure::Trim::Umi_Tools'},
-        "umidedup+" => \$todo_list->{todo}{'Bio::Adventure::Trim::Umi_Dedup'},
+        "umidedup+" => \$todo_list->{todo}{'Bio::Adventure::Trim::Umi_Tools_Dedup'},
+        "umitools+" => \$todo_list->{todo}{'Bio::Adventure::Trim::Umi_Tools_Extract'},
         "unicycler+" => \$todo_list->{todo}{'Bio::Adventure::Assembly::Unicycler'},
         "variantgenome+" => \$todo_list->{todo}{'Bio::Adventure::SNP::Make_Genome'},
         "velvet+" => \$todo_list->{todo}{'Bio::Adventure::Assembly::Velvet'},
