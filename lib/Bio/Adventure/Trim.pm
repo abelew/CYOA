@@ -763,21 +763,24 @@ ln -sf ${output}.xz r1_trimmed.fastq.xz
     return($trim);
 }
 
-sub Umi_Tools {
+sub Umi_Tools_Extract {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
         extract_method => 'regex',
         extract_string => '^(?P<umi_1>.{8})(?P<discard_1>.{6}).*',
         required => ['input'],
-        jprefix => '01',);
+        jmem => 20,
+        jprefix => '01',
+        jwalltime => '8:00:00');
     my $jname = qq"umi_tools";
     my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $test_file;
     my $stranded = 'yes';
-    my $umi_input = '';
-    my $umi_output = '';
     my $output = qq"$paths->{output_dir}/r1_extracted.fastq.gz";
+    my $umi_input = qq"-I $options->{input}";
+    my $umi_output = qq"-S ${output}";
+
     my $paired = 0;
     my @pair_listing = ();
     if ($options->{input} =~ /$options->{delimiter}/) {
@@ -785,21 +788,23 @@ sub Umi_Tools {
         $paired = 1;
         $pair_listing[0] = File::Spec->rel2abs($pair_listing[0]);
         $pair_listing[1] = File::Spec->rel2abs($pair_listing[1]);
-        $umi_input = qq" -I $pair_listing[0] -2 $pair_listing[1] ";
+        $umi_input = qq"-I $pair_listing[0] -2 $pair_listing[1] ";
+        ## I expect umi_tools has similar problems reading from an anonymous bash
+        ## handle as per other python programs.
         if ($pair_listing[0] =~ /\.[x|b]z$/) {
-            ## It is noteworthy that I modified hisat2 on my computer so this is never necessary.
-            $umi_input = qq" -1 <(less $pair_listing[0]) --read2-in <(less $pair_listing[1]) ";
-            $umi_output = qq" -S $paths->{output_dir}/r1_extracted.fastq.gz --read2-out $paths->{output_dir}/r2_extracted.fastq.gz ";
-            $output .= qq":$paths->{output_dir}/r2_extracted.fastq.gz";
+            $umi_input = qq"-I <(less $pair_listing[0]) --read2-in <(less $pair_listing[1])";
+            $umi_output = qq"-S $paths->{output_dir}/r1_extracted.fastq.gz --read2-out $paths->{output_dir}/r2_extracted.fastq.gz";
+        } else {
+            $umi_input = qq"-I $pair_listing[0] --read2-in $pair_listing[1]";
+            $umi_output = qq"-S $paths->{output_dir}/r1_extracted.fastq.gz --read2-out $paths->{output_dir}/r2_extracted.fastq.gz";
         }
+        $output .= qq":$paths->{output_dir}/r2_extracted.fastq.gz";
     } else {
         $stranded = 'no';
         $test_file = File::Spec->rel2abs($options->{input});
-        $umi_input = qq" -I ${test_file} ";
-        $umi_output = qq" -S ${output} ";
         if ($test_file =~ /\.[x|b]z$/) {
             ## It is noteworthy that I modified hisat2 on my computer so this is never necessary.
-            $umi_input = qq" -I <(less ${test_file}) ";
+            $umi_input = qq" -I <(less ${test_file})";
         }
 
     }
@@ -811,8 +816,8 @@ umi_tools extract \\
  ${umi_input} \\
  ${umi_output} \\
  --extract-method $options->{extract_method} \\
- --bc-pattern2 $options->{extract_string} \\
- --log extract.log \\
+ --bc-pattern2 '$options->{extract_string}' \\
+ --log $paths->{output_dir}/extract.log \\
  2>${stderr} \\
  1>${stdout}
 !;
