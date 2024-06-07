@@ -768,6 +768,7 @@ sub Umi_Tools_Dedup {
     my $options = $class->Get_Vars(
         args => \%args,
         required => ['input'],
+        count => 1,
         jprefix => '04',);
     my $jname = qq"umi_dedup";
     my $paths = $class->Bio::Adventure::Config::Get_Paths();
@@ -793,7 +794,18 @@ umi_tools dedup \\
         output => $output,
         stderr => $stderr,
         stdout => $stdout,);
-    return($umi_job);
+
+  my $htmulti;
+  my $new_jprefix = qq"$options->{jprefix}_1";
+  if ($options->{count}) {
+    $htmulti = $class->Bio::Adventure::Count::HT_Multi(
+      input => $umi_job->{output},
+      jdepends => $umi_job->{job_id},
+      jname => qq"htmulti_umi_dedup",
+      jprefix => $new_jprefix,);
+   }
+   $umi_job->{recount} = $htmulti;
+   return($umi_job);
 }
 
 sub Umi_Tools_Extract {
