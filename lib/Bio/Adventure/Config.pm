@@ -255,7 +255,8 @@ sub Get_Menus {
                 '(fastqc): Use fastqc to check the overall quality of the raw data.' => \&Bio::Adventure::QA::Fastqc,
                 '(racer): Perform sequence correction with hitec/RACER.' => \&Bio::Adventure::Trim::Racer,
                 '(trimomatic): Perform adapter trimming with Trimomatic.' => \&Bio::Adventure::Trim::Trimomatic,
-                '(umi_tools): Perform umi extraction/deduplication with umi_tools.' => \&Bio::Adventure::Trim::Umi_Tools,
+                '(umi_tools): Perform umi extraction with umi_tools.' => \&Bio::Adventure::Trim::Umi_Tools,
+                '(umi_dedup): Perform umi deduplication with umi_tools following mapping.' => \&Bio::Adventure::Trim::Umi_Dedup,
             },
         },
         RiboSeq => {
@@ -582,6 +583,7 @@ sub Get_Modules {
             modules => ['trimomatic', 'bowtie2', 'spades', 'unicycler',
                         'flash', 'shovill', 'bwa', 'pilon'],
             exe => 'unicycler', },
+        'Umi_Dedup' => { modules => 'umi_tools', },
         'Umi_Tools' => { modules => 'umi_tools', },
         'Unicycler_Filter_Depth' => { modules => 'cyoa', },
         'Velvet' => { modules => 'velvet', exe => 'velveth' },
@@ -740,6 +742,9 @@ sub Get_Paths {
     }
     elsif ($subroutine eq 'Umi_Tools') {
         $paths->{output_dir} = qq"${output_prefix}umi_tools";
+    }
+    elsif ($subroutine eq 'Umi_Dedup') {
+        $paths->{output_dir} = qq"${output_prefix}umi_dedup";
     }
     if ($paths->{index_file}) {
         my $index_directory = dirname($paths->{index_file});
@@ -914,6 +919,7 @@ sub Get_TODOs {
         "trinotate+" => \$todo_list->{todo}{'Bio::Adventure::Annotation::Trinotate'},
         "trnascan+" => \$todo_list->{todo}{'Bio::Adventure::Feature_Prediction::tRNAScan'},
         "umitools+" => \$todo_list->{todo}{'Bio::Adventure::Trim::Umi_Tools'},
+        "umidedup+" => \$todo_list->{todo}{'Bio::Adventure::Trim::Umi_Dedup'},
         "unicycler+" => \$todo_list->{todo}{'Bio::Adventure::Assembly::Unicycler'},
         "variantgenome+" => \$todo_list->{todo}{'Bio::Adventure::SNP::Make_Genome'},
         "velvet+" => \$todo_list->{todo}{'Bio::Adventure::Assembly::Velvet'},

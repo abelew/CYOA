@@ -763,6 +763,39 @@ ln -sf ${output}.xz r1_trimmed.fastq.xz
     return($trim);
 }
 
+sub Umi_Dedup {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['input'],
+        jprefix => '04',);
+    my $jname = qq"umi_dedup";
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $stdout = qq"$paths->{output_dir}/umi_dedup.stdout";
+    my $stderr = qq"$paths->{output_dir}/umi_dedup.stderr";
+    my $output = qq"$paths->{output_dir}/umi_tools_deduplicated.bam";
+    my $jstring = qq!mkdir -p $paths->{output_dir}
+umi_tools dedup \\
+  --output-stats=$paths->{output_dir}/umi_dedup_stats.txt \\
+  --buffer-whole-contig \\
+  -I $options->{input} \\
+  -S ${output} \\
+  2>${stdout} 1>${stderr}
+!;
+    my $comment = qq!## This is a umi_tools deduplication script
+!;
+    my $umi_job = $class->Submit(
+        comment => $comment,
+        jdepends => $options->{jdepends},
+        input => $options->{input},
+        jname => $jname,
+        jstring => $jstring,
+        output => $output,
+        stderr => $stderr,
+        stdout => $stdout,);
+    return($umi_job);
+}
+
 sub Umi_Tools {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
