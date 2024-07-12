@@ -811,7 +811,8 @@ sub Unicycler {
         min_length => 1000,
         mode => 'bold',
         jmem => 24,
-        jprefix => '13',);
+        jprefix => '13',
+        jwalltime => '72:00:00',);
     my $job_name = $class->Get_Job_Name();
     my $outname = basename(cwd());
     my $output_dir = qq"outputs/$options->{jprefix}unicycler";

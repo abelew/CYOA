@@ -768,6 +768,8 @@ sub Umi_Tools_Dedup {
     my $options = $class->Get_Vars(
         args => \%args,
         required => ['input'],
+        jmem => 48,
+        jwalltime => '36:00:00',
         jprefix => '04',);
     my $jname = qq"umi_dedup";
     my $paths = $class->Bio::Adventure::Config::Get_Paths();
@@ -781,6 +783,7 @@ umi_tools dedup \\
   -I $options->{input} \\
   -S ${output} \\
   2>${stdout} 1>${stderr}
+samtools index ${output}
 !;
     my $comment = qq!## This is a umi_tools deduplication script
 !;

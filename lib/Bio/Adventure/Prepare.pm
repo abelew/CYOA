@@ -11,6 +11,7 @@ use Bio::DB::EUtilities;
 use File::Path qw"make_path rmtree";
 use File::Which qw"which";
 use HTML::TreeBuilder::XPath;
+use List::Util qw"uniq";
 use Text::CSV;
 use Text::CSV_XS::TSV;
 use WWW::Mechanize;

@@ -122,6 +122,7 @@ sub Get_Menus {
                 '(bam2cov): Convert a sorted bam to tsv of coverage/base.' => \&Bio::Adventure::Convert::Bam2Coverage,
                 '(gb2gff): Convert a genbank flat file to gff/fasta files.' => \&Bio::Adventure::Convert::Gb2Gff,
                 '(gff2fasta): Convert a gff file to a fasta file.' => \&Bio::Adventure::Convert::Gff2Fasta,
+                '(gatkdedup): Deduplicate an existing bam alignment with gatk.' => \&Bio::Adventure::Convert::GATK_Dedup,
             },
         },
         Counting => {
@@ -339,6 +340,65 @@ sub Get_Menus {
     return($menus);
 }
 
+sub Estimate_Memory_Single {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars();
+    ## In order to collect helpful memory usage numbers on a slurm
+    ## cluster, this kind of requires that the slurmdbd maintains the
+    ## state of previous jobs.
+
+    ## I thus ran cyoa --checkjob in an arbitrarily chosen recent
+    ## processing directory
+    ## (rnaseq/mmusculus_iprgc_2024/preprocessing/umd_sequenced/something)
+    ## and looked over the outputs/logs/jobs.csv and discovered that
+    ## for a sample with r1/r2 of 997M/1.2G sizes:
+    ##
+    ## 1. umi_extract took 5 G memory at maximum, 23 minutes (always
+    ## rounding up)
+    ## 2. hisat2 vs. the mm39_112 genome took 37G memory,
+    ## 18 minutes
+    ## 3. samtools took 32G memory, 111 minutes
+    ## 4. htseq took 1G memory, 23 minutes
+    ## 5. hisat2 vs the mouse rRNA database took 24G memory, 14 minutes.
+    ## 6. samtools took 26G and 106 minutes
+    ## 7. htseq took 100Mb and 1 minute
+    ## 8. umi_dedup took more memory than the 20G I allocated and failed.
+
+    ## Nonetheless, I can use these numbers to get started on some memory estimates.
+    my $multipliers = {
+        umi_extract => 1.2,  ## Sum the input fastq and multiply.
+        htseq => 4, ## Take the input gff and multiply
+        samtools => 8, ## Take the input fastq files and multiply (this _should_ be using the sam,
+        ## but I don't know its size)
+    };
+
+    ## I am thinking to pass this function an option 'mem_estimator'
+    ## which will be the path to whatever we choose to examine.
+    my $total_mem = 0.1;  ## Start with 0.1G ram and move up from
+    ## there.  I actually do not know if slurm requires integer memory
+    ## amounts.  If so we will just do a ceil...
+
+    my $job_type = $options->{mem_job};
+    my $job_multiplier = $multipliers->{$job_type};
+    if (!defined($job_multiplier)) {
+        print "No memory multiplier defined for this job type, assuming 10x the input file size.\n";
+        $job_multiplier = 10;
+    }
+
+    my @inputs = split(/[:;,\s+]/, $options->{mem_estimator});
+    for my $input (@inputs) {
+        my $st = stat($input);
+        my $size = $st->size;
+        my @pieces = split(/\./, $input);
+        my $ext = $pieces[$#pieces];
+        if (defined($multipliers->{$ext})) {
+            $size = $size * $job_multiplier;
+        }
+        $total_mem = $total_mem + $size;
+    }
+    return($total_mem);
+}
+
 sub Estimate_Time_Single {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
@@ -484,6 +544,7 @@ sub Get_Modules {
         'Freebayes_SNP_Search' => {
             modules => ['gatk', 'freebayes', 'samtools', 'bcftools', 'vcftools'],
             exe => ['gatk', 'freebayes'], },
+        'GATK_Dedup' => { modules => 'gatk' },
         'Gb2Gff' => { modules => 'cyoa' },
         'Generate_Samplesheet' => { modules => 'R' },
         'Glimmer' => { modules => ['cyoa', 'glimmer'], exe => 'glimmer3' },
@@ -583,7 +644,7 @@ sub Get_Modules {
             modules => ['trimomatic', 'bowtie2', 'spades', 'unicycler',
                         'flash', 'shovill', 'bwa', 'pilon'],
             exe => 'unicycler', },
-        'Umi_Tools_Dedup' => { modules => 'umi_tools', },
+        'Umi_Tools_Dedup' => { modules => ['umi_tools', 'samtools'], },
         'Umi_Tools_Extract' => { modules => 'umi_tools', },
         'Unicycler_Filter_Depth' => { modules => 'cyoa', },
         'Velvet' => { modules => 'velvet', exe => 'velveth' },
@@ -679,6 +740,9 @@ sub Get_Paths {
         $paths->{index} = qq"${index_prefix}/salmon/$options->{species}";
         $paths->{index_shell} = qq"${index_prefix_shell}/salmon/$options->{species}";
         $paths->{output_dir} = qq"${output_prefix}salmon_downsample_$options->{species}";
+    }
+    elsif ($subroutine eq 'GATK_Dedup') {
+        $paths->{output_dir} = qq"${output_prefix}gatk_dedup";
     }
     elsif ($subroutine eq 'Hisat2' or $subroutine eq 'Hisat2_Index') {
         $paths->{index_dir} = qq"${index_prefix}/hisat";
@@ -820,7 +884,8 @@ sub Get_TODOs {
         "countstates+" => \$todo_list->{todo}{'Bio::Adventure::Riboseq::Count_States'},
         "concat+" => \$todo_list->{todo}{'Bio::Adventure::Align::Concatenate_Searches'},
         "cutadapt+" => \$todo_list->{todo}{'Bio::Adventure::Trim::Cutadapt'},
-        "download+" => \$todo_list->{todo}{'Bio::Adventure::Prepare::Download_NCBI_Accessions'},
+        "dedupgatk+" => \$todo_list->{todo}{'Bio::Adventure::Convert::GATK_Dedup'},
+        "ncbidownload+" => \$todo_list->{todo}{'Bio::Adventure::Prepare::Download_NCBI_Accession'},
         "downsampleguess+" => \$todo_list->{todo}{'Bio::Adventure::Map::Downsample_Guess_Strand'},
         "essentialitytas+" => \$todo_list->{todo}{'Bio::Adventure::TNSeq::Essentiality_TAs'},
         "extendkraken+" => \$todo_list->{todo}{'Bio::Adventure::Index::Extend_Kraken_DB'},
@@ -840,6 +905,7 @@ sub Get_TODOs {
         "filterkraken+" => \$todo_list->{todo}{'Bio::Adventure::Phage::Filter_Host_Kraken'},
         "fragment+" => \$todo_list->{todo}{'Bio::Adventure::SeqMisc::Fragment_Genome'},
         "freebayes+" => \$todo_list->{todo}{'Bio::Adventure::SNP::Freebayes_SNP_Search'},
+        "gatkdedup+" => \$todo_list->{todo}{'Bio::Adventure::Convert::GATK_Dedup'},
         "gb2gff+" => \$todo_list->{todo}{'Bio::Adventure::Convert::Gb2Gff'},
         "gff2fasta+" => \$todo_list->{todo}{'Bio::Adventure::Convert::Gff2Fasta'},
         "glimmer+" => \$todo_list->{todo}{'Bio::Adventure::Feature_Prediction::Glimmer'},
