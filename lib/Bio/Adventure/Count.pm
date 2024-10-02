@@ -707,6 +707,42 @@ xz -f -9e ${output}
     return($htseq);
 }
 
+sub Insert_Size {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['input',],
+        jprefix => '50',);
+    my $output_base = basename($options->{input}, ('.bam'));
+    my $output_file = qq"${output_base}_insert_size.txt";
+    my $output_pdf = qq"${output_base}_insert_size.pdf";
+    my $output_stderr = qq"${output_base}_insert_size.stderr";
+    my $output_stdout = qq"${output_base}_insert_size.stdout";
+    my $jstring = qq!
+gatk CollectInsertSizeMetrics \\
+  -I $options->{input} \\
+  -O ${output_file} \\
+  -H ${output_pdf} \\
+  -M 0.5
+!;
+
+    my $comment_string = qq"## Use gatk to collect insert size statistics.";
+    my $gatk = $class->Submit(
+        comment => $comment_string,
+        jdepends => $options->{jdepends},
+        jcpu => 4,
+        jmem => 12,
+        jname => qq"insertsize_${output_base}",
+        jprefix => $options->{jprefix},
+        job_type => 'insertsize',
+        jstring => $jstring,
+        jwalltime => '2:00:00',
+        output => $output_file,
+        stderr => $output_stderr,
+        stdout => $output_stdout,);
+    return($gatk);
+}
+
 =head2 C<Jellyfish>
 
  Run jellyfish with multiple values of K on a fast(a|q) file(s).

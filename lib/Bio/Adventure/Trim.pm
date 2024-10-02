@@ -261,7 +261,7 @@ xz -9e -f ${too_long}
  * -f/--trim_front1/-F/--trim_front2  # bases to trim
  * -t/--trim_tail1/-T/--trim_tail2   # bases to trim
  * -b/--max_len1/-B/--max_len2     Maximum length
- * -D/--dedub Deduplication
+ * -D/--dedup Deduplication
  * --dup_calc_accuracy accuracy level to calculate duplicates
  * --dont_eval_duplication
  * -g/--trim_poly_g/--poly_g_min_len/-G/--disable_trim_poly_g  various polyG options
@@ -310,38 +310,37 @@ sub Fastp {
         jprefix => '12',);
     my $job_name = $class->Get_Job_Name();
     my $inputs = $class->Get_Paths($options->{input});
+
     my $extra_args = $class->Passthrough_Args(arbitrary => $options->{arbitrary});
     $extra_args .= ' -D ' if ($options->{deduplication});
     $extra_args .= ' -c ' if ($options->{correction});
     $extra_args .= ' -y ' if ($options->{complexity});
 
-    my $fastp_input = $options->{input};
-    my @suffixes = split(/\,/, $options->{suffixes});
     my $comment = qq!## Run fastp on raw data
 !;
     my $out_dir = qq"outputs/$options->{jprefix}fastp";
     my $stderr = qq"${out_dir}/fastp.stderr";
     my $stdout = qq"${out_dir}/fastp.stdout";
     my $input_flags = '';
-    if ($fastp_input =~ /$options->{delimiter}/) {
-        my @pair_listing = split(/$options->{delimiter}/, $fastp_input);
-        $pair_listing[0] = File::Spec->rel2abs($pair_listing[0]);
-        $pair_listing[1] = File::Spec->rel2abs($pair_listing[1]);
-        my $r1_outdir = dirname($pair_listing[0]);
-        my $r1_base = basename($pair_listing[0], ('.gz', '.bz2', '.xz'));
-        $r1_base = basename($r1_base, ('.fastq'));
-        my $r2_base = basename($pair_listing[1], ('.gz', '.bz2', '.xz'));
-        $r2_base = basename($r2_base, ('.fastq'));
-        my $output_r1 = qq"${out_dir}/${r1_base}-fastp.fastq";
-        my $output_r2 = qq"${out_dir}/${r2_base}-fastp.fastq";
-        $input_flags = qq" -i $pair_listing[0] -o ${output_r1} \\
-  -I $pair_listing[1] -O ${output_r2} ";
+    my $num_inputs = scalar(@{$inputs});
+    if ($num_inputs == 2) {
+        my $r1 = $inputs->[0]->{filename};
+        my $r2 = $inputs->[1]->{filename};
+        my $r1_base = $inputs->[0]->{filebase_extension};
+        my $r2_base = $inputs->[1]->{filebase_extension};
+        my $output_dir = $inputs->[0]->{directory};
+        my $output_r1 = qq"${output_dir}/${r1_base}-fastp.fastq";
+        my $output_r2 = qq"${output_dir}/${r2_base}-fastp.fastq";
+        $input_flags = qq" -i ${r1} -o ${output_r1} \\
+  -I ${r2} -O ${output_r2} ";
+    } elsif ($num_inputs == 1) {
+        my $r1 = $inputs->[0]->{filename};
+        my $r1_base = $inputs->[0]->{filebase_extension};
+        my $output_dir = $inputs->[0]->{directory};
+        my $output_r1 = qq"${output_dir}/${r1_base}-fastp.fastq";
+        $input_flags = qq" -i ${r1} -o ${output_r1} ";
     } else {
-        my $r1_base = basename($fastp_input, ('.gz', '.bz2', '.xz'));
-        my $r1_outdir = dirname($fastp_input);
-        $r1_base = basename($r1_base, ('.fastq'));
-        my $r1_out = qq"${r1_outdir}/${r1_base}-fastp.fastq";
-        $input_flags = qq" -i ${fastp_input} -o ${r1_out} ";
+        die("An unusual number of inputs was provided: ${num_inputs}.");
     }
     my $umi_flags = '';
     if ($options->{do_umi}) {
@@ -359,7 +358,7 @@ fastp ${umi_flags} ${input_flags} \\
 
     my $fastp = $class->Submit(
         comment => $comment,
-        input => $fastp_input,
+        input => $options->{input},
         jmem => $options->{jmem},
         jname => qq"fastp_${job_name}",
         jprefix => $options->{jprefix},

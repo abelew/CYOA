@@ -990,7 +990,8 @@ sub Hisat2 {
         $hisat_input = qq" -1 $pair_listing[0] -2 $pair_listing[1] ";
         if ($pair_listing[0] =~ /\.[x|g|b]z$/) {
             ## It is noteworthy that I modified hisat2 on my computer so this is never necessary.
-            $hisat_input = qq" -1 <(less $pair_listing[0]) -2 <(less $pair_listing[1]) ";
+            $hisat_input = qq" -1 $pair_listing[0] -2 $pair_listing[1] ";
+            ## $hisat_input = qq" -1 <(less $pair_listing[0]) -2 <(less $pair_listing[1]) ";
         }
         $test_file = $pair_listing[0];
     } else {
@@ -999,7 +1000,7 @@ sub Hisat2 {
         $hisat_input = qq" -U ${test_file} ";
         if ($test_file =~ /\.[x|g|b]z$/) {
             ## It is noteworthy that I modified hisat2 on my computer so this is never necessary.
-            $hisat_input = qq" -U <(less ${test_file}) ";
+            $hisat_input = qq" -U ${test_file} ";
         }
     }
 

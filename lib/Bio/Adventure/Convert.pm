@@ -142,14 +142,13 @@ sub GATK_Dedup {
     my $options = $class->Get_Vars(
         args => \%args,
         required => ['input',],
-        qual => 10,
-        max_value => undef,
-        min_value => 0.8,
-        vcf_cutoff => 5,
+        remove => 1,
         jmem => 36,
         jcpu => 4,
         jprefix => '50',
         jwalltime => '48:00:00',);
+    my $remove_string = 'true';
+    $remove_string = 'false' unless ($options->{remove});
     my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $marked = qq"$paths->{output_dir}/deduplication_stats.txt";
     my $gatk_stdout = qq"$paths->{output_dir}/deduplication.stdout";
@@ -162,7 +161,7 @@ sub GATK_Dedup {
 gatk MarkDuplicates \\
   -I $options->{input} \\
   -O ${output} \\
-  -M ${marked} --REMOVE_DUPLICATES true --COMPRESSION_LEVEL 9 \\
+  -M ${marked} --REMOVE_DUPLICATES ${remove_string} --COMPRESSION_LEVEL 9 \\
   2>${gatk_stderr} \\
   1>${gatk_stdout}
 samtools index ${output}

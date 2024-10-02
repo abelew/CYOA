@@ -24,7 +24,6 @@ use Spreadsheet::Read;
 use String::Approx qw"amatch";
 use Symbol qw"gensym";
 
-
 =head2 C<Suppa>
 
   Set up and invoke Suppa, a differential transcript and splicing
@@ -659,6 +658,25 @@ ${rev_cmd} 2>>${stderr} 1>>${stdout}
         stdout => $stdout,
     );
 
+}
+
+sub SLSeq_Recorder {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['input', 'species'],
+        gff_type => 'protein_coding_gene',
+        id_tag => 'ID',);
+    my $gff = qq"$options->{libpath}/$options->{libtype}/gff/$options->{species}.gff";
+    unless (-r $options->{input}) {
+        die("Unable to find input bam alignment.");
+    }
+    my $output_dir = qq"outputs/slseq_recorder";
+    make_path($output_dir) unless (-d $output_dir);
+    my $output_gff = qq"${output_dir}/$options->{species}_maximum_utr.gff";
+    my $output_sl_positions = qq"${output_dir}/$options->{species}_recorded_sl.csv";
+    my $gff_in = FileHandle->new("less $gff |");
+    my $gff_io = Bio::FeatureIO->new(-format => 'gff', -fh => $gff_in);
 }
 
 =head2 C<SL_UTR>

@@ -132,6 +132,7 @@ sub Get_Menus {
                 '(guessstrand): Count reads with respect to features and report strandedness.' => \&Bio::Adventure::Count::Guess_Strand,
                 '(htseq): Count mappings with htseq-count.' =>  \&Bio::Adventure::Count::HTSeq,
                 '(htmulti): Use different option sets for counting with htseq.' => \&Bio::Adventure::Count::HT_Multi,
+                '(insertsize): Gather insert size stats with gatk.' => \&Bio::Adventure::Count::Insert_Size,
                 '(jellyfish): Perform a kmer count of some data.' => \&Bio::Adventure::Count::Jellyfish,
                 '(mash): Use mash to count pairwise distances among sequences.' => \&Bio::Adventure::Count::Mash,
                 '(mimap): Count mature miRNA species.' => \&Bio::Adventure::Count::Mi_Map,
@@ -556,6 +557,7 @@ sub Get_Modules {
         'Hisat2_Index' => { modules => ['hisat2'], exe => ['hisat2'], },
         'HT_Multi' => { modules => 'htseq' },
         'HTSeq' => { modules => 'htseq', exe => 'htseq-count' },
+        'Insert_Size' => { modules => 'gatk' },
         'Interpro_Long2Wide' => { modules => 'cyoa' },
         'Interproscan' => {
             modules => ['cyoa', 'interproscan'], exe => 'interproscan.sh' },
@@ -924,6 +926,7 @@ sub Get_TODOs {
         "indexkallisto+" => \$todo_list->{todo}{'Bio::Adventure::Index::Kallisto_Index'},
         "indexrsem+" => \$todo_list->{todo}{'Bio::Adventure::Index::RSEM_Index'},
         "indexsalmon+" => \$todo_list->{todo}{'Bio::Adventure::Index::Salmon_Index'},
+        "insertsize+" => \$todo_list->{todo}{'Bio::Adventure::Count::Insert_Size'},
         "interproscan+" => \$todo_list->{todo}{'Bio::Adventure::Annotation::Interproscan'},
         "interprolong+" => \$todo_list->{todo}{'Bio::Adventure::Annotation::Interpro_Long2Wide'},
         "jellyfish+" => \$todo_list->{todo}{'Bio::Adventure::Count::Jellyfish'},

@@ -272,6 +272,7 @@ has qsub_dependsarray => (is => 'rw', default => 'depend=afterokarray:'); ## Str
 has qsub_path => (is => 'rw', default => scalar_which('qsub'));
 has qual => (is => 'rw', default => undef); ## cutadapt quality string
 has query => (is => 'rw', default => undef); ## Used for searches when input is already taken, most likely blast/fasta
+has remove => (is => 'rw', default => 1);
 has reference => (is => 'rw', default => undef);
 has restart => (is => 'rw', default => 0); ## Restart job(s) in the middle of a group
 has riboanchor => (is => 'rw', default => 'start'); ## When correcting, use the start or end position as an anchor
@@ -1286,15 +1287,16 @@ sub Read_Genome_Fasta {
 =head2 C<Read_Genome_GFF>
 
 Read a GFF file and extract the annotation information from it.
+Now that I am more comfortable with the various gff parsers, this seems dumb.
 
 =cut
 sub Read_Genome_GFF {
   my ($class, %args) = @_;
   my $options = $class->Get_Vars(
-                                 args => \%args,
-                                 required => ['gff'],
-                                 gff_type => 'gene',
-                                 gff_tag => 'locus_tag');
+      args => \%args,
+      required => ['gff'],
+      gff_type => 'gene',
+      gff_tag => 'locus_tag');
   my $annotation_in = Bio::Tools::GFF->new(-file => "$options->{gff}", -gff_version => 3);
   my $gff_out = {
                  stats => {
@@ -1366,7 +1368,7 @@ sub Read_Genome_GFF {
                  chromosome => $gff_chr,
                 };
     $gff_out->{$gff_chr}->{$id} = $annot;
-  }                       ## End looking at every gene in the gff file
+  } ## End looking at every gene in the gff file
   $gff_out->{stats}->{chromosomes} = \@chromosome_list;
   $gff_out->{stats}->{feature_names} = \@feature_names;
   $gff_out->{stats}->{cds_starts} = \@cds_starts;

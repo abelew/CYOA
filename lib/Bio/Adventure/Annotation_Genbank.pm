@@ -16,6 +16,7 @@ use File::Spec;
 use File::Path qw"make_path";
 use File::Which qw"which";
 use File::ShareDir qw":ALL";
+use Bio::Tools::GFF;
 use List::MoreUtils qw"any uniq";
 use Math::SigFigs qw"FormatSigFigs";
 use Template;
@@ -1332,7 +1333,6 @@ sub Write_Gbk {
 sub Write_Gff_from_SeqFeatures {
     my %args = @_;
     my @in = @{$args{input_features}};
-    use Bio::Tools::GFF;
     my $gff_out = FileHandle->new(">$args{output_gff}");
     my $gffio = Bio::Tools::GFF->new(-noparse => 1, -gff_version => 3);
     my $written = 0;

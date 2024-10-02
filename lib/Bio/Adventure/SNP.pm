@@ -107,15 +107,6 @@ sub Freebayes_SNP_Search {
 
     my $comment = qq!## This is a freebayes search for variant against ${input_fasta}!;
     my $jstring = qq!
-mkdir -p ${freebayes_dir}
-gatk MarkDuplicates \\
-  -I $options->{input} \\
-  -O ${deduplicated} \\
-  -M ${marked} --REMOVE_DUPLICATES true --COMPRESSION_LEVEL 9 \\
-  2>${gatk_stderr} \\
-  1>${gatk_stdout}
-echo "Finished gatk deduplication." >> ${stdout}
-samtools index ${deduplicated}
 echo "Finished samtools index." >> ${stdout}
 freebayes -f ${input_fasta} \\
   -v ${output_file} \\
