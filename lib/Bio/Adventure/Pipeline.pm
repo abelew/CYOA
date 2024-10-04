@@ -8,6 +8,7 @@ extends 'Bio::Adventure';
 
 use Cwd qw"abs_path getcwd cwd";
 use File::Basename;
+use File::Find;
 use File::Spec;
 use File::Which qw"which";
 use Time::HiRes qw"sleep";
@@ -1070,6 +1071,53 @@ sub Process_RNAseq {
         }
     }
     return($ret);
+}
+
+sub Recurse {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        function => 'Bio::Adventure::Pipeline::Process_RNAseq',
+    );
+    my $start = cwd();
+    our $filenames = {};
+    sub wanted {
+        return unless -f and /\.fastq\.gz\z/i;
+        my ($file, $path, $ext) = fileparse($File::Find::name, qr/\.[^.]*\z/);
+        my @inputs = ();
+        if (!defined($filenames->{$path})) {
+            $filenames->{$path} = \@inputs;
+        }
+        @inputs = @{$filenames->{$path}};
+        push(@inputs, $file);
+        $filenames->{path} = \@inputs;
+    }
+    my $found = find(\&wanted, $start);
+    my $class_copy = $class;
+    for my $path (keys %{$filenames}) {
+        print "TESTME: $path\n";
+        my $changed = chdir($path);
+        my $testme = cwd();
+        $options->{basedir} = $testme;
+        $args{basedir} = $testme;
+        print "TESTME: CWD post chdir: $testme\n";
+
+        my $input_string = '';
+        my $fn = $options->{function};
+        my $ref_test = ref($fn);
+        print "TESTME: $fn and ref_test: $ref_test\n";
+        my $function = \&${fn};
+
+        for my $in (@{$filenames->{$path}}) {
+            $input_string .= qq"$in:";
+        }
+        $input_string =~ s/:$//g;
+        $args{input} = $input_string;
+        $args{species} = 'ldonovani_v46';
+        my $process = $function->($class_copy, %args);
+        chdir($start);
+    }
+
 }
 
 sub RNAseq {

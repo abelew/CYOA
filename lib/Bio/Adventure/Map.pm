@@ -927,6 +927,7 @@ sub Hisat2 {
         jname => 'hisat',
         jprefix => '40',
         jwalltime => '36:00:00',
+        get_insertsize => 1,
         maximum => undef,
         output_dir => undef,
         output_unaligned => undef,
@@ -996,6 +997,7 @@ sub Hisat2 {
         $test_file = $pair_listing[0];
     } else {
         $stranded = 'no';
+        $options->{get_insertsize} = 0;
         $test_file = File::Spec->rel2abs($hisat_input);
         $hisat_input = qq" -U ${test_file} ";
         if ($test_file =~ /\.[x|g|b]z$/) {
@@ -1123,7 +1125,12 @@ hisat2 -x $paths->{index_shell} ${hisat_args} \\
         paired => $paired,
         species => $options->{species},);
     $hisat_job->{samtools} = $sam_job;
-
+    if ($options->{get_insertsize}) {
+        my $sizes = $class->Bio::Adventure::Count::Insert_Size(
+            input => $sam_job->{output},
+            jdepends => $sam_job->{job_id},);
+        $hisat_job->{insertsizes} = $sizes;
+    }
     $new_jprefix = qq"$options->{jprefix}_3";
     my $htseq_input;
     if ($paired == 1) {

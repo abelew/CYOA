@@ -243,7 +243,7 @@ sub Get_Menus {
                 '(copyraw): Copy data from the raw data archive to scratch.' => \&Bio::Adventure::Prepare::Copy_Raw,
                 '(sradownload): Extract SRA accession from a bioproject and download.' => \&Bio::Adventure::Prepare::Download_SRA_PRJNA,
                 '(fastqdump): Download data from sra.' => \&Bio::Adventure::Prepare::Fastq_Dump,
-                '(download): Download accessions from ncbi.' => \&Bio::Adventure::Prepare::Download_NCBI_Accessions,
+                '(ncbidownload): Download accessions from ncbi.' => \&Bio::Adventure::Prepare::Download_NCBI_Accessions,
             },
         },
         QA => {
@@ -955,6 +955,7 @@ sub Get_TODOs {
         "racer+" => \$todo_list->{todo}{'Bio::Adventure::Trim::Racer'},
         "readsample+" => \$todo_list->{todo}{'Bio::Adventure::Prepare::Read_Samples'},
         "recatalog+" => \$todo_list->{todo}{'Bio::Adventure::Phage::Restriction_Catalog'},
+        "recurse+" => \$todo_list->{todo}{'Bio::Adventure::Pipeline::Recurse'},
         "resfinder+" => \$todo_list->{todo}{'Bio::Adventure::Annotation::Resfinder'},
         "restriction+" => \$todo_list->{todo}{'Bio::Adventure::Phage::Restriction_Catalog'},
         "rhopredict+" => \$todo_list->{todo}{'Bio::Adventure::Feature_Prediction::Rho_Predict'},

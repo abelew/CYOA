@@ -714,6 +714,8 @@ sub Insert_Size {
         required => ['input',],
         jprefix => '50',);
     my $output_base = basename($options->{input}, ('.bam'));
+    my $output_dir = dirname($options->{input});
+    $output_base = qq"${output_dir}/${output_base}";
     my $output_file = qq"${output_base}_insert_size.txt";
     my $output_pdf = qq"${output_base}_insert_size.pdf";
     my $output_stderr = qq"${output_base}_insert_size.stderr";
