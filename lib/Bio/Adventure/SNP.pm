@@ -1583,7 +1583,7 @@ sub Test_Worker {
     my $out_dir = dirname($options->{output});
     my $log_file = qq"${out_dir}/snp_ratio.stdout";
     my $log = FileHandle->new(">${log_file}");
-    my $gff = FileHandle->new(qq!less $species_gff | grep -v "^#" |!);
+    my $gff = Bio::Adventure::Get_FH(input => $species_gff, suffix => qq"| grep -v '^#'");
     print $log "Reading gff: ${species_gff}, extracting type: $options->{gff_type} features tagged $options->{gff_tag}.\n";
     print $log "The large matrix of data will be written to: $options->{output}\n";
     my $all_out = FileHandle->new(">$options->{output}");

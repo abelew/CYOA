@@ -101,7 +101,7 @@ sub RNAFold_Windows_Worker {
 
     my $length = $options->{length};
     my $step = $options->{step};
-    my $in = FileHandle->new("less $options->{input} |");
+    my $in = Bio::Adventure::Get_FH(input => $options->{input});
     my $seqio;
     if ($options->{input} =~ /\.fasta|\.fsa/) {
         $seqio = Bio::SeqIO->new(-format => 'fasta', -fh => $in);

@@ -150,17 +150,14 @@ sub Read_Counts {
     my $maxsize = $options->{maxsize};
     my $minpos = $options->{minpos};
     my $maxpos = $options->{maxpos};
-
+    my $input_fc;
     foreach my $size ($minsize .. $maxsize) {
-        #	open($size, ">${options{output}}/${size}.tab");
-        ##open($size, ">:gzip",
-        my $size = FileHandle->new("less $options->{output}/${size}.tab.gz |");
+        # open($size, ">${options{output}}/${size}.tab");
+        my $size = Bio::Adventure::Get_FH(input => qq"$options->{output}/${size}.tab.gz");
     }
     # open(TOTAL, ">$options{output}/total.tab");
-    ## open(TOTAL, ">:gzip", "${options{output}}/total.tab.gz");
-    my $total = FileHandle->new("less $options->{output}/total.tab.gz |");
-    ##open(IN, "zcat $options{input} |");
-    my $in = FileHandle->new("less $options->{input} |");
+    my $total = Bio::Adventure::Get_FH(input => qq"$options->{output}/total.tab.gz");
+    my $in = Bio::Adventure::Get_FH(input => $options->{input});
     my $line_count = 0;
   LOOP: while (my $line = <$in>) {
         $line_count = $line_count++;

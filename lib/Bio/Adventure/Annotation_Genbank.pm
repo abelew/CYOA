@@ -232,7 +232,7 @@ sub Extract_Features {
     my $pep_file = qq"${output_dir}/${output_name}_extracted_pep.fasta";
     my $output_pep = Bio::SeqIO->new(-file => qq">${pep_file}",
                                      -format => 'Fasta');
-    my $in = FileHandle->new("less $options->{input} |");
+    my $in = $class->Get_FH(input => $options->{input});
     my $seqio = Bio::SeqIO->new(-format => 'genbank', -fh => $in);
     my $num_hits = 0;
   SEQUENCES: while (my $seq = $seqio->next_seq) {
@@ -309,8 +309,7 @@ sub Extract_Notes {
     make_path($output_directory, {verbose => 0}) if (!-d $output_directory);
     my $all_file = qq"${output_directory}/all_peptides.tsv";
     my $filtered_file = qq"${output_directory}/${string_name}_peptides.tsv";
-
-    my $in = FileHandle->new("less $options->{input} |");
+    my $in = $class->Get_FH(input => $options->{input});
     my $all_out = FileHandle->new(">${all_file}");
     my $filtered_out = FileHandle->new(">${filtered_file}");
     my $seqio = Bio::SeqIO->new(-format => 'genbank', -fh => $in);
@@ -655,7 +654,7 @@ sub Merge_CDS_Predictions_Worker {
 sub Predict_to_Features {
     my %args = @_;
     my $glimmer = $args{in};
-    my $glimmer_in = FileHandle->new("less ${glimmer} |");
+    my $glimmer_in = Bio::Adventure::Get_FH(input => $args{in});
     my $contig_id;
     my $fixed_id;
     my @glimmer_features = ();
@@ -768,8 +767,7 @@ sub Query_Edge_Feature {
 =cut
 sub Read_Phanotate_to_SeqFeatures {
     my %args = @_;
-    my $phanotate = $args{input};
-    my $phanotate_in = FileHandle->new("less ${phanotate} |");
+    my $phanotate_in = Bio::Adventure::Get_FH(input => $args{input});
     my $contig_id;
     my $fixed_id;
     my @phanotate_features = ();
@@ -832,7 +830,7 @@ sub Read_Phanotate_to_SeqFeatures {
 =cut
 sub Read_Prokka_Gbk_to_SeqFeatures {
     my %args = @_;
-    my $prokka_in = FileHandle->new("less $args{input} |");
+    my $prokka_in = Bio::Adventure::Get_FH(input => $args{input});
     my $seqio = Bio::SeqIO->new(-format => 'genbank', -fh => $prokka_in);
     my (@prokka_sequences, @prokka_features, @sequence_ids);
     while (my $seq = $seqio->next_seq) {
@@ -858,7 +856,7 @@ sub Read_Prokka_Gbk_to_SeqFeatures {
 =cut
 sub Read_Prodigal_GFF_to_SeqFeatures {
     my %args = @_;
-    my $prodigal_in = FileHandle->new("less $args{input} |");
+    my $prodigal_in = Bio::Adventure::Get_FH(input => $args{input});
     my $prodigal_io = Bio::FeatureIO->new(-format => 'gff', -fh => $prodigal_in);
     my @prodigal_features = ();
     while (my $feature = $prodigal_io->next_feature()) {

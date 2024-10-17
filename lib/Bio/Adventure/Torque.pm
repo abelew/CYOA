@@ -31,12 +31,12 @@ has verbose => (is => 'rw', default => 0);
 has walltime => (is => 'rw', default => '10:00:00');
 
 sub Check_Qsub {
-  my ($class, %args) = @_;
-  my $path = which('qsub');
-  if (!defined($path)) {
-    $path = which('bash');
-  }
-  return($path);
+    my ($class, %args) = @_;
+    my $path = which('qsub');
+    if (!defined($path)) {
+        $path = which('bash');
+    }
+    return($path);
 }
 
 =head1 NAME
@@ -55,33 +55,34 @@ Invoke qsub with (hopefully) appropriate parameters for various jobs on our Torq
 
 =cut
 sub Submit {
-  my ($class, %args) = @_;
-  my $options = $class->Get_Vars(args => \%args);
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(args => \%args);
 
-  my $log = qq"$options->{logdir}/outputs/$options->{jname}.qsubout";
+    my $log = qq"$options->{logdir}/outputs/$options->{jname}.qsubout";
 
-  my $depends_string = "";
-  if ($options->{depends}) {
-      if ($options->{depends_type} eq 'array') {
-          $depends_string = qq"$options->{dependsarray_prefix}$options->{depends}";
-      } else {
-          $depends_string = qq"$options->{depends_prefix}:$options->{depends}";
-      }
-  }
-  my $script_file = qq"$options->{basedir}/scripts/$options->{jprefix}$options->{jname}.sh";
-  my $qsub_cmd_line = qq"$options->{qsub} ${script_file}";
-  my $has_pbs = 0;
-  if ($options->{qsub} =~ /qsub$/) {
-    $qsub_cmd_line = qq"$options->{qsub} -W ${depends_string} ${script_file}";
-    $has_pbs = 1;
-  }
+    my $depends_string = "";
+    if ($options->{depends}) {
+        if ($options->{depends_type} eq 'array') {
+            $depends_string = qq"$options->{dependsarray_prefix}$options->{depends}";
+        }
+        else {
+            $depends_string = qq"$options->{depends_prefix}:$options->{depends}";
+        }
+    }
+    my $script_file = qq"$options->{basedir}/scripts/$options->{jprefix}$options->{jname}.sh";
+    my $qsub_cmd_line = qq"$options->{qsub} ${script_file}";
+    my $has_pbs = 0;
+    if ($options->{qsub} =~ /qsub$/) {
+        $qsub_cmd_line = qq"$options->{qsub} -W ${depends_string} ${script_file}";
+        $has_pbs = 1;
+    }
 
-  my $mycwd = getcwd();
-  make_path("$options->{basedir}/outputs/status", {verbose => 0}) unless (-r qq"$options->{basedir}/outputs/status");
-  make_path("$options->{logdir}", {verbose => 0}) unless (-r qq"$options->{logdir}");
-  make_path("$options->{basedir}/scripts", {verbose => 0}) unless (-r qq"$options->{basedir}/scripts");
-  my $script_base = basename($script_file);
-  my $script_start = qq?#!/usr/bin/env bash
+    my $mycwd = getcwd();
+    make_path("$options->{basedir}/outputs/status", {verbose => 0}) unless (-r qq"$options->{basedir}/outputs/status");
+    make_path("$options->{logdir}", {verbose => 0}) unless (-r qq"$options->{logdir}");
+    make_path("$options->{basedir}/scripts", {verbose => 0}) unless (-r qq"$options->{basedir}/scripts");
+    my $script_base = basename($script_file);
+    my $script_start = qq?#!/usr/bin/env bash
 #PBS -V -S $options->{shell} -q $options->{queue}
 #PBS -d $options->{basedir}
 #PBS -N $options->{jname} -l mem=$options->{mem}gb -l walltime=$options->{walltime} -l ncpus=$options->{jcpu}
@@ -89,20 +90,20 @@ sub Submit {
 echo "#### Started ${script_file} at \$(date)" >> outputs/log.txt
 cd $options->{basedir} || exit
 ?;
-  my $script_end = qq!## The following lines give status codes and some logging
+    my $script_end = qq!## The following lines give status codes and some logging
 echo \$? > outputs/status/$options->{jname}.status
 echo "### Finished \${PBS_JOBID} $script_base at \$(date), it took \$(( SECONDS / 60 )) minutes." >> outputs/log.txt
 !;
-  ## It turns out that if a job was an array (-t) job, then the following does not work because
-  ## It doesn't get filled in properly by qstat -f...
+    ## It turns out that if a job was an array (-t) job, then the following does not work because
+    ## It doesn't get filled in properly by qstat -f...
 
-  ## The following lines used to be in the shell script postscript
-  ## Copying the full job into the log is confusing, removing this at least temporarily.
-  ##echo "####This job consisted of the following:" >> outputs/log.txt
-  ##cat "\$0" >> outputs/log.txt
+    ## The following lines used to be in the shell script postscript
+    ## Copying the full job into the log is confusing, removing this at least temporarily.
+    ##echo "####This job consisted of the following:" >> outputs/log.txt
+    ##cat "\$0" >> outputs/log.txt
 
-  if ($has_pbs) {
-    $script_end .= qq!
+    if ($has_pbs) {
+        $script_end .= qq!
 walltime=\$(qstat -f -t \"\${PBS_JOBID}\" | grep 'resources_used.walltime' | awk -F ' = ' '{print \$2}')
 echo "#### PBS walltime used by \${PBS_JOBID} was: \${walltime:-null}" >> outputs/log.txt
 mem=\$(qstat -f -t | grep \"\${PBS_JOBID}\" | grep 'resources_used.mem' | awk -F ' = ' '{print \$2}')
@@ -113,132 +114,134 @@ cputime=\$(qstat -f -t \"\${PBS_JOBID}\" | grep 'resources_used.cput' | awk -F '
 echo "#### PBS cputime used by \${PBS_JOBID} was: \${cputime:-null}" >> outputs/log.txt
 ##qstat -f -t \${PBS_JOBID} >> outputs/log.txt
 !;
-  }
+    }
 
-  if ($class->{verbose}) {
-    print qq"The job is:
+    if ($class->{verbose}) {
+        print qq"The job is:
 $args{jstring}
 ";
-  }
+    }
 
-  my $total_script_string = "";
-  $total_script_string .= "${script_start}\n";
-  $total_script_string .= "$options->{comment}\n" if ($options->{comment});
-  $total_script_string .= "$options->{prescript}\n" if ($options->{prescript});
-  $total_script_string .= "$options->{jstring}\n" if ($options->{jstring});
-  if ($options->{postscript}) {
-    $total_script_string .= qq!if [ \$? == "0" ]; then
+    my $total_script_string = "";
+    $total_script_string .= "${script_start}\n";
+    $total_script_string .= "$options->{comment}\n" if ($options->{comment});
+    $total_script_string .= "$options->{prescript}\n" if ($options->{prescript});
+    $total_script_string .= "$options->{jstring}\n" if ($options->{jstring});
+    if ($options->{postscript}) {
+        $total_script_string .= qq!if [ \$? == "0" ]; then
    $options->{postscript}
 fi
 !;
-  }
-  $total_script_string .= "${script_end}\n";
-
-  my $script = FileHandle->new(">$script_file");
-  print $script $total_script_string;
-  $script->close();
-  chmod(0755, $script_file);
-
-  my $job_id = undef;
-  my $qsub_string = qq"${qsub_cmd_line} |";
-  my $handle = IO::Handle->new;
-  my $qsub_pid = open($handle, "${qsub_cmd_line} |");
-  while(my $line = <$handle>) {
-    chomp($line);
-    $job_id = $line;
-  }
-
-  my $job;
-  my $short_jobid = "";
-  if ($has_pbs) {
-    if (!defined($job_id)) {
-      warn("The job id did not get defined.  qsub likely failed.");
-      return(undef);
     }
-    my @jobid_list = split(/\./, $job_id);
-    my $short_jobid = shift(@jobid_list);
+    $total_script_string .= "${script_end}\n";
 
-    print "Starting a new job: ${short_jobid} $options->{jname}";
-    if ($options->{depends}) {
-      my @short_dep = split(/\./, $options->{depends});
-      my $shortened_dep = shift(@short_dep);
-      print ", depending on ${shortened_dep}.";
+    my $script = FileHandle->new(">$script_file");
+    print $script $total_script_string;
+    $script->close();
+    chmod(0755, $script_file);
+
+    my $job_id = undef;
+    my $qsub_string = qq"${qsub_cmd_line} |";
+    my $handle = IO::Handle->new;
+    my $qsub_pid = open($handle, "${qsub_cmd_line} |");
+    while (my $line = <$handle>) {
+        chomp($line);
+        $job_id = $line;
     }
-    print "\n";
-  }
 
-  $job = {
-      basedir => $options->{basedir},
-      depends_string => $depends_string,
-      job_id => $short_jobid,
-      job_input => $options->{job_input},
-      jcpu => $options->{jcpu},
-      jname => $options->{jname},
-      job_output => $options->{job_output},
-      jmem => $options->{mem},
-      jqueue => $options->{queue},
-      log => $log,
-      pbs_id => $job_id,
-      qsub_args => $options->{args},
-      script_body => $args{jstring},
-      script_file => $script_file,
-      script_start => $script_start,
-      submitter => $qsub_cmd_line,
-      walltime => $options->{walltime},
-  };
-  return($job);
+    my $job;
+    my $short_jobid = "";
+    if ($has_pbs) {
+        if (!defined($job_id)) {
+            warn("The job id did not get defined.  qsub likely failed.");
+            return(undef);
+        }
+        my @jobid_list = split(/\./, $job_id);
+        my $short_jobid = shift(@jobid_list);
+
+        print "Starting a new job: ${short_jobid} $options->{jname}";
+        if ($options->{depends}) {
+            my @short_dep = split(/\./, $options->{depends});
+            my $shortened_dep = shift(@short_dep);
+            print ", depending on ${shortened_dep}.";
+        }
+        print "\n";
+    }
+
+    $job = {
+        basedir => $options->{basedir},
+        depends_string => $depends_string,
+        job_id => $short_jobid,
+        job_input => $options->{job_input},
+        jcpu => $options->{jcpu},
+        jname => $options->{jname},
+        job_output => $options->{job_output},
+        jmem => $options->{mem},
+        jqueue => $options->{queue},
+        log => $log,
+        pbs_id => $job_id,
+        qsub_args => $options->{args},
+        script_body => $args{jstring},
+        script_file => $script_file,
+        script_start => $script_start,
+        submitter => $qsub_cmd_line,
+        walltime => $options->{walltime},
+    };
+    return($job);
 }
 
 sub Submit_Perl {
-  my ($class, %args) = @_;
+    my ($class, %args) = @_;
 
-  my $job_type;
-  if ($args{job_type}) {
-    $job_type = $args{job_type};
-  } else {
-    $job_type = $class->{job_type};
-  }
-  my $jname;
-  if ($args{jname}) {
-    $jname = $args{jname};
-  } else {
-    $jname = $class->{jname};
-  }
-  $jname = qq"${job_type}-${jname}";
-  my $jprefix = "";
-  $jprefix = $args{jprefix} if ($args{jprefix});
-  ## For arguments to qsub, start with the defaults in the constructor in $class
-  ## then overwrite with any application specific requests from %args
-  my $log = qq"$class->{logdir}/${jname}.qsubout";
-  my $job_output = "";
-  $job_output = $args{output} if (defined($args{output}));
-  my $job_input = "";
-  $job_input = $args{input} if (defined($args{input}));
-
-  my $depends_string = $class->{depends_prefix};
-  if (defined($args{depends_type})) {
-    if ($args{depends_type} eq 'array') {
-      $depends_string = $class->{dependsarray_prefix};
+    my $job_type;
+    if ($args{job_type}) {
+        $job_type = $args{job_type};
     }
-  }
-  $depends_string .= $class->{depends} if (defined($class->{depends}));
-  my $script_file = qq"$class->{basedir}/scripts/${jprefix}${jname}.sh";
+    else {
+        $job_type = $class->{job_type};
+    }
+    my $jname;
+    if ($args{jname}) {
+        $jname = $args{jname};
+    }
+    else {
+        $jname = $class->{jname};
+    }
+    $jname = qq"${job_type}-${jname}";
+    my $jprefix = "";
+    $jprefix = $args{jprefix} if ($args{jprefix});
+    ## For arguments to qsub, start with the defaults in the constructor in $class
+    ## then overwrite with any application specific requests from %args
+    my $log = qq"$class->{logdir}/${jname}.qsubout";
+    my $job_output = "";
+    $job_output = $args{output} if (defined($args{output}));
+    my $job_input = "";
+    $job_input = $args{input} if (defined($args{input}));
 
-  my $qsub = qq"$class->{qsub} ${script_file}";
-  my $has_pbs = 0;
-  if ($class->{qsub} =~ /qsub$/) {
-    $qsub = qq"$class->{qsub} -W ${depends_string} ${script_file}";
-    $has_pbs = 1;
-  }
+    my $depends_string = $class->{depends_prefix};
+    if (defined($args{depends_type})) {
+        if ($args{depends_type} eq 'array') {
+            $depends_string = $class->{dependsarray_prefix};
+        }
+    }
+    $depends_string .= $class->{depends} if (defined($class->{depends}));
+    my $script_file = qq"$class->{basedir}/scripts/${jprefix}${jname}.sh";
 
-  my $mycwd = getcwd();
-  make_path("$class->{basedir}/outputs/status", {verbose => 0}) unless (-r qq"$class->{basedir}/outputs/status");
-  make_path("$class->{logdir}", {verbose => 0}) unless (-r qq"$class->{logdir}");
-  make_path("$class->{basedir}/scripts", {verbose => 0}) unless (-r qq"$class->{basedir}/scripts");
-  my $script_base = basename($script_file);
+    my $qsub = qq"$class->{qsub} ${script_file}";
+    my $has_pbs = 0;
+    if ($class->{qsub} =~ /qsub$/) {
+        $qsub = qq"$class->{qsub} -W ${depends_string} ${script_file}";
+        $has_pbs = 1;
+    }
 
-  $script_file = qq"$class->{basedir}/scripts/${jprefix}${jname}.pl";
-  my $script_start = qq?#!/usr/bin/env perl
+    my $mycwd = getcwd();
+    make_path("$class->{basedir}/outputs/status", {verbose => 0}) unless (-r qq"$class->{basedir}/outputs/status");
+    make_path("$class->{logdir}", {verbose => 0}) unless (-r qq"$class->{logdir}");
+    make_path("$class->{basedir}/scripts", {verbose => 0}) unless (-r qq"$class->{basedir}/scripts");
+    my $script_base = basename($script_file);
+
+    $script_file = qq"$class->{basedir}/scripts/${jprefix}${jname}.pl";
+    my $script_start = qq?#!/usr/bin/env perl
 use strict;
 use FileHandle;
 my \$out = FileHandle->new(">>outputs/log.txt");
@@ -246,54 +249,54 @@ my \$d = qx'date';
 print \$out "### Started $script_file at \${d}";
 chdir("$class->{basedir}");
 ?;
-  my $script_end = qq!## The following lines give status codes and some logging
+    my $script_end = qq!## The following lines give status codes and some logging
 my \$jobid = "";
 \$jobid = \$ENV{PBS_JOBID} if (\$ENV{PBS_JOBID});
 my \$end_d = qx'date';
 print \$out "### Finished \${jobid} ${script_base} at \${end_d}.";
 close(\$out);
 !;
-  print "The job is:
+    print "The job is:
 $args{jstring}" if ($class->{verbose});
 
-  my $total_script_string = "";
-  $total_script_string .= "$script_start\n";
-  $total_script_string .= "$args{comment}\n" if ($args{comment});
-  $total_script_string .= "$args{prescript}\n" if ($args{prescript});
-  $total_script_string .= "$args{jstring}\n" if ($args{jstring});
-  $total_script_string .= "$script_end\n";
+    my $total_script_string = "";
+    $total_script_string .= "$script_start\n";
+    $total_script_string .= "$args{comment}\n" if ($args{comment});
+    $total_script_string .= "$args{prescript}\n" if ($args{prescript});
+    $total_script_string .= "$args{jstring}\n" if ($args{jstring});
+    $total_script_string .= "$script_end\n";
 
-  my $script = FileHandle->new(">$script_file");
-  print $script $total_script_string;
-  $script->close();
-  chmod(0755, $script_file);
+    my $script = FileHandle->new(">$script_file");
+    print $script $total_script_string;
+    $script->close();
+    chmod(0755, $script_file);
 
-  my $bash_script = $script_file;
-  $bash_script =~ s/\.pl/\.sh/g;
-  my %new_args = %args;
-  $new_args{jstring} = qq"${script_file}\n";
-  my $shell_job = $class->Submit(%new_args);
+    my $bash_script = $script_file;
+    $bash_script =~ s/\.pl/\.sh/g;
+    my %new_args = %args;
+    $new_args{jstring} = qq"${script_file}\n";
+    my $shell_job = $class->Submit(%new_args);
 
-  my $perl_job = {id => $shell_job->{id},
-                  submitter => $qsub,
-                  mem => $class->{mem},
-                  walltime => $class->{walltime},
-                  jcpu => $class->{jcpu},
-                  jobname => $shell_job->{jobname},
-                  log => $log,
-                  depends_string => $depends_string,
-                  queue => $class->{queue},
-                  qsub_args => $class->{args},
-                  basedir => $class->{basedir},
-                  pbs_id => $shell_job->{pbs_id},
-                  script_file => $shell_job->{script_file},
-                  script_start => $shell_job->{script_start},
-                  script_body => $args{jstring},
-                  output => $shell_job->{output},
-                  input => $shell_job->{input}};
-
-  return($shell_job);
-  ##return([$shell_job, $perl_job]);
+    my $perl_job = {
+        id => $shell_job->{id},
+        submitter => $qsub,
+        mem => $class->{mem},
+        walltime => $class->{walltime},
+        jcpu => $class->{jcpu},
+        jobname => $shell_job->{jobname},
+        log => $log,
+        depends_string => $depends_string,
+        queue => $class->{queue},
+        qsub_args => $class->{args},
+        basedir => $class->{basedir},
+        pbs_id => $shell_job->{pbs_id},
+        script_file => $shell_job->{script_file},
+        script_start => $shell_job->{script_start},
+        script_body => $args{jstring},
+        output => $shell_job->{output},
+        input => $shell_job->{input}
+    };
+    return($shell_job);
 }
 
 =head1 AUTHOR - atb

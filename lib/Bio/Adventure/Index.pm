@@ -44,7 +44,8 @@ sub BT1_Index {
     $species = basename($species, ('.fasta', '.fa'));
     my $copied_location = qq"$options->{libpath}/$options->{libtype}/${species}.fasta";
     if (!-f $copied_location) {
-        my $copied = qx"less $options->{input} > ${copied_location}";
+        my $fc = $class->Get_FC(input => $options->{input});
+        my $copied = qx"${fc} > ${copied_location}";
     }
     my $output_dir = qq"$options->{basedir}/outputs/$options->{jprefix}bt1index";
     my $stdout = qq"${output_dir}/bt1_index.stdout";
@@ -99,7 +100,8 @@ sub BT2_Index {
     $species = basename($species, ('.fasta', '.fa'));
     my $copied_location = qq"$options->{libpath}/$options->{libtype}/${species}.fasta";
     if (!-f $copied_location) {
-        my $copied = qx"less $options->{input} > ${copied_location}";
+        my $fc = $class->Get_FC(input => $options->{input});
+        my $copied = qx"${fc} > ${copied_location}";
     }
     my $output_dir = qq"$options->{basedir}/outputs/$options->{jprefix}bt2_index";
     my $stdout = qq"${output_dir}/index.stdout";
@@ -505,7 +507,7 @@ sub Make_Codon_Table {
     ## Set up the pieces which will hold the data of interest.
     my $total_codons = 0;
     my %codon_counts = ();
-    my $in = FileHandle->new("less ${in_gbff} |");
+    my $in = $class->Get_FH(input => $in_gbff);
     my $seqio = Bio::SeqIO->new(-format => 'genbank', -fh => $in);
     my $seq_count = 0;
   SEQ: while (my $seq = $seqio->next_seq) {

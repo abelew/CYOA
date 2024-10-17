@@ -1252,8 +1252,10 @@ sub Phageterm_Worker {
             $decompressed_r1 = qx"cp $in[0] ${workdir}/r1.fastq";
             $decompressed_r2 = qx"cp $in[1] ${workdir}/r2.fastq";
         } else {
-            $decompressed_r1 = qx"less $in[0] > ${workdir}/r1.fastq";
-            $decompressed_r2 = qx"less $in[1] > ${workdir}/r2.fastq";
+            my $fc1 = Bio::Adventure::Get_FC(input => $in[0]);
+            my $fc2 = Bio::Adventure::Get_FC(input => $in[1]);
+            $decompressed_r1 = qx"${fc1} > ${workdir}/r1.fastq";
+            $decompressed_r2 = qx"${fc2} > ${workdir}/r2.fastq";
         }
         print $phage_log "Copied reads to ${workdir} as r1.fastq and r2.fastq.\n";
         $read_string = 'r1.fastq r2.fastq';
@@ -1267,7 +1269,8 @@ sub Phageterm_Worker {
         if ($options->{input} =~ /\.fastq$/) {
             $decompressed = qx"cp $options->{input} ${workdir}/r1.fastq";
         } else {
-            $decompressed = qx"less $options->{input} > ${workdir}/r1.fastq";
+            my $fc_in = Bio::Adventure::Get_FC(input => $options->{input});
+            $decompressed = qx"${fc_in} > ${workdir}/r1.fastq";
         }
         print $phage_log "Copied reads to ${workdir} as r1.fastq.\n";
         $read_string = 'r1.fastq';

@@ -311,7 +311,9 @@ sub Get_Menus {
             name => 'splicing',
             message => 'Tools to consider splicing',
             choices => {
+                '(rmats): Quantify changes in transcript splicing events across samples.' => \&Bio::Adventure::Splicing::RMats,
                 '(suppa): Quantify changes in transcript splicing events across samples.' => \&Bio::Adventure::Splicing::Suppa,
+                '(slseq_recorder): Record observed spliced leaders in an SLSeq experiment.' => \&Bio::Adventure::Splicing_SLSeq_Recorder,
                 '(slsearch): Count frequency of SL (or an arbitrary) sequences.' => \&Bio::Adventure::Splicing::SLSearch,
                 '(slutr): Search for SL junction reads and use them to define UTRs.' => \&Bio::Adventure::Splicing::SL_UTR,
             },
@@ -584,6 +586,7 @@ sub Get_Modules {
         'Phageterm' => { modules => ['cyoa', 'phageterm'], exe => 'PhageTerm.py' },
         'Phanotate' => { modules => ['trnascan', 'phanotate'], exe => 'phanotate.py' },
         'Phastaf' => { modules => ['cyoa', 'phastaf'] },
+        'PolyA_Extractor_Worker' => { modules => ['cyoa'] },
         'Prodigal' => { modules => ['cyoa', 'prodigal'] },
         'Prokka' => { ## Prokka should not need cyoa; it is getting requisite perl module from it for now
             modules => ['cyoa', 'prokka', 'blast'], exe => 'prokka'},
@@ -592,6 +595,7 @@ sub Get_Modules {
         'Restriction_Catalog' => { modules => 'cyoa' },
         'Rgi' => { modules => ['kma', 'jellyfish', 'bowtie', 'bwa', 'diamond', 'rgi'], },
         'Rho_Predict' => { modules => 'rhotermpredict' },
+        'RMats' => { modules => ['rmats'] },
         'RNAFold_Windows' => { modules => ['cyoa', 'vienna'], exe => 'RNAfold' },
         'Rosalind_Plus' => { modules => ['cyoa', 'prodigal'] },
         'RSEM' => { modules => 'rsem', exe => 'rsem-prepare-reference' },
@@ -603,6 +607,9 @@ sub Get_Modules {
         'Samtools' => { modules => ['samtools', 'bamtools'], exe => 'samtools' },
         'Shovill' => { modules => 'shovill', exe => 'shovill' },
         'SLSearch' => { modules => ['cutadapt'] },
+        ## FIXME: I should only set one of these two (and for the following ones too)
+        'SLSeq_Recorder' => { modules => ['cyoa', 'samtools'] },
+        'SLSeq_Recorder_Worker' => { modules => ['cyoa', 'samtools'] },
         'SL_UTR' => { modules => 'cyoa' },
         'Snippy' => { modules => ['snippy', 'gubbins', 'fasttree'],
                       exe => ['snippy', 'gubbins'], },
@@ -789,6 +796,9 @@ sub Get_Paths {
     elsif ($subroutine eq 'SLSearch') {
         $paths->{output_dir} = qq"${output_prefix}slsearch_$options->{species}";
     }
+    elsif ($subroutine eq 'SLSeq_Recorder') {
+        $paths->{output_dir} = qq"${output_prefix}slseq_recorder_$options->{species}";
+    }
     elsif ($subroutine eq 'Split_Align_Blast') {
         my $libname = basename($options->{library}, $class->{suffixes});
         $paths->{output_dir} = qq"${output_prefix}blastsplit_$options->{input}_vs_${libname}";
@@ -949,6 +959,7 @@ sub Get_TODOs {
         "parsefasta+" => \$todo_list->{todo}{'Bio::Adventure::Align_Fasta::Parse_Fasta_Global'},
         "parsebcf+" => \$todo_list->{todo}{'Bio::Adventure::SNP::SNP_Ratio'},
         "phagepromoter+" => \$todo_list->{todo}{'Bio::Adventure::Feature_Prediction_Phagepromoter'},
+        "polya+" => \$todo_list->{todo}{'Bio::Adventure::Trim::PolyA_Extractor'},
         "posttrinity+" => \$todo_list->{todo}{'Bio::Adventure::Assembly::Trinity_Post'},
         "prokka+" => \$todo_list->{todo}{'Bio::Adventure::Annotation::Prokka'},
         "queryjob+" => \$todo_list->{todo}{'Bio::Adventure::Slurm::Query_Job'},
@@ -960,12 +971,14 @@ sub Get_TODOs {
         "restriction+" => \$todo_list->{todo}{'Bio::Adventure::Phage::Restriction_Catalog'},
         "rhopredict+" => \$todo_list->{todo}{'Bio::Adventure::Feature_Prediction::Rho_Predict'},
         "rgi+" => \$todo_list->{todo}{'Bio::Adventure::Annotation::Rgi'},
+        "rmats+" => \$todo_list->{todo}{'Bio::Adventure::Splicing::RMats'},
         "rsem+" => \$todo_list->{todo}{'Bio::Adventure::Map::RSEM'},
         "runessentiality+" => \$todo_list->{todo}{'Bio::Adventure::TNSeq::Run_Essentiality'},
         "sam2bam+" => \$todo_list->{todo}{'Bio::Adventure::Convert::Sam2Bam'},
         "salmon+" => \$todo_list->{todo}{'Bio::Adventure::Map::Salmon'},
         "terminasereorder+" => \$todo_list->{todo}{'Bio::Adventure::Phage::Terminase_ORF_Reorder'},
         "shovill+" => \$todo_list->{todo}{'Bio::Adventure::Assembly::Shovill'},
+        "slseq_record+" => \$todo_list->{todo}{'Bio::Adventure::Splicing::SLSeq_Recorder'},
         "slsearch+" => \$todo_list->{todo}{'Bio::Adventure::Splicing::SLSearch'},
         "slutr+" => \$todo_list->{todo}{'Bio::Adventure::Splicing::SL_UTR'},
         "snippy+" => \$todo_list->{todo}{'Bio::Adventure::SNP::Snippy'},

@@ -148,15 +148,15 @@ sub Assembly_Coverage {
     my $input_string = '';
     if ($options->{input} =~ /$options->{delimiter}/) {
         my @in = split(/$options->{delimiter}/, $options->{input});
-        my $r1 = abs_path($in[0]);
-        my $r2 = abs_path($in[1]);
-        $input_string = qq" -1 <(less ${r1}) -2 <(less ${r2}) ";
+        my $r1 = $class->Get_FD(input => abs_path($in[0]));
+        my $r2 = $class->Get_FD(input => abs_path($in[1]));
+        $input_string = qq" -1 ${r1} -2 ${r2} ";
         if ($r1 =~ /\.fastq$/) {
             $input_string = qq" -1 ${r1} -2 ${r2} ";
         }
     } else {
-        my $r1 = abs_path($options->{input});
-        $input_string = qq"-1 <(less ${r1}) ";
+        my $r1 = $class->Get_FD(input => abs_path($options->{input}));
+        $input_string = qq"-1 ${r1} ";
         if ($r1 =~ /\.fastq$/) {
             $input_string = qq" -1 ${r1} ";
         }
@@ -624,9 +624,12 @@ sub Trinity {
     my $input_string = '';
     if ($options->{input} =~ /$options->{delimiter}/) {
         my @in = split(/$options->{delimiter}/, $options->{input});
-        $input_string = qq"--left <(less $in[0]) --right <(less $in[1]) ";
+        my $r1_fd = $class->Get_FD(input => $in[0]);
+        my $r2_fd = $class->Get_FD(input => $in[1]);
+        $input_string = qq"--left ${r1_fd} --right ${r2_fd} ";
     } else {
-        $input_string = qq"--single <(less $options->{input}) ";
+        my $r1_fd = $class->Get_FD(input => $options->{input});
+        $input_string = qq"--single <${r1_fd} ";
     }
     my $trim_flag = '';
     if ($options->{trim}) {
@@ -824,8 +827,10 @@ sub Unicycler {
         my @in = split(/$options->{delimiter}/, $options->{input});
         $input_string = qq" -1 ${output_dir}/r1.fastq -2 ${output_dir}/r2.fastq";
         $shovill_input = qq" --R1 ${output_dir}/r1.fastq --R2 ${output_dir}/r2.fastq ";
-        $ln_string = qq"less $in[0] > ${output_dir}/r1.fastq
-less $in[1] > ${output_dir}/r2.fastq\n";
+        my $r1_fc = $class->Get_FC(input => $in[0]);
+        my $r2_fc = $class->Get_FC(input => $in[1]);
+        $ln_string = qq"${r1_fc} > ${output_dir}/r1.fastq
+${r2_fc} > ${output_dir}/r2.fastq\n";
         if ($in[0] =~ /\.fastq$/) {
             $input_string = qq" -1 ${output_dir}/r1.fastq -2 ${output_dir}/r2.fastq ";
             $shovill_input = qq" --R1 ${output_dir}/r1.fastq --R2 ${output_dir}/r2.fastq ";
@@ -835,7 +840,8 @@ cp $in[1] ${output_dir}/r2.fastq\n";
     } else {
         $input_string = qq" -1 ${output_dir}/r1.fastq ";
         $shovill_input = qq" --R1 ${output_dir}/r1.fastq ";
-        $ln_string = qq" less $options->{input} > ${output_dir}/r1.fastq ";
+        my $r1_fc = $class->Get_FC(input => $options->{input});
+        $ln_string = qq" ${r1_fc} > ${output_dir}/r1.fastq ";
         if ($options->{input} =~ /\.fastq$/) {
             $input_string = qq" -1 ${output_dir}/r1.fastq ";
             $shovill_input = qq" --R1 ${output_dir}/r1.fastq ";
@@ -930,9 +936,12 @@ sub Velvet {
     my $input_string = "";
     if ($options->{input} =~ /$options->{delimiter}/) {
         my @in = split(/$options->{delimiter}/, $options->{input});
-        $input_string = qq" -fastq -short2 -separate <(less $in[0]) <(less $in[1])";
+        my $r1_fd = $class->Get_FD(input => $in[0]);
+        my $r2_fd = $class->Get_FD(input => $in[1]);
+        $input_string = qq" -fastq -short2 -separate ${r1_fd} ${r2_fd}";
     } else {
-        $input_string = qq" -fastq -short <(less $options->{input})";
+        my $r1_fd = $class->Get_FD(input => $options->{input});
+        $input_string = qq" -fastq -short ${r1_fd}";
     }
     my $comment = '## This is a velvet submission script.';
     my $jstring = qq!mkdir -p ${output_dir} && \\

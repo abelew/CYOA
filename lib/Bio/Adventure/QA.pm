@@ -50,10 +50,11 @@ sub Biopieces_Graph {
         foreach my $in (@inputs) {
             my $short_in = basename($in, ('.gz','.fastq'));
             $short_in = basename($short_in, ('.gz','.fastq'));
+            my $input_fc = Bio::Adventure::Get_FC(input => $in);
             my $jstring = qq!
 ## Do not forget that _only_ the last command in a biopieces string is allowed to have the -x.
 mkdir -p outputs/biopieces
-less ${in} | read_fastq -i - -e base_$options->{phred} |\\
+${input_fc} | read_fastq -i - -e base_$options->{phred} |\\
  plot_scores -T 'Quality Scores' -t svg -o outputs/biopieces/${short_in}_quality_scores.svg |\\
  plot_nucleotide_distribution -T 'NT. Distribution' -t svg -o outputs/biopieces/${short_in}_ntdist.svg |\\
  plot_lendist -T 'Length Distribution' -k SEQ_LEN -t svg -o outputs/biopieces/${short_in}_lendist.svg |\\
@@ -78,10 +79,11 @@ less ${in} | read_fastq -i - -e base_$options->{phred} |\\
                 postscript => $args{postscript},);
         }
     } else { ## A single input was provided
+        my $input_fc = Bio::Adventure::Get_FC(input => $input);
         my $jstring = qq!
 ## Do not forget that _only_ the last command in a biopieces string is allowed to have the -x.
 mkdir -p outputs/biopieces
-less ${input} | read_fastq -i - -e base_33 |\\
+${input_fc} | read_fastq -i - -e base_33 |\\
  plot_scores -T 'Quality Scores' -t svg -o outputs/biopieces/${jname}_quality_scores.svg |\\
  plot_nucleotide_distribution -T 'NT. Distribution' -t svg -o outputs/biopieces/${jname}_ntdist.svg |\\
  plot_lendist -T 'Length Distribution' -k SEQ_LEN -t svg -o outputs/biopieces/${jname}_lendist.svg |\\
@@ -144,13 +146,15 @@ sub Fastqc {
             $input_file_string = qq"$input_file_string ${in} ";
             if ($in =~ /\.xz$|\.bz2$/) {
                 $subshell = 1;
-                $input_file_string = qq"$input_file_string <(less $in) ";
+                my $r1_fd = $class->Get_FD(input => $in);
+                $input_file_string = qq"$input_file_string ${r1_fd} ";
             }
         }
     } elsif ($options->{input} =~ /\.xz$|\.bz2$/) {
         $modified_input = basename($options->{input}, ('.gz', '.bz2', '.xz')) unless ($modified_input);
         $subshell = 1;
-        $input_file_string = qq"<(less $options->{input}) ";
+        my $r1_fd = $class->Get_FD(input => $options->{input});
+        $input_file_string = qq"${r1_fd} ";
     } else {
         $modified_input = basename($options->{input}, ('.gz')) unless ($modified_input);
         $input_file_string = qq"$options->{input} ";

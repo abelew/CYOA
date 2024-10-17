@@ -66,7 +66,7 @@ sub Submit {
         print "The restart option is on, and this job appears to have finished.\n";
         return($job);
     }
-    my $script_file = qq"$options->{basedir}/scripts/$options->{jprefix}$options->{jname}.sh";
+    my $script_file = qq"$options->{basedir}/$options->{script_dir}/$options->{jprefix}$options->{jname}.sh";
     my $mycwd = getcwd();
     my $out_dir;
     if (!defined($options->{stdout}) && !defined($options->{output})) {
@@ -87,12 +87,14 @@ sub Submit {
 
     make_path($out_dir, {verbose => 0}) unless (-r $out_dir);
     make_path("$options->{logdir}", {verbose => 0}) unless (-r qq"$options->{logdir}");
-    make_path("$options->{basedir}/scripts", {verbose => 0}) unless (-r qq"$options->{basedir}/scripts");
+    unless (-r qq"$options->{basedir}/scripts") {
+        make_path("$options->{basedir}/$options->{script_dir}/pdata", {verbose => 0});
+    }
     my $script_base = basename($script_file);
 
     ## Remove the need for two functions that do the same thing except one for perl and one for bash
     if ($options->{language} eq 'perl') {
-        my $perl_file = qq"$options->{basedir}/scripts/$options->{jprefix}$options->{jname}.pl";
+        my $perl_file = qq"$options->{basedir}/$options->{script_dir}/$options->{jprefix}$options->{jname}.pl";
         my $perl_stderr = qq"${out_dir}/$options->{jprefix}$options->{jname}.stderr";
         my $perl_stdout = qq"${out_dir}/$options->{jprefix}$options->{jname}.stdout";
         my $perl_start = qq?#!/usr/bin/env perl
@@ -138,8 +140,8 @@ ${perl_file} \\
     } ## End extra processing for submission of a perl script (perhaps not needed for slurm?
 
     if ($options->{jtemplate}) {
-        print "In local, processing with dir: $template_dir\n";
-        print "Template is outputting to: $script_file\n";
+        print "In local, processing with dir: ${template_dir}\n";
+        print "Template is outputting to: ${script_file}\n";
         my $tt = Template->new({
             INCLUDE_PATH => $template_dir,
             OUTPUT => $script_file,
@@ -152,7 +154,6 @@ cd $options->{basedir}
 set -o errexit
 set -o errtrace
 set -o pipefail
-export LESS='$ENV{LESS}'
 echo "## Started ${script_base} at \$(date) on \$(hostname)." >> ${bash_log}
 function get_sigterm {
   echo "A SIGTERM was sent to ${jname}." >> ${bash_log}

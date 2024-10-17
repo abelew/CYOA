@@ -188,7 +188,7 @@ sub Parse_Fasta {
     }
     my $out = FileHandle->new(">${output}");
     ## This works, other attempts I've used for zipped input fail.
-    my $f = FileHandle->new("less ${input} |");
+    my $f = $class->Get_FH(input => $input);
     my $searchio = Bio::SearchIO->new(-format => 'fasta',
                                       -fh => $f,
                                       -best => ${best_only},
@@ -296,8 +296,7 @@ sub Parse_Fasta_Global {
     $output = basename($output, ('.gz', '.xz'));
     $output = basename($output, ('.txt'));
 
-    my $input = $options->{input};
-    my $in = FileHandle->new("less ${input} |");
+    my $in = $class->Get_FH(input => $options->{input});
     my $searchio = Bio::SearchIO->new(
         -format => $options->{fasta_format},
         -fh => $in,
@@ -316,8 +315,6 @@ sub Parse_Fasta_Global {
     my $all = FileHandle->new(qq">$options->{output_all}");
 
     my $seq_count = 0;
-    print "TESTME2\n";
-    print "TESTME: $parsed\n";
     print $parsed "Query Name\tQuery length\tHit ID\tHit Length\tScore\tE\tIdentity\tHit length\tHit Matches\n";
     while (my $result = $searchio->next_result()) {
         print "Looking at result!\n";

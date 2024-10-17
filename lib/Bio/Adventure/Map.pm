@@ -96,11 +96,14 @@ sub Bowtie {
         my @pair_listing = split(/$options->{delimiter}/, $bt_input);
         $pair_listing[0] = File::Spec->rel2abs($pair_listing[0]);
         $pair_listing[1] = File::Spec->rel2abs($pair_listing[1]);
-        $bt_input = qq" <(less $pair_listing[0]) <(less $pair_listing[1]) ";
+        my $r1_fd = $class->Get_FD(input => $pair_listing[0]);
+        my $r2_fd = $class->Get_FD(input => $pair_listing[1]);
+        $bt_input = qq" ${r1_fd} ${r2_fd} ";
         $test_file = $pair_listing[0];
     } else {
         $test_file = File::Spec->rel2abs($bt_input);
-        $bt_input = qq" <(less ${test_file}) ";
+        my $r1_fd = $class->Get_FD(input => $test_file);
+        $bt_input = qq" ${r1_fd} ";
         $stranded = 'no';
     }
 
@@ -315,11 +318,14 @@ sub Bowtie2 {
         my @pair_listing = split(/$options->{delimiter}/, $bt_input);
         $pair_listing[0] = File::Spec->rel2abs($pair_listing[0]);
         $pair_listing[1] = File::Spec->rel2abs($pair_listing[1]);
-        $bt_input = qq" -1 <(less $pair_listing[0]) -2 <(less $pair_listing[1]) ";
+        my $r1_fd = $class->Get_FD(input => $pair_listing[0]);
+        my $r2_fd = $class->Get_FD(input => $pair_listing[1]);
+        $bt_input = qq" -1 ${r1_fd} -2 ${r2_fd} ";
         $test_file = $pair_listing[0];
     } else {
         $test_file = File::Spec->rel2abs($bt_input);
-        $bt_input = qq" <(less ${test_file}) ";
+        my $r1_fd = $class->Get_FD(input => $test_file);
+        $bt_input = qq" ${r1_fd} ";
         $stranded = 'no';
     }
 
@@ -561,8 +567,8 @@ sub BWA {
         $pair_listing[1] = File::Spec->rel2abs($pair_listing[1]);
         $test_file = $pair_listing[0];
         if ($test_file =~ /\.bz2|\.xz/) {
-            $forward_reads = qq"<(less $pair_listing[0])";
-            $reverse_reads = qq"<(less $pair_listing[1])";
+            $forward_reads = $class->Get_FD(input => $pair_listing[0]);
+            $reverse_reads = $class->Get_FD(input => $pair_listing[1]);
         } elsif ($test_file =~ /\.fastq|\.gz|\.fq/) {
             $forward_reads = qq"$pair_listing[0]";
             $reverse_reads = qq"$pair_listing[1]";
@@ -576,7 +582,8 @@ sub BWA {
         $stranded = 'no';
         $test_file = File::Spec->rel2abs($bwa_input);
         if ($test_file =~ /\.bz2|\.xz/) {
-            $bwa_input = qq" <(less ${bwa_input}) ";
+            my $reads = $class->Get_FD(input => $test_file);
+            $bwa_input = qq" ${reads} ";
         } elsif ($test_file =~ /\.fastq|\.gz|\.fq/) {
             $bwa_input = qq" ${bwa_input} ";
         } else {
@@ -990,7 +997,10 @@ sub Hisat2 {
         ## contains --unbuffered
         $hisat_input = qq" -1 $pair_listing[0] -2 $pair_listing[1] ";
         if ($pair_listing[0] =~ /\.[x|g|b]z$/) {
-            ## It is noteworthy that I modified hisat2 on my computer so this is never necessary.
+            ## It is noteworthy that I modified hisat2 on my computer
+            ## so this is never necessary.
+            ## my $r1_fd = $class->Get_FD(input => $pair_listing[0]);
+            ## my $r2_fd = $class->Get_FD(input => $pair_listing[1]);
             $hisat_input = qq" -1 $pair_listing[0] -2 $pair_listing[1] ";
             ## $hisat_input = qq" -1 <(less $pair_listing[0]) -2 <(less $pair_listing[1]) ";
         }
@@ -1247,10 +1257,14 @@ sub Kallisto {
         if ($options->{stranded} != 0) {
             $ka_args .= " --$options->{stranded} ";
         }
-        $ka_input = qq" <(less $pair_listing[0]) <(less $pair_listing[1]) ";
+        my $r1_fd = $class->Get_FD(input => $pair_listing[0]);
+        my $r2_fd = $class->Get_FD(input => $pair_listing[1]);
+
+        $ka_input = qq" ${r1_fd} ${r2_fd} ";
         $input_name = $pair_listing[0];
     } else {
-        $ka_input = qq" <(less $ka_input) ";
+        my $r1_fd = $class->Get_FD(input => $ka_input);
+        $ka_input = qq" ${r1_fd} ";
         $ka_args .= qq' --bias --single -l 40 -s 10 ';
     }
 
@@ -1322,6 +1336,363 @@ kallisto quant ${ka_args} \\
     return($kallisto);
 }
 
+=head2 C<PolyA_Recorder>
+
+  This is a sister function to Bio::Adventure::Splicing::SLSeq_Recorder()
+  One might reasonably ask why this is here and that there, I decided to separate
+  them because the SLSeq is really only interesting in the context of trans-splicing
+  in that relatively small cohort of organisms weird enough to use it.  In contrast,
+  mapping the locations of polyA reads feels to me like it might have use in other
+  contexts.  It should also be noted that this will likely only be useful following
+  Bio::Adventure::Trim::PolyA_Extractor() and Hisat/BWA/etc.  With that in mind, it is
+  likely that I will put these pieces together into a trans-splicing pipeline.
+
+  The general idea: Read in the extant gene annotations and make a contig-keyed hash
+  where each key is comprised of an array of gene features including the relevant
+  information about the current gene and the 'next' gene (reading from beginning to end
+  of each contig).  Then read each aligned read from a position-sorted bam file from hisat
+  or whatever and keep only the reads which are: a) pointing in the same direction as the ORF
+  b) positioned in the 3' UTR of an ORF (thus the information about the next gene).  Given that,
+  record every polyA position with respect to the stop codon and count how many reads are
+  observed at every relative position.  Upon completion, write up a new gff file with new
+  features of type 'polyA' that have a new end for the + and new start for the - strand genes.
+
+  Given the context I am using this, it should be unsurprising that it makes trypanosome-specific
+  assumptions.
+
+=over
+
+=item C<Arguments>
+
+  input(required): Sorted/indexed bam from hisat/bowtie/bwa/etc
+  species: Find the original genome/gff annotations with this.
+  gff_type(protein_coding_gene): Use this feature type to create new features.
+  output_type(polyA): Create new features of this type.
+  id_tag(ID): Identify genes using this feature tag.
+
+=back
+
+=cut
+sub PolyA_Recorder {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['species', 'input',],
+        gff_type => 'protein_coding_gene',
+        output_type => 'SLSeq_gene',
+        jprefix => '50',
+        id_tag => 'ID',);
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $output_dir = $paths->{output_dir};
+    make_path($output_dir) unless (-d $output_dir);
+    my $output_gff = qq"${output_dir}/$options->{species}_maximum_3p_utr.gff";
+    my $output_tsv = qq"${output_dir}/$options->{species}_recorded_polyA.tsv";
+    my $jname = qq"$options->{jprefix}polyA_$options->{species}";
+    my $jstring = qq!use Bio::Adventure::Map;
+my \$result = \$h->Bio::Adventure::Map::PolyA_Recorder_Worker(
+  gff_type => '$options->{gff_type}',
+  id_tag => '$options->{id_tag}',
+  input => '$options->{input}',
+  jname => '${jname}',
+  output => '${output_gff}',
+  output_tsv => '${output_tsv}',
+  output_dir => '${output_dir}',
+  output_type => '$options->{output_type}',
+  species => '$options->{species}',);
+!;
+    my $comment = qq!## Seek polyA positions.!;
+    my $polyA = $class->Submit(
+        comment => $comment,
+        input => $options->{input},
+        jdepends => $options->{jdepends},
+        jname => $jname,
+        jprefix => '40',
+        jstring => $jstring,
+        output => $output_gff,
+        output_dir => $output_dir,
+        output_tsv => $output_tsv,
+        language => 'perl',);
+    return($polyA);
+}
+
+sub PolyA_Recorder_Worker {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['species', 'input',],
+        gff_type => 'protein_coding_gene',
+        output_type => 'SLSeq_3pUTR',
+        gff_tag => 'ID',);
+    my $input_gff = qq"$options->{libpath}/$options->{libtype}/gff/$options->{species}.gff";
+    my $fasta = qq"$options->{libpath}/$options->{libtype}/fasta/$options->{species}.fasta";
+    unless (-r $options->{input}) {
+        die("Unable to find input bam alignment.");
+    }
+    my $output_dir = $options->{output_dir};
+    make_path($output_dir) unless (-d $output_dir);
+    ## Set up the output filehandles:
+    ##  The output csv file.
+    my $output_csv = FileHandle->new(qq">${output_dir}/$options->{species}_recorded_sl.csv");
+    print $output_csv qq"$options->{gff_tag}\tstart\tend\tstrand\trelative_pos\tnum_reads\n";
+    ## The output gff file, this will receive individual gff strings:
+    my $gff_output_filename = qq"${output_dir}/$options->{species}_modified_genes.gff";
+    my $gff_out = FileHandle->new(">${gff_output_filename}");
+    ## Use Bio::Tools::GFF to create the gff strings.
+    my $gffout_io = Bio::Tools::GFF->new(-noparse => 1, -gff_version => 3);
+    ## The log file:
+    my $log_file = qq"${output_dir}/slseq_recorder.log";
+    my $log = FileHandle->new(">${log_file}");
+    print "Starting SLSeq Recorder, reading $options->{gff_tag} tags from $options->{gff_type}
+entries of ${input_gff}.
+Writing results to ${gff_output_filename}.\n";
+    my ($counters, $observed) = Bio::Adventure::Parsers::Count_Extract_GFF(
+        gff => $input_gff, log => $log,
+        gff_type => $options->{gff_type},
+        gff_tag => $options->{gff_tag},);
+    print $log "Beginning to read alignments from: $options->{input}.\n";
+    my $sam = Bio::DB::Sam->new(-bam => $options->{input},
+                                -fasta => ${fasta},);
+    my @targets = $sam->seq_ids;
+    my $num = scalar(@targets);
+    my $bam = Bio::DB::Bam->open($options->{input});
+    my $header = $bam->header;
+    my $target_count = $header->n_targets;
+    my $target_names = $header->target_name;
+    my $align_count = 0;
+    my $million_aligns = 0;
+    my $alignstats = qx"samtools idxstats $options->{input}";
+    my @alignfun = split(/\n/, $alignstats);
+    my @aligns = split(/\t/, $alignfun[0]);
+    my @unaligns = split(/\t/, $alignfun[1]);
+    my $number_reads = $aligns[2] + $unaligns[3];
+    my $output_name = qq"$options->{input}.txt";
+    my $summary_string = qq"There are ${number_reads} alignments in $options->{input}.
+There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
+    print $summary_string;
+    my $new_contig = 'start';
+    my $previous_contig = 'start';
+    $counters->{inside_gene} = 0;
+  BAMLOOP: while (my $align = $bam->read1) {
+        $counters->{reads}++;
+        ## last BAMLOOP if ($counters->{quantified_reads} > 10000);
+        my $read_seqid = $target_names->[$align->tid];
+        ## my $start = $align->pos + 1;
+        ## my $end = $align->calend;
+        my $read_start = $align->pos;
+        my $read_end = $align->calend - 1;
+        my $read_strand = $align->strand;
+        if (!defined($read_strand)) {
+            $counters->{unstranded_reads}++;
+        } elsif ($read_strand eq '1') {
+            $counters->{plus_reads}++;
+        } elsif ($read_strand eq '-1') {
+            $counters->{minus_reads}++;
+        } else {
+            $counters->{notplusminus_reads}++;
+        }
+        my $read_unmappedp = $align->unmapped;
+        if ($read_unmappedp) {
+            $counters->{unmapped_reads}++;
+        }
+        my $read_mate_unmappedp = $align->munmapped;
+        if ($read_unmappedp && $read_mate_unmappedp) {
+            $counters->{unmapped_pairs}++;
+            next BAMLOOP;
+        }
+        my @tags = $align->get_all_tags;
+        my $not_primaryp = $align->get_tag_values('NOT_PRIMARY');
+        unless ($not_primaryp) {
+            $counters->{primary_reads}++;
+        }
+        my $supplementalp = $align->get_tag_values('SUPPLEMENTARY');
+        if ($supplementalp) {
+            $counters->{supplemental_reads}++;
+            next BAMLOOP;
+        }
+        if ($not_primaryp) {
+            $counters->{secondary_reads}++;
+            next BAMLOOP;
+        }
+        if ($read_seqid ne $new_contig) {
+            print "Starting new contig: ${read_seqid}\n";
+            $previous_contig = $new_contig;
+            if ($previous_contig ne 'start') {
+                print "Writing data for ${previous_contig}\n";
+                Write_PolyA_Data(observed => $observed,
+                                 contig => $previous_contig,
+                                 output_csv => $output_csv,
+                                 gff_tag => $options->{gff_tag},
+                                 gffio => $gffout_io,
+                                 gff_out => $gff_out,);
+            }
+            $new_contig = $read_seqid;
+        }
+        ## If the read strand is +1, then I want it associated with a
+        ## feature on the +1 with a end which is < this read end.
+        ## If the read strand is -1, then I want it associated with a
+        ## feature on the -1 with a start which is > this read start.
+        my $num_features = undef;
+        my $type = ref($observed->{$read_seqid});
+        my $test_features = scalar(@{$observed->{$read_seqid}}) - 1;
+        if (defined($test_features)) {
+            unless (defined($num_features)) {
+                $num_features = $test_features;
+            }
+        } else {
+            $counters->{nogene_contigs}++;
+            print "There appear to be no features for ${read_seqid}\n";
+            next BAMLOOP;
+        }
+        my $checker = 0;
+      FEAT_SEARCH: for my $c (0 .. $num_features) {
+            my $checker++;
+            my $current_feat = $observed->{$read_seqid}[$c];
+            my $current_tag = $current_feat->{primary_tag};
+            my $current_start = $current_feat->{start};
+            my $current_end = $current_feat->{end};
+            my $current_strand = $current_feat->{strand};
+            my $next_distance = $current_feat->{next_distance};
+            my $next_start = $current_feat->{next_start};
+            my $next_strand = $current_feat->{next_strand};
+            my $current_name = $current_feat->{gene_name};
+            last FEAT_SEARCH if ($checker > $num_features);
+            if (!defined($current_strand)) {
+                print $log "In feature search, somehow strand is undefined for: ${current_name}\n";
+                next FEAT_SEARCH;
+            }
+
+            next FEAT_SEARCH if (!defined($current_strand));
+
+            ## Don't bother with the opposite strand.
+            if ($current_strand ne $read_strand &&
+                $next_strand ne $read_strand) {
+                $counters->{opposite_strand}++;
+                next BAMLOOP;
+            }
+
+            ## Don't bother with reads inside the current gene.
+            if ($current_start >= $read_start &&
+                $current_end <= $read_start) {
+                $counters->{inside_gene}++;
+                next BAMLOOP;
+            }
+
+
+            if ($read_strand eq '1') {
+                my $relative_position = $read_start - $current_end;
+                next FEAT_SEARCH if ($relative_position >= $next_distance);
+                if ($current_end < $read_start) {
+                    $counters->{quantified_reads}++;
+                    ## print "Got a +1 hit: $counters->{quantified_reads}\n";
+                    if (defined($observed->{$read_seqid}[$c]->{observed}->{$relative_position})) {
+                        $observed->{$read_seqid}[$c]->{observed}->{$relative_position}++;
+                    } else {
+                        $observed->{$read_seqid}[$c]->{observed}->{$relative_position} = 1;
+                    }
+                    if ($relative_position > $observed->{$read_seqid}[$c]->{most_downstream}) {
+                        $observed->{$read_seqid}[$c]->{most_downstream} = $relative_position;
+                    }
+                    last FEAT_SEARCH;
+                } else {
+                    next FEAT_SEARCH;
+                }
+            } elsif ($read_strand eq '-1') {
+                my $relative_position = $current_start - $read_end;
+                next FEAT_SEARCH if ($relative_position >= $next_distance);
+                if ($read_end < $current_start) {
+                    $counters->{quantified_reads}++;
+                    ## print "Got a -1 hit: $counters->{quantified_reads}\n";
+                    if (defined($observed->{$read_seqid}[$c]->{observed}->{$relative_position})) {
+                        $observed->{$read_seqid}[$c]->{observed}->{$relative_position}++;
+                    } else {
+                        $observed->{$read_seqid}[$c]->{observed}->{$relative_position} = 1;
+                    }
+                    if ($relative_position > $observed->{$read_seqid}[$c]->{most_downstream}) {
+                        $observed->{$read_seqid}[$c]->{most_downstream} = $relative_position;
+                    }
+                    last FEAT_SEARCH;
+                } else {
+                    next FEAT_SEARCH;
+                }
+            } else { ## End checking the - strand
+                print "What what? Neither +1 nor -1: $read_strand\n";
+                next BAMLOOP;
+            }
+        } ## End iterating over every feature
+    } ## End iterating over the alignments
+    print "Writing data for ${new_contig}\n";
+    Write_PolyA_Data(observed => $observed,
+                     contig => $new_contig,
+                     output_csv => $output_csv,
+                     gff_tag => $options->{gff_tag},
+                     gffio => $gffout_io,
+                     gff_out => $gff_out,);
+    use Data::Dumper;
+    print Dumper $counters;
+    $gff_out->close();
+    $log->close();
+    return($observed);
+}
+
+sub Write_PolyA_Data {
+    my %args = @_;
+    my $observed = $args{observed};
+    my $contig = $args{contig};
+    my $output_csv = $args{output_csv};
+    my $gff_tag = $args{gff_tag};
+    my $gffio = $args{gffio};
+    my $gff_out = $args{gff_out};
+    my $observed_genes = scalar(@{$observed->{$contig}}) - 1;
+    for my $c (0 .. $observed_genes) {
+        my $feat_info = $observed->{$contig}[$c];
+        my $observations = $feat_info->{observed};
+        my @observed_positions = keys %{$observations};
+        my $gene_name = $feat_info->{gene_name};
+        my $gene_start = $feat_info->{start};
+        my $new_start = $gene_start;
+        my $gene_end = $feat_info->{end};
+        my $new_end = $gene_end;
+        my $gene_strand = $feat_info->{strand};
+        my $farthest = 0;
+        my $num_positions = scalar(@observed_positions);
+        if ($num_positions > 0) {
+            for my $obs (sort {$a <=> $b } @observed_positions) {
+                $farthest = $obs;
+                print $output_csv qq"${gene_name}\t${gene_start}\t${gene_end}\t${gene_strand}\t${obs}\t$observations->{$obs}\n";
+            }
+            if ($gene_strand eq '1') {
+                $new_end = $gene_end + $farthest;
+                $new_start = $gene_end;
+            } elsif ($gene_strand eq '-1') {
+                $new_start = $gene_start - $farthest;
+                $new_end = $gene_start;
+            } else {
+                die("This should not happen, neither +1/-1.\n");
+            }
+            if ($new_end < 0) {
+                print "This is a failed entry: $contig $gene_name with end: $new_end\n";
+                $new_end = 0;
+            }
+            my $standardized = Bio::SeqFeature::Generic->new(
+                -primary_tag => 'polyA',
+                -display_name => $gene_name,
+                -seq_id => $contig,
+                -start => $new_start,
+                -end => $new_end,
+                -strand => $gene_strand,
+                -score => 0,
+                -tag => {
+                    $gff_tag => $gene_name,
+                    inference => 'polyA',
+                    old_start => $gene_start,
+                    old_end => $gene_end,
+                });
+            my $gff_string = $gffio->gff_string($standardized);
+            print $gff_out "${gff_string}\n";
+        }
+    }
+}
+
 =back
 
 =head2 C<RSEM>
@@ -1376,10 +1747,13 @@ sub RSEM {
     my $test_file = "";
     if ($rsem_input =~ /$options->{delimiter}/) {
         my @pair_listing = split(/$options->{delimiter}/, $rsem_input);
-        $rsem_input = qq"--paired-end <(less $pair_listing[0]) <(less $pair_listing[1])";
+        my $r1_fd = $class->Get_FD(input => $pair_listing[0]);
+        my $r2_fd = $class->Get_FD(input => $pair_listing[1]);
+        $rsem_input = qq"--paired-end ${r1_fd} ${r2_fd}";
         $test_file = $pair_listing[0];
     } else {
-        $rsem_input = qq" <(less $rsem_input) ";
+        my $r1_fd = $class->Get_FD(input => $rsem_input);
+        $rsem_input = qq" ${r1_fd} ";
     }
 
     my $rsem_dir = qq"outputs/rsem_$options->{species}";
@@ -1454,10 +1828,13 @@ sub Salmon {
     my $input_name = $sa_input;
     if ($sa_input =~ /$options->{delimiter}/) {
         my @pair_listing = split(/$options->{delimiter}/, $sa_input);
-        $sa_args .= qq" -1 <(less $pair_listing[0]) -2 <(less $pair_listing[1]) ";
+        my $r1_fd = $class->Get_FD(input => $pair_listing[0]);
+        my $r2_fd = $class->Get_FD(input => $pair_listing[1]);
+        $sa_args .= qq" -1 ${r1_fd} -2 ${r2_fd} ";
         $input_name = $pair_listing[0];
     } else {
-        $sa_args .= qq" -r <(less ${sa_input}) ";
+        my $r1_fd = $class->Get_FD(input => $sa_input);
+        $sa_args .= qq" -r ${r1_fd} ";
     }
 
     ## Check that the indexes exist
@@ -1648,10 +2025,13 @@ sub Tophat {
     $inputs =~ s/:/ /g;
     my $paired = 0;
     if (scalar(@in) > 1) {
-        $inputs = qq" <(less $in[0]) <(less $in[1]) ";
+        my $r1_fd = $class->Get_FD(input => $in[0]);
+        my $r2_fd = $class->Get_FD(input => $in[1]);
+        $inputs = qq" ${r1_fd} ${r2_fd} ";
         $paired = 1;
     } else {
-        $inputs = qq" <(less $in[0]) ";
+        my $r1_fd = $class->Get_FD(input => $in[0]);
+        $inputs = qq" ${r1_fd} ";
     }
     my $tophat_args = ' -g 1 --microexon-search --b2-very-sensitive ';
     if ($options->{tophat_args}) {
