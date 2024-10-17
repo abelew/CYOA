@@ -140,7 +140,7 @@ sub Consolidate_Read_Pair {
     my $finished = 0;
     my $loops = 0;
     print "Opening ${in} for reading.\n";
-    my $in_fh = FileHandle->new("less ${in} |");
+    my $in_fh = Bio::Adventure::Get_FH(input => $in);
     my $in_seq = Bio::SeqIO->new(-fh => $in_fh, -format => 'Fastq');
     my $skips = 0;
     my $count = 0;
@@ -362,7 +362,7 @@ sub TA_Check_Worker {
     $input_base = basename($input_base, ('.fastq', '.fasta'));
     my $with_ta = FileHandle->new("| xz -f -9e > ${input_base}_ta.fastq.xz");
     my $without_ta = FileHandle->new("| xz -f -9e > ${input_base}_nota.fastq.xz");
-    my $inputted = FileHandle->new("less ${input} |");
+    my $inputted = Bio::Adventure::Get_FH(input => $input);
     my $in = new Bio::SeqIO(-fh => $inputted, -format => 'Fastq');
     my $count = 0;
     my $with_ta_count = 0;
@@ -456,8 +456,7 @@ sub Sort_TNSeq_File_Approx {
         index_hash => {},);
     my $data = $options->{index_hash};
     my $out = FileHandle->new(">$options->{outdir}/tnseq_sorting_out.txt");
-    ## Does FileHandle work here?
-    my $inputted = FileHandle->new("less $options->{input} 2>/dev/null |");
+    my $inputted = Bio::Adventure::Get_FH(input => $options->{input});
     my $in = Bio::SeqIO->new(-fh => $inputted, -format => 'Fastq');
     my $count = 0;
   READS: while (my $in_seq = $in->next_dataset()) {
@@ -1167,14 +1166,17 @@ sub Transit_TPP {
         my @pair_listing = split(/$options->{delimiter}/, $tpp_input);
         $pair_listing[0] = File::Spec->rel2abs($pair_listing[0]);
         $pair_listing[1] = File::Spec->rel2abs($pair_listing[1]);
-        $tpp_pre = qq"less $pair_listing[0] > ${tpp_dir}/r1.fastq
-less $pair_listing[1] > ${tpp_dir}/r2.fastq";
+        my $r1_fc = Bio::Adventure::Get_FC(input => $pair_listing[0]);
+        my $r2_fc = Bio::Adventure::Get_FC(input => $pair_listing[1]);
+        $tpp_pre = qq"${r1_fc} > ${tpp_dir}/r1.fastq
+${r2_fc} > ${tpp_dir}/r2.fastq";
         $tpp_input = qq"-reads1 ${tpp_dir}/r1.fastq -reads2 ${tpp_dir}/r2.fastq ";
         $test_file = $pair_listing[0];
         $stranded = 'yes';
     } else {
         $test_file = File::Spec->rel2abs($tpp_input);
-        $tpp_pre = qq"less ${tpp_input} > ${tpp_dir}/r1.fastq";
+        my $input_fc = Bio::Adventure::Get_FC(input => $tpp_input);
+        $tpp_pre = qq"${input_fc} > ${tpp_dir}/r1.fastq";
         $tpp_input = qq"-reads1 ${tpp_dir}/r1.fastq ";
         $stranded = 'no';
     }

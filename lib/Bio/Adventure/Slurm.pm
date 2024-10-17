@@ -23,12 +23,14 @@ my $template_dir = qq"${template_base}/templates";
 
 ## List of accounts, partitions, qos for this user
 has accounts => (is => 'rw', default => undef);
+has debug => (is => 'rw', default => 1);
 has partitions => (is => 'rw', default => undef);
 has partition_names => (is => 'rw', default => '');
 has qos_names => (is => 'rw', default => '');
 ## hash of the associations for this person
 has association_data => (is => 'rw', default => undef);
 has allowed_qos => (is => 'rw', default => undef);
+has qos_accounts => (is => 'rw', default => undef);
 
 ## The name of the chosen account, cluster, partition and qos for this job.
 has chosen_account => (is => 'rw', default => '');
@@ -83,7 +85,7 @@ sub BUILD {
 
     $class->{usage} = Get_Usage();
     ## Give me the set of partitions/clusters/qos available to my current user.
-    if (!defined($class->{assciation_data})) {
+    if (!defined($class->{association_data})) {
         my $qos_names = $class->{qos_names};
         my $qos = $class->{qos_data};
         my $assoc = $class->Get_Associations();
@@ -109,7 +111,7 @@ sub BUILD {
                     }
                 }
             }
-        } ## End checking for associations.
+        }                       ## End checking for associations.
 
         if (!defined($class->{partitions})) {
             my $partition_info = $class->Get_Partitions();
@@ -129,7 +131,7 @@ sub BUILD {
                 qos => $class->{qos_data},
                 assoc => $class->{association_data});
         }
-
+        $class->{qos_accounts} = $class->QOS_Accounts(allowed => $class->{allowed_qos});
         $class->{cluster} = $cluster;
         $class->{accounts} = \@accounts;
         $class->{association_data} = $assoc;
@@ -156,96 +158,103 @@ sub Check_Job {
     if (defined($id)) {
         my @tmp_ids = split(/\s|\:/, $id);
       TMPID: for my $i (@tmp_ids) {
-          next TMPID unless defined($i);
-          if ($i =~ /^\d+$/) {
-              push(@ids, $i);
-          } else {
-              print "This id was inappropriately passed: ${i}\n";
-          }
-      }
-    } else {
+            next TMPID unless defined($i);
+            if ($i =~ /^\d+$/) {
+                push(@ids, $i);
+            }
+            else {
+                print "This id was inappropriately passed: ${i}\n";
+            }
+        }
+    }
+    else {
         print "No id provided, reading the jobs.txt file.\n";
         my $job_file = FileHandle->new("<outputs/logs/jobs.txt");
       JOBLOG: while (my $line = <$job_file>) {
-          chomp $line;
-          next JOBLOG if ($line =~ /^#/);
-          my ($name, $type, $id) = split(/\s+/, $line);
-          next JOBLOG unless ($type eq 'slurm');
-          if ($id =~ /^\d+/) {
-              push(@names, $name);
-              push(@ids, $id);
-          } else {
-              print "This entry is not in the expected format: ${line}\n";
-              next JOBLOG;
-          }
-      }
-      $job_file->close();
+            chomp $line;
+            next JOBLOG if ($line =~ /^#/);
+            my ($name, $type, $id) = split(/\s+/, $line);
+            next JOBLOG unless ($type eq 'slurm');
+            if ($id =~ /^\d+/) {
+                push(@names, $name);
+                push(@ids, $id);
+            }
+            else {
+                print "This entry is not in the expected format: ${line}\n";
+                next JOBLOG;
+            }
+        }
+        $job_file->close();
     }
   IDS: for my $id (@ids) {
-      next IDS if (!defined($id));
-      my $job_info = {};
-      my $command = qq"sacct -l -j ${id} -p";
-      print "Running: $command\n";
-      ## my $info = FileHandle->new("sacct -l -j ${id} --json |");
-      my $info = FileHandle->new("${command} |");
-      my $line_count = 0;
-      my @header_array = ();
-      while (my $line = <$info>) {
-          $line_count++;
-          my @line_array = split(/\|/, $line);
-          ## The header
-          if ($line_count == 1) {
-              @header_array = @line_array;
-          } elsif ($line_array[0] =~ m/^\d+$/) {
-              ## Some important elements are in the number-only line
-              my @provided_info = split(/\|/, $line);
-              for my $idx (0 .. $#provided_info) {
-                  my $element = $provided_info[$idx];
-                  my $key = $header_array[$idx];
-                  if (defined($element) && $element ne '') {
-                      $job_info->{$key} = $element;
-                  }
-              }
-          } elsif ($line_array[0] =~ m/\.batch/) {
-              ## Some important elements are in the number-only line. skip them here.
-              my @provided_info = split(/\|/, $line);
-            IDX: for my $idx (0 .. $#provided_info) {
-                my $element = $provided_info[$idx];
-                my $key = $header_array[$idx];
-                next IDX if ($key eq 'JobName');
-                next IDX if ($key eq 'Partition');
-                next IDX if ($key eq 'JobIDRaw');
-                next IDX if ($key eq 'JobID');
-                if ($element =~ m/^\d+\.*\d*[K|M|G]$/) {
-                    my $num;
-                    if ($element =~ /K$/) {
-                        $num = $element;
-                        $num =~ s/K$//g;
-                        $num = $num / 1e6;
-                    } elsif ($element =~ /M$/) {
-                        $num = $element;
-                        $num =~ s/M$//g;
-                        $num = $num / 1e3;
-                    } else {
-                        $num = $element;
-                        $num =~ s/G$//g;
+        next IDS if (!defined($id));
+        my $job_info = {};
+        my $command = qq"sacct -l -j ${id} -p";
+        print "Running: $command\n";
+        ## my $info = FileHandle->new("sacct -l -j ${id} --json |");
+        my $info = FileHandle->new("${command} |");
+        my $line_count = 0;
+        my @header_array = ();
+        while (my $line = <$info>) {
+            $line_count++;
+            my @line_array = split(/\|/, $line);
+            ## The header
+            if ($line_count == 1) {
+                @header_array = @line_array;
+            }
+            elsif ($line_array[0] =~ m/^\d+$/) {
+                ## Some important elements are in the number-only line
+                my @provided_info = split(/\|/, $line);
+                for my $idx (0 .. $#provided_info) {
+                    my $element = $provided_info[$idx];
+                    my $key = $header_array[$idx];
+                    if (defined($element) && $element ne '') {
+                        $job_info->{$key} = $element;
                     }
-                    $element = $num;
-                }
-                ## A note from the slurm documentation:
-                ## AveCPUFreq: Average weighted CPU frequency of all tasks in job, in kHz.
-                if ($element eq 'AveCPUFreq') {
-                    $element = $element * 1e3;
-                }
-                if (defined($element) && $element ne '') {
-                    $job_info->{$key} = $element;
                 }
             }
-          }
-      }
-      push(@all_info, $job_info);
-      $info->close();
-    } ## Finished iterating over every job ID
+            elsif ($line_array[0] =~ m/\.batch/) {
+                ## Some important elements are in the number-only line. skip them here.
+                my @provided_info = split(/\|/, $line);
+              IDX: for my $idx (0 .. $#provided_info) {
+                    my $element = $provided_info[$idx];
+                    my $key = $header_array[$idx];
+                    next IDX if ($key eq 'JobName');
+                    next IDX if ($key eq 'Partition');
+                    next IDX if ($key eq 'JobIDRaw');
+                    next IDX if ($key eq 'JobID');
+                    if ($element =~ m/^\d+\.*\d*[K|M|G]$/) {
+                        my $num;
+                        if ($element =~ /K$/) {
+                            $num = $element;
+                            $num =~ s/K$//g;
+                            $num = $num / 1e6;
+                        }
+                        elsif ($element =~ /M$/) {
+                            $num = $element;
+                            $num =~ s/M$//g;
+                            $num = $num / 1e3;
+                        }
+                        else {
+                            $num = $element;
+                            $num =~ s/G$//g;
+                        }
+                        $element = $num;
+                    }
+                    ## A note from the slurm documentation:
+                    ## AveCPUFreq: Average weighted CPU frequency of all tasks in job, in kHz.
+                    if ($element eq 'AveCPUFreq') {
+                        $element = $element * 1e3;
+                    }
+                    if (defined($element) && $element ne '') {
+                        $job_info->{$key} = $element;
+                    }
+                }
+            }
+        }
+        push(@all_info, $job_info);
+        $info->close();
+    }                          ## Finished iterating over every job ID
 
     ## Here are the various categories returned by sacct, keep in mind
     ## that different ones are given to each class of job (job,
@@ -283,17 +292,18 @@ sub Check_Job {
             ## my $start = Text::CSV::csv(in => $jobs_csv, keep_headers => \@columns);
             my $start = Text::CSV::csv(in => $jobs_csv);
             @data = (@{$start}, @all_info);
-        } else {
+        }
+        else {
             @data = @all_info;
         }
         my $out_csv = FileHandle->new(qq">${jobs_csv}");
         my $headers = \@columns;
         my $csv = Text::CSV->new({auto_diag => 1, binary => 1,
-                                   eol => $/});
+                                  eol => $/});
       RECORDS: for my $record ({map { $_ => $_ } @columns}, @data) {
-          next RECORDS if (!defined($record->{JobName}) or $record->{JobName} eq '');
-          $csv->say($out_csv, [@$record{@columns}]);
-      }
+            next RECORDS if (!defined($record->{JobName}) or $record->{JobName} eq '');
+            $csv->say($out_csv, [@$record{@columns}]);
+        }
         $out_csv->close();
     }
     return(\@all_info);
@@ -327,7 +337,8 @@ sub Check_Sbatch {
 
 =cut
 sub Choose_Among_Potential_QOS {
-    my $choices = shift;
+    my ($class, %args) = @_;
+    my $choices = $args{potential};
     my $favorites = {
         hours => '',
         delta_hours => 1e9,
@@ -338,7 +349,8 @@ sub Choose_Among_Potential_QOS {
         gpu => '',
         delta_gpu => 1e9,
     };
-    for my $qos (keys %{$choices}) {
+  QOS: for my $qos (keys %{$choices}) {
+        my $found_qos = 0;
         my $info = $choices->{$qos};
         if ($info->{delta_hours} < $favorites->{delta_hours}) {
             $favorites->{hours} = $qos;
@@ -361,7 +373,8 @@ sub Choose_Among_Potential_QOS {
     ## deltahours/totalhours and choose the one where that is smallest.
     ## but for now I will just choose the one with the tightest memory.
     my $choice = $favorites->{mem};
-    return($choice);
+    my $path = $class->Get_Path_to_QOS(qos => $choice);
+    return($path);
 }
 
 =head2 C<Choose_QOS>
@@ -395,7 +408,7 @@ sub Choose_QOS {
     my $current_usage = $args{current_usage};
     my $associations = $class->{association_data};
     my $allowed = $class->{allowed_qos};
-
+    my $qos_accounts = $class->{qos_accounts};
     my $qos_info = $class->{qos_data};
     $wanted_spec->{walltime_hours} = Convert_to_Hours($wanted_spec->{walltime});
     my $chosen_cluster = '';
@@ -407,200 +420,206 @@ sub Choose_QOS {
     my @qos;
     my $skip_default = 1;
   PART: for my $partition (keys %{$allowed}) {
-      my %inner_part = %{$allowed->{$partition}};
-    CLUST: for my $cluster (keys %inner_part) {
-        my %inner_clust = %{$allowed->{$partition}->{$cluster}};
-      ACCOUNT: for my $account (keys %inner_clust) {
-          my @allowed_qos = @{$inner_clust{$account}};
-          my $potential_qos = {};
-          ## We need a little logic which says: if the only qos for a person is 'default'
-          ## then that person is likely associated with all qoses.
-          my @qos;
-          if (defined($associations->{$cluster}->{$account}->{qos})) {
-              @qos = @{$associations->{$cluster}->{$account}->{qos}};
-          } else {
-              next ACCOUNT;
-          }
-          ## It appears that the default qos is a weird special case in
-          ## a bunch of ways: 1.  It fills in the values for all other queues,
-          ## 2.  at least at umiacs, it may not be used by all of one's associated accounts
-          ## e.g. if I use it on nexus I get a failed job allocation with:
-          ## 'Job's_account_not_permitted_to_use_this_partition_(tron_allows_nexus_not_cbcb)'
-          ## So, for the moment, let us explicitly not use default.
-          ## 3.  It appears that if a user is associated with only 'default', then that means
-          ## the user is actually associated with every qos...
-          ## Thus the check on the length of the qos array here, if it is comprised of only
-          ## ('default'), then we will try and choose from every qos provided by
-          ## sacctmgr show qos.
-          if (scalar(@qos) == 1 && $qos[0] eq 'default') {
-              @qos = @all_qos;
-          }
-        QOS: for my $q (@qos) {
-            next QOS if ($q eq 'default' && $skip_default);
-            my $info = $qos_info->{$q};
-            ## As currently written, this info->{used_mem} is incorrect because it _should_ be
-            ## getting that information from %current_usage, once we add those up and compare
-            ## to the maximum, then we should be able to match up to a correct qos
-            ## Ideally, I would like to have some knowledge about which qos/nodes are idle
-            ## and choose those, but I think I don't sufficiently understand the cluster to do that yet...
+        my %inner_part = %{$allowed->{$partition}};
+      CLUST: for my $cluster (keys %inner_part) {
+            my %inner_clust = %{$allowed->{$partition}->{$cluster}};
+          ACCOUNT: for my $account (keys %inner_clust) {
+                my @allowed_qos = @{$inner_clust{$account}};
+                my $potential_qos = {};
+                ## We need a little logic which says: if the only qos for a person is 'default'
+                ## then that person is likely associated with all qoses.
+                my @qos;
+                if (defined($associations->{$cluster}->{$account}->{qos})) {
+                    @qos = @{$associations->{$cluster}->{$account}->{qos}};
+                } else {
+                    next ACCOUNT;
+                }
+                ## It appears that the default qos is a weird special case in
+                ## a bunch of ways: 1.  It fills in the values for all other queues,
+                ## 2.  at least at umiacs, it may not be used by all of one's associated accounts
+                ## e.g. if I use it on nexus I get a failed job allocation with:
+                ## 'Job's_account_not_permitted_to_use_this_partition_(tron_allows_nexus_not_cbcb)'
+                ## So, for the moment, let us explicitly not use default.
+                ## 3.  It appears that if a user is associated with only 'default', then that means
+                ## the user is actually associated with every qos...
+                ## Thus the check on the length of the qos array here, if it is comprised of only
+                ## ('default'), then we will try and choose from every qos provided by
+                ## sacctmgr show qos.
+                ##if (scalar(@qos) == 1 && $qos[0] eq 'default') {
+                ##    @qos = @all_qos;
+                ##}
+              QOS: for my $q (@qos) {
+                    next QOS if ($q eq 'default' && $skip_default);
+                    my $info = $qos_info->{$q};
+                    ## As currently written, this info->{used_mem} is incorrect because it _should_ be
+                    ## getting that information from %current_usage, once we add those up and compare
+                    ## to the maximum, then we should be able to match up to a correct qos
+                    ## Ideally, I would like to have some knowledge about which qos/nodes are idle
+                    ## and choose those, but I think I don't sufficiently understand the cluster to do that yet...
 
-            ## We need to make separate calls on each of these criteria because some clusters do not
-            ## provide a maximum cpus/mem/gpus on a per-qos basis.
+                    ## We need to make separate calls on each of these criteria because some clusters do not
+                    ## provide a maximum cpus/mem/gpus on a per-qos basis.
 
-            my $stringent_mem = 0;
-            my $stringent_cpu = 0;
-            my $stringent_gpu = 0;
-            my $stringent_hours = 0;
-            if ($info->{max_job_mem}) {
-                $stringent_mem = $info->{max_job_mem} + $info->{used_mem};
-                if ($wanted_spec->{mem} > $stringent_mem) {
-                    next QOS;
-                }
-            }
-            if ($info->{max_job_cpu}) {
-                $stringent_cpu = $info->{max_job_cpu} + $info->{used_cpu};
-                if ($wanted_spec->{cpu} > $stringent_cpu) {
-                    next QOS;
-                }
-            }
-            if ($info->{max_job_gpu}) {
-                $stringent_gpu = $info->{max_job_gpu} + $info->{used_gpu};
-                if ($wanted_spec->{gpu} > $stringent_gpu) {
-                    next QOS;
-                }
-            }
-            if ($info->{max_hours}) {
-                $stringent_hours = $info->{max_hours} + $info->{used_hours};
-                if ($wanted_spec->{walltime_hours} > $stringent_hours) {
-                    next QOS;
-                }
-            }
-            my $potential_metrics = {
-                delta_cpu => $info->{max_job_cpu} - $info->{used_cpu},
-                delta_gpu => $info->{max_job_gpu} - $info->{used_gpu},
-                delta_mem => $info->{max_job_mem} - $info->{used_mem},
-                delta_hours => $info->{max_hours} - $info->{used_hours},
-            };
-            $potential_qos->{$q} = $potential_metrics;
-          } ## End iterating over stringent qos.
-          my @potential_qos_names = keys(%{$potential_qos});
-          ## print "TESTME: @potential_qos_names\n";
-          my $num_potential = scalar(@potential_qos_names);
-          $found_qos = $num_potential;
-          ## I think my logic here was a bit faulty.  I have an if statement checking to see
-          ## if there are multiple QOSes available that are not already full; but I also need
-          ## to ensure that this passes when all are full.
-          if ($num_potential <= 0) {
-              ## We have no open slots, so for now say so?
-              print "There appear to be no potential qos, this job should have to wait in the queue.\n";
-          } elsif ($num_potential == 1) {
-              $chosen_qos = $potential_qos_names[0];
-              $qos_info->{$chosen_qos}->{used_mem} = $qos_info->{$chosen_qos}->{used_mem} + $wanted_spec->{mem};
-              $qos_info->{$chosen_qos}->{used_cpu} = $qos_info->{$chosen_qos}->{used_cpu} + $wanted_spec->{cpu};
-              $qos_info->{$chosen_qos}->{used_gpu} = $qos_info->{$chosen_qos}->{used_gpu} + $wanted_spec->{gpu};
-              $qos_info->{$chosen_qos}->{used_hours} = $qos_info->{$chosen_qos}->{used_hours} + $wanted_spec->{walltime_hours};
-              $chosen_account = $account;
-              $chosen_cluster = $cluster;
-              $chosen_partition = $partition;
-              last PART;
-          } elsif ($num_potential > 1) {
-              $chosen_qos = Choose_Among_Potential_QOS($potential_qos);
-              $qos_info->{$chosen_qos}->{used_mem} = $qos_info->{$chosen_qos}->{used_mem} + $wanted_spec->{mem};
-              $qos_info->{$chosen_qos}->{used_cpu} = $qos_info->{$chosen_qos}->{used_cpu} + $wanted_spec->{cpu};
-              $qos_info->{$chosen_qos}->{used_gpu} = $qos_info->{$chosen_qos}->{used_gpu} + $wanted_spec->{gpu};
-              $qos_info->{$chosen_qos}->{used_hours} = $qos_info->{$chosen_qos}->{used_hours} + $wanted_spec->{walltime_hours};
-              $chosen_account = $account;
-              $chosen_cluster = $cluster;
-              $chosen_partition = $partition;
-              last PART;
-          } else {
-              die("We should not be able to fall through to here.");
-          }
-      } ## End iterating over accounts
-
-        if ($found_qos < 1) {
-            my @cluster_assoc_v2 = keys %{$associations->{$cluster}};
-          ACCOUNT2: for my $account (@cluster_assoc_v2) {
-              my $non_stringent_qos = {};
-              ## Skip past scavenger and fill it in if we cannot do anything else.
-              next ACCOUNT2 if ($account eq 'scavenger');
-              ## If we get here, then there is no place to immediately queue the job
-              ## because there are already jobs queued, so just pick a qos which is big enough.
-              my $found_qos2 = 0;
-              my @qos_v2 = ();
-              if (defined($associations->{$cluster}->{$account}->{qos})) {
-                  @qos_v2 = @{$associations->{$cluster}->{$account}->{qos}};
-              } else {
-                  next ACCOUNT2;
-              }
-            QOS2: for my $q (@qos_v2) {
-                next QOS2 if ($q eq 'default' && $skip_default);
-                my $info = $qos_info->{$q};
-                print "Searching for any queue which can hold this job, the queue must provide mem > $wanted_spec->{mem} cpu: $wanted_spec->{cpu} gpu: $wanted_spec->{gpu} hours: $wanted_spec->{walltime_hours}\n";
-                if ($info->{max_job_mem}) {
-                    if ($wanted_spec->{mem} > $info->{max_job_mem}) {
-                        ## print "Failed the qos $q due to insufficient memory: $info->{max_job_mem}\n";
-                        next QOS2;
+                    my $stringent_mem = 0;
+                    my $stringent_cpu = 0;
+                    my $stringent_gpu = 0;
+                    my $stringent_hours = 0;
+                    if ($info->{max_job_mem}) {
+                        $stringent_mem = $info->{max_job_mem} + $info->{used_mem};
+                        if ($wanted_spec->{mem} > $stringent_mem) {
+                            next QOS;
+                        }
                     }
-                }
-                if ($info->{max_job_cpu}) {
-                    if ($wanted_spec->{cpu} > $info->{max_job_cpu}) {
-                        ## print "Failed the qos $q due to insufficient cpu: $info->{max_job_cpu}\n";
-                        next QOS2;
+                    if ($info->{max_job_cpu}) {
+                        $stringent_cpu = $info->{max_job_cpu} + $info->{used_cpu};
+                        if ($wanted_spec->{cpu} > $stringent_cpu) {
+                            next QOS;
+                        }
                     }
-                }
-                if ($info->{max_job_gpu}) {
-                    if ($wanted_spec->{gpu} > $info->{max_job_gpu}) {
-                        ## print "Failed the qos $q due to insufficient gpu: $info->{max_job_gpu}\n";
-                        next QOS2;
+                    if ($info->{max_job_gpu}) {
+                        $stringent_gpu = $info->{max_job_gpu} + $info->{used_gpu};
+                        if ($wanted_spec->{gpu} > $stringent_gpu) {
+                            next QOS;
+                        }
                     }
-                }
-                if ($info->{max_hours}) {
-                    if ($wanted_spec->{walltime_hours} > $info->{max_hours}) {
-                        ## print "Failed the qos $q due to insufficient time: $info->{max_hours}\n";
-                        next QOS2;
+                    if ($info->{max_hours}) {
+                        $stringent_hours = $info->{max_hours} + $info->{used_hours};
+                        if ($wanted_spec->{walltime_hours} > $stringent_hours) {
+                            next QOS;
+                        }
                     }
+                    my $potential_metrics = {
+                        delta_cpu => $info->{max_job_cpu} - $info->{used_cpu},
+                        delta_gpu => $info->{max_job_gpu} - $info->{used_gpu},
+                        delta_mem => $info->{max_job_mem} - $info->{used_mem},
+                        delta_hours => $info->{max_hours} - $info->{used_hours},
+                    };
+                    $potential_qos->{$q} = $potential_metrics;
+                }               ## End iterating over stringent qos.
+                my @potential_qos_names = keys(%{$potential_qos});
+                ## print "TESTME: @potential_qos_names\n";
+                my $num_potential = scalar(@potential_qos_names);
+                $found_qos = $num_potential;
+                ## I think my logic here was a bit faulty.  I have an if statement checking to see
+                ## if there are multiple QOSes available that are not already full; but I also need
+                ## to ensure that this passes when all are full.
+                if ($num_potential <= 0) {
+                    ## We have no open slots, so for now say so?
+                    print "There appear to be no potential qos, this job should have to wait in the queue.\n";
+                } elsif ($num_potential == 1) {
+                    $chosen_qos = $potential_qos_names[0];
+                    $qos_info->{$chosen_qos}->{used_mem} = $qos_info->{$chosen_qos}->{used_mem} + $wanted_spec->{mem};
+                    $qos_info->{$chosen_qos}->{used_cpu} = $qos_info->{$chosen_qos}->{used_cpu} + $wanted_spec->{cpu};
+                    $qos_info->{$chosen_qos}->{used_gpu} = $qos_info->{$chosen_qos}->{used_gpu} + $wanted_spec->{gpu};
+                    $qos_info->{$chosen_qos}->{used_hours} = $qos_info->{$chosen_qos}->{used_hours} + $wanted_spec->{walltime_hours};
+                    my $chosen_path = $class->Get_Path_to_QOS(qos => $chosen_qos);
+                    $chosen_account = $chosen_path->{account};
+                    $chosen_cluster = $chosen_path->{cluster};
+                    $chosen_partition = $chosen_path->{partition};
+                    last PART;
+                } elsif ($num_potential > 1) {
+                    my $chosen_path = $class->Choose_Among_Potential_QOS(potential => $potential_qos);
+                    $chosen_qos = $chosen_path->{qos};
+                    print "TESTME: Invoked Choose_Among_Potential_QOS: $chosen_qos\n";
+                    $qos_info->{$chosen_qos}->{used_mem} = $qos_info->{$chosen_qos}->{used_mem} + $wanted_spec->{mem};
+                    $qos_info->{$chosen_qos}->{used_cpu} = $qos_info->{$chosen_qos}->{used_cpu} + $wanted_spec->{cpu};
+                    $qos_info->{$chosen_qos}->{used_gpu} = $qos_info->{$chosen_qos}->{used_gpu} + $wanted_spec->{gpu};
+                    $qos_info->{$chosen_qos}->{used_hours} = $qos_info->{$chosen_qos}->{used_hours} + $wanted_spec->{walltime_hours};
+                    $chosen_account = $chosen_path->{account};
+                    $chosen_cluster = $chosen_path->{cluster};
+                    $chosen_partition = $chosen_path->{partition};
+                    last PART;
+                } else {
+                    die("We should not be able to fall through to here.");
                 }
-                my $potential_metrics = {
-                    delta_cpu => $info->{max_job_cpu} - $info->{used_cpu},
-                    delta_gpu => $info->{max_job_gpu} - $info->{used_gpu},
-                    delta_mem => $info->{max_job_mem} - $info->{used_mem},
-                    delta_hours => $info->{max_hours} - $info->{used_hours},
-                };
-                $non_stringent_qos->{$q} = $potential_metrics;
-            } ## End iterating over the non-stringent qos.
-              my @non_stringent_potential = keys %{$non_stringent_qos};
-              my $num_potential = scalar(@non_stringent_potential);
+            } ## End iterating over accounts
 
-              if ($num_potential) {
-                  $chosen_qos = Choose_Among_Potential_QOS($non_stringent_qos);
-                  $chosen_account = $account;
-                  $chosen_cluster = $cluster;
-              }
-              ## I am not sure if we want to force scavenger at this time?
-              ## else {
-              ##  print "The set of potential qos is empty.  Setting chosen_qos to scavenger.\n";
-              ##    $chosen_qos = 'scavenger';
-              ## }
+            if ($found_qos < 1) {
+                my @cluster_assoc_v2 = keys %{$associations->{$cluster}};
+              ACCOUNT2: for my $account (@cluster_assoc_v2) {
+                    my $non_stringent_qos = {};
+                    ## Skip past scavenger and fill it in if we cannot do anything else.
+                    next ACCOUNT2 if ($account eq 'scavenger');
+                    ## If we get here, then there is no place to immediately queue the job
+                    ## because there are already jobs queued, so just pick a qos which is big enough.
+                    my $found_qos2 = 0;
+                    my @qos_v2 = ();
+                    if (defined($associations->{$cluster}->{$account}->{qos})) {
+                        @qos_v2 = @{$associations->{$cluster}->{$account}->{qos}};
+                    }
+                    else {
+                        next ACCOUNT2;
+                    }
+                  QOS2: for my $q (@qos_v2) {
+                        next QOS2 if ($q eq 'default' && $skip_default);
+                        my $info = $qos_info->{$q};
+                        print "Searching for any queue which can hold this job, the queue must provide mem > $wanted_spec->{mem} cpu: $wanted_spec->{cpu} gpu: $wanted_spec->{gpu} hours: $wanted_spec->{walltime_hours}\n";
+                        if ($info->{max_job_mem}) {
+                            if ($wanted_spec->{mem} > $info->{max_job_mem}) {
+                                ## print "Failed the qos $q due to insufficient memory: $info->{max_job_mem}\n";
+                                next QOS2;
+                            }
+                        }
+                        if ($info->{max_job_cpu}) {
+                            if ($wanted_spec->{cpu} > $info->{max_job_cpu}) {
+                                ## print "Failed the qos $q due to insufficient cpu: $info->{max_job_cpu}\n";
+                                next QOS2;
+                            }
+                        }
+                        if ($info->{max_job_gpu}) {
+                            if ($wanted_spec->{gpu} > $info->{max_job_gpu}) {
+                                ## print "Failed the qos $q due to insufficient gpu: $info->{max_job_gpu}\n";
+                                next QOS2;
+                            }
+                        }
+                        if ($info->{max_hours}) {
+                            if ($wanted_spec->{walltime_hours} > $info->{max_hours}) {
+                                ## print "Failed the qos $q due to insufficient time: $info->{max_hours}\n";
+                                next QOS2;
+                            }
+                        }
+                        my $potential_metrics = {
+                            delta_cpu => $info->{max_job_cpu} - $info->{used_cpu},
+                            delta_gpu => $info->{max_job_gpu} - $info->{used_gpu},
+                            delta_mem => $info->{max_job_mem} - $info->{used_mem},
+                            delta_hours => $info->{max_hours} - $info->{used_hours},
+                        };
+                        $non_stringent_qos->{$q} = $potential_metrics;
+                    } ## End iterating over the non-stringent qos.
+                    my @non_stringent_potential = keys %{$non_stringent_qos};
+                    my $num_potential = scalar(@non_stringent_potential);
 
-              $found_qos2++;
-              if (!defined($qos_info->{$chosen_qos}->{used_mem})) {
-                  print "In 2nd round of searching for a QOS, used_mem in $chosen_qos is still undefined.\n";
-                  $qos_info->{$chosen_qos}->{used_mem} = 0;
-                  $qos_info->{$chosen_qos}->{used_cpu} = 0;
-                  $qos_info->{$chosen_qos}->{used_gpu} = 0;
-                  $qos_info->{$chosen_qos}->{used_hours} = 0;
-              }
-              $qos_info->{used_mem} = $qos_info->{$chosen_qos}->{used_mem} + $wanted_spec->{mem};
-              $qos_info->{used_cpu} = $qos_info->{$chosen_qos}->{used_cpu} + $wanted_spec->{cpu};
-              $qos_info->{used_gpu} = $qos_info->{$chosen_qos}->{used_gpu} + $wanted_spec->{gpu};
-              $qos_info->{used_hours} = $qos_info->{$chosen_qos}->{used_hours} + $wanted_spec->{walltime_hours};
-              ## I am not sure if I should use this last...
-              # last ACCOUNT2;
-          }
-      } ## End iterating over a second attempt of accounts.
-    } ## End a second pass if we didn't find anything the first time.
-  } ## End iterating over every association
+                    if ($num_potential) {
+                        my $chosen_path = $class->Choose_Among_Potential_QOS(potential => $non_stringent_qos);
+                        $chosen_qos = $chosen_path->{qos};
+                        $chosen_account = $chosen_path->{account};
+                        $chosen_cluster = $chosen_path->{cluster};
+                        $chosen_partition = $chosen_path->{partition};
+                    }
+                    ## I am not sure if we want to force scavenger at this time?
+                    ## else {
+                    ##  print "The set of potential qos is empty.  Setting chosen_qos to scavenger.\n";
+                    ##    $chosen_qos = 'scavenger';
+                    ## }
+
+                    $found_qos2++;
+                    if (!defined($qos_info->{$chosen_qos}->{used_mem})) {
+                        print "In 2nd round of searching for a QOS, used_mem in $chosen_qos is still undefined.\n";
+                        $qos_info->{$chosen_qos}->{used_mem} = 0;
+                        $qos_info->{$chosen_qos}->{used_cpu} = 0;
+                        $qos_info->{$chosen_qos}->{used_gpu} = 0;
+                        $qos_info->{$chosen_qos}->{used_hours} = 0;
+                    }
+                    $qos_info->{used_mem} = $qos_info->{$chosen_qos}->{used_mem} + $wanted_spec->{mem};
+                    $qos_info->{used_cpu} = $qos_info->{$chosen_qos}->{used_cpu} + $wanted_spec->{cpu};
+                    $qos_info->{used_gpu} = $qos_info->{$chosen_qos}->{used_gpu} + $wanted_spec->{gpu};
+                    $qos_info->{used_hours} = $qos_info->{$chosen_qos}->{used_hours} + $wanted_spec->{walltime_hours};
+                    ## I am not sure if I should use this last...
+                    # last ACCOUNT2;
+                }
+            }      ## End iterating over a second attempt of accounts.
+        } ## End a second pass if we didn't find anything the first time.
+    }     ## End iterating over every association
 
     my $ret = {
         qos_info => $qos_info,
@@ -608,7 +627,8 @@ sub Choose_QOS {
         chosen_partition => $chosen_partition,
         chosen_account => $chosen_account,
         chosen_cluster => $chosen_cluster,
-  };
+    };
+    print "TESTME: QOS: $chosen_qos, PART: $chosen_partition ACCT: $chosen_account, CLUS: $chosen_cluster\n";
     return($ret);
 }
 
@@ -628,7 +648,8 @@ sub Convert_to_Hours {
     my $hms = '00:00:00';
     if ($string =~ m/\-/) {
         ($days, $hms) = split(/\-/, $string);
-    } else {
+    }
+    else {
         $hms = $string;
     }
 
@@ -637,7 +658,8 @@ sub Convert_to_Hours {
     my $sec = 0;
     if ($hms =~ m/:/) {
         ($hours, $min, $sec) = split(/:/, $hms);
-    } else {
+    }
+    else {
         $hours = $hms;
     }
     my $final_hours = ($days * 24) + $hours;
@@ -702,33 +724,33 @@ sub Get_Associations {
     my $associations = {};
     my $assoc = FileHandle->new("sacctmgr -p show user $ENV{USER} --associations |");
   ASSOC: while (my $line = <$assoc>) {
-      chomp $line;
-      next ASSOC if ($line =~ /^User/);
-      ## Interesting, on the cbcb cluster, every user has only 1 associated QOS (default).
-      ## This breaks my assumption that show associations would have every qos with every user.
-      my ($user, $def_account, $admin, $cluster, $account, $partition, $share, $priority,
-          $max_jobs, $max_nodes, $max_cpus, $max_submit, $max_wall, $max_cpu_min, $qos_lst,
-          $def_qos) = split(/\|/, $line);
-      my @avail_qos = split(/,/, $qos_lst);
-      my $inner_hash = {
-          default_account => $def_account,
-          admin_access => $admin,
-          cluster => $cluster,
-          account => $account,
-          partition => $partition,
-          share => $share,
-          priority => $priority,
-          max_jobs => $max_jobs,
-          max_nodes => $max_nodes,
-          max_cpus => $max_cpus,
-          max_submit => $max_submit,
-          max_wall => $max_wall,
-          max_cpu_min => $max_cpu_min,
-          qos => \@avail_qos,
-          default_qos => $def_qos,
-      };
-      $associations->{$cluster}->{$account} = $inner_hash;
-  }
+        chomp $line;
+        next ASSOC if ($line =~ /^User/);
+        ## Interesting, on the cbcb cluster, every user has only 1 associated QOS (default).
+        ## This breaks my assumption that show associations would have every qos with every user.
+        my ($user, $def_account, $admin, $cluster, $account, $partition, $share, $priority,
+            $max_jobs, $max_nodes, $max_cpus, $max_submit, $max_wall, $max_cpu_min, $qos_lst,
+            $def_qos) = split(/\|/, $line);
+        my @avail_qos = split(/,/, $qos_lst);
+        my $inner_hash = {
+            default_account => $def_account,
+            admin_access => $admin,
+            cluster => $cluster,
+            account => $account,
+            partition => $partition,
+            share => $share,
+            priority => $priority,
+            max_jobs => $max_jobs,
+            max_nodes => $max_nodes,
+            max_cpus => $max_cpus,
+            max_submit => $max_submit,
+            max_wall => $max_wall,
+            max_cpu_min => $max_cpu_min,
+            qos => \@avail_qos,
+            default_qos => $def_qos,
+        };
+        $associations->{$cluster}->{$account} = $inner_hash;
+    }
     $assoc->close();
     return($associations);
 }
@@ -755,35 +777,35 @@ sub Get_My_QOS {
     ## association hash is keyed off slurm accounts.
     ## Thus, lets iterate over the partitions in the set of all partitions.
   PART: for my $part (keys %{$all_partitions}) {
-      my $part_info = $all_partitions->{$part};
-      my $allowed_accounts = $part_info->{allowaccounts};
-      my @allowed_qos = split(/,/, $part_info->{allowqos});
-      my @partition_allowed_accounts = split(/,/, $allowed_accounts);
-      ## Then over the set of clusters to which I am associated.
-    CL: for my $cluster (keys %{$my_assoc}) {
-        my $account_info = $my_assoc->{$cluster};
-        ## Followed by the set of accounts to which I am associated.
-      ACC: for my $account (keys %{$account_info}) {
-          ## Add a check to see if this account is allowed on this partition.
-          ## This is separate from checking the set of QOSes allowed to the account.
-          my $allowed_partition = 0;
-          for my $part_allowed_account (@partition_allowed_accounts) {
-              if ($account eq $part_allowed_account) {
-                  $allowed_partition = 1;
-              }
-          }
-          next ACC unless ($allowed_partition);
-          ## We now have two sets of partitions/accounts->allowedqos (@allowed_qos)
-          ## and accounts->partitions (@personal_qos), so we can use a
-          ## key lookup to get the shared qos between them.
-          my @personal_qos = @{$my_assoc->{$cluster}->{$account}->{qos}};
+        my $part_info = $all_partitions->{$part};
+        my $allowed_accounts = $part_info->{allowaccounts};
+        my @allowed_qos = split(/,/, $part_info->{allowqos});
+        my @partition_allowed_accounts = split(/,/, $allowed_accounts);
+        ## Then over the set of clusters to which I am associated.
+      CL: for my $cluster (keys %{$my_assoc}) {
+            my $account_info = $my_assoc->{$cluster};
+            ## Followed by the set of accounts to which I am associated.
+          ACC: for my $account (keys %{$account_info}) {
+                ## Add a check to see if this account is allowed on this partition.
+                ## This is separate from checking the set of QOSes allowed to the account.
+                my $allowed_partition = 0;
+                for my $part_allowed_account (@partition_allowed_accounts) {
+                    if ($account eq $part_allowed_account) {
+                        $allowed_partition = 1;
+                    }
+                }
+                next ACC unless ($allowed_partition);
+                ## We now have two sets of partitions/accounts->allowedqos (@allowed_qos)
+                ## and accounts->partitions (@personal_qos), so we can use a
+                ## key lookup to get the shared qos between them.
+                my @personal_qos = @{$my_assoc->{$cluster}->{$account}->{qos}};
 
-          my %shared_qos = map { $_ => 1 } @allowed_qos;
-          my @allowed_shared = grep { $shared_qos{$_} } @personal_qos;
-          $my_qos->{$part}->{$cluster}->{$account} = \@allowed_shared;
-      }
+                my %shared_qos = map { $_ => 1 } @allowed_qos;
+                my @allowed_shared = grep { $shared_qos{$_} } @personal_qos;
+                $my_qos->{$part}->{$cluster}->{$account} = \@allowed_shared;
+            }
+        }
     }
-  }
     return($my_qos);
 }
 
@@ -842,47 +864,51 @@ sub Get_Partitions {
     my $current_partition = '';
     my $part = FileHandle->new("scontrol show partitions |");
   PART: while (my $line = <$part>) {
-      chomp $line;
-      $count++;
-      ## Each new partition entry begins with partitionname.
-      if ($line =~ /^PartitionName/) {
-          my @name_info = split(/=/, $line);
-          $current_partition = $name_info[1];
-      } elsif ($line =~ /^$/) {
-          ## A blank line ends a partition.
-          my %current_partition_info = %{$partition_info};
-          $partitions->{$current_partition} = \%current_partition_info;
-          $partition_info = {};
-      } else {
-          $line =~ s/^\s+//g;
-          ## Everything else is a set of name:value pairs separated by = and space.
-          my @pairs = split(/\s+/, $line);
-          for my $pair (@pairs) {
-              my @name_value = split(/=/, $pair);
-              my $num_elements = scalar(@name_value);
-              if ($num_elements == 2) {
-                  my $name = $name_value[0];
-                  my $value = $name_value[1];
-                  $name = lc($name);
-                  $partition_info->{$name} = $value;
-              } elsif ($num_elements > 2) {
-                  my $name = shift @name_value;
-                  my $tmp_line = $line;
-                  my $remove_string = qq"${name}=";
-                  $tmp_line =~ s/.*${remove_string}//g;
-                  my @new_array = split(/,/, $tmp_line);
-                  for my $n (@new_array) {
-                      my ($inner_key, $inner_value) = split(/=/, $n);
-                      my $new_key = qq"${name}_${inner_key}";
-                      $partition_info->{$new_key} = $inner_value;
-                  }
-              } else {
-                  print "I do not think we should have other element numbers: ${num_elements}\n";
-                  sleep(10);
-              }
-          } ## End looking at the equal sign separated pairs.
-      } ## End the else{}
-  } ## End reading scontrol show partitions
+        chomp $line;
+        $count++;
+        ## Each new partition entry begins with partitionname.
+        if ($line =~ /^PartitionName/) {
+            my @name_info = split(/=/, $line);
+            $current_partition = $name_info[1];
+        }
+        elsif ($line =~ /^$/) {
+            ## A blank line ends a partition.
+            my %current_partition_info = %{$partition_info};
+            $partitions->{$current_partition} = \%current_partition_info;
+            $partition_info = {};
+        }
+        else {
+            $line =~ s/^\s+//g;
+            ## Everything else is a set of name:value pairs separated by = and space.
+            my @pairs = split(/\s+/, $line);
+            for my $pair (@pairs) {
+                my @name_value = split(/=/, $pair);
+                my $num_elements = scalar(@name_value);
+                if ($num_elements == 2) {
+                    my $name = $name_value[0];
+                    my $value = $name_value[1];
+                    $name = lc($name);
+                    $partition_info->{$name} = $value;
+                }
+                elsif ($num_elements > 2) {
+                    my $name = shift @name_value;
+                    my $tmp_line = $line;
+                    my $remove_string = qq"${name}=";
+                    $tmp_line =~ s/.*${remove_string}//g;
+                    my @new_array = split(/,/, $tmp_line);
+                    for my $n (@new_array) {
+                        my ($inner_key, $inner_value) = split(/=/, $n);
+                        my $new_key = qq"${name}_${inner_key}";
+                        $partition_info->{$new_key} = $inner_value;
+                    }
+                }
+                else {
+                    print "I do not think we should have other element numbers: ${num_elements}\n";
+                    sleep(10);
+                }
+            }    ## End looking at the equal sign separated pairs.
+        }        ## End the else{}
+    }            ## End reading scontrol show partitions
     ## The names I expect to find in each inner hash are:
     ## allowgroups,allowaccounts, allowqos,allocnodes,default,qos,
     ## defaulttime,disablerootjobs,exclusiveuser,gracetime,hidden,
@@ -893,6 +919,18 @@ sub Get_Partitions {
     ## hmm, tres and tresbillingweights are weird.
     $part->close();
     return($partitions);
+}
+
+sub Get_Path_to_QOS {
+    my ($class, %args) = @_;
+    my $qos = $args{qos};
+    my @paths = @{$class->{qos_accounts}};
+    for my $p (@paths) {
+        if ($p->{qos} eq $qos) {
+            return($p);
+        }
+    }
+    return(undef);
 }
 
 =head2 C<Get_QOS>
@@ -931,121 +969,128 @@ sub Get_QOS {
     my $qos = FileHandle->new("sacctmgr -p show qos |");
     my $count = 0;
   QOS: while (my $line = <$qos>) {
-      $count++;
-      next QOS if ($count == 1);
-      ## Note that the cbcb cluster uses MaxJobsPU to limit the number of concurrent
-      ## jobs allowed to run per QOS and that it appears to not set a maximum number of cpus
-      my ($name, $priority, $gracetime, $preempt, $preempt_exempt, $preempt_mode, $flags,
-          $usage_thresh, $usage_factor, $group_tres, $group_tres_min, $group_tres_run_min,
-          $group_jobs, $group_submit, $group_wall, $max_resources_per_job, $max_tres_per_node,
-          $max_tres_min, $max_wall, $max_resources_per_user, $max_jobs_pu, $max_submit_pu,
-          $max_tres_pa, $max_jobs_pa, $max_submit_pa, $min_tres) = split(/\|/, $line);
-      my $max_job_cpu = 0;
-      my $max_job_gpu = 0;
-      my $max_job_mem = 0;
-      my $max_user_cpu = 0;
-      my $max_user_gpu = 0;
-      my $max_user_mem = 0;
-      my $max_jobs = -1;
-      my $max_hours = 0;
+        $count++;
+        next QOS if ($count == 1);
+        ## Note that the cbcb cluster uses MaxJobsPU to limit the number of concurrent
+        ## jobs allowed to run per QOS and that it appears to not set a maximum number of cpus
+        my ($name, $priority, $gracetime, $preempt, $preempt_exempt, $preempt_mode, $flags,
+            $usage_thresh, $usage_factor, $group_tres, $group_tres_min, $group_tres_run_min,
+            $group_jobs, $group_submit, $group_wall, $max_resources_per_job, $max_tres_per_node,
+            $max_tres_min, $max_wall, $max_resources_per_user, $max_jobs_pu, $max_submit_pu,
+            $max_tres_pa, $max_jobs_pa, $max_submit_pa, $min_tres) = split(/\|/, $line);
+        my $max_job_cpu = 0;
+        my $max_job_gpu = 0;
+        my $max_job_mem = 0;
+        my $max_user_cpu = 0;
+        my $max_user_gpu = 0;
+        my $max_user_mem = 0;
+        my $max_jobs = -1;
+        my $max_hours = 0;
 
-      if ($max_resources_per_job) {
-          $max_job_cpu = $max_resources_per_job;
-          if ($max_job_cpu =~ /cpu=/) {
-              $max_job_cpu =~ s/.*cpu=(\d+).*$/$1/g;
-          } else {
-              $max_job_cpu = 0;
-          }
-          $max_job_gpu = $max_resources_per_job;
-          if ($max_job_gpu =~ m/gpu=/) {
-              $max_job_gpu =~ s/.*gpu=(\d+).*$/$1/g;
-          } else {
-              $max_job_gpu = 0;
-          }
-          $max_job_mem = $max_resources_per_job;
-          if ($max_job_mem =~ /mem=/) {
-              ## print "TESTME: In Get_QOS mem=: <${max_job_mem}>\n";
-              my $max_mem_suffix = $max_job_mem;
-              ## Note the suffix of memory may be M/G/T and perhaps P one day?
-              ## But I am only bothering to count in Gb.
-              $max_job_mem =~ s/.*mem=(\d+)\w{1}.*$/$1/g;
-              $max_mem_suffix =~ s/.*mem=(\d+)(\w{1}).*$/$2/g;
-              $max_job_mem = $max_job_mem * 1000 if ($max_mem_suffix eq 'T');
-              $max_job_mem = $max_job_mem / 1000 if ($max_mem_suffix eq 'M');
-              ## print "Succeded in parsing max_job_mem: $max_job_mem\n";
-          } else {
-              $max_job_mem = 0;
-          }
-          ## print "Attempted to parse max_job_mem, got: ${max_job_mem}\n";
-      }
+        if ($max_resources_per_job) {
+            $max_job_cpu = $max_resources_per_job;
+            if ($max_job_cpu =~ /cpu=/) {
+                $max_job_cpu =~ s/.*cpu=(\d+).*$/$1/g;
+            }
+            else {
+                $max_job_cpu = 0;
+            }
+            $max_job_gpu = $max_resources_per_job;
+            if ($max_job_gpu =~ m/gpu=/) {
+                $max_job_gpu =~ s/.*gpu=(\d+).*$/$1/g;
+            }
+            else {
+                $max_job_gpu = 0;
+            }
+            $max_job_mem = $max_resources_per_job;
+            if ($max_job_mem =~ /mem=/) {
+                ## print "TESTME: In Get_QOS mem=: <${max_job_mem}>\n";
+                my $max_mem_suffix = $max_job_mem;
+                ## Note the suffix of memory may be M/G/T and perhaps P one day?
+                ## But I am only bothering to count in Gb.
+                $max_job_mem =~ s/.*mem=(\d+)\w{1}.*$/$1/g;
+                $max_mem_suffix =~ s/.*mem=(\d+)(\w{1}).*$/$2/g;
+                $max_job_mem = $max_job_mem * 1000 if ($max_mem_suffix eq 'T');
+                $max_job_mem = $max_job_mem / 1000 if ($max_mem_suffix eq 'M');
+                ## print "Succeded in parsing max_job_mem: $max_job_mem\n";
+            }
+            else {
+                $max_job_mem = 0;
+            }
+            ## print "Attempted to parse max_job_mem, got: ${max_job_mem}\n";
+        }
 
-      if ($max_resources_per_user) {
-          $max_user_cpu = $max_resources_per_user;
-          if ($max_user_cpu =~ /cpu=/) {
-              $max_user_cpu =~ s/.*cpu=(\d+).*$/$1/g;
-          } else {
-              $max_user_cpu = $max_job_cpu;
-          }
+        if ($max_resources_per_user) {
+            $max_user_cpu = $max_resources_per_user;
+            if ($max_user_cpu =~ /cpu=/) {
+                $max_user_cpu =~ s/.*cpu=(\d+).*$/$1/g;
+            }
+            else {
+                $max_user_cpu = $max_job_cpu;
+            }
 
-          $max_user_gpu = $max_resources_per_user;
-          if ($max_user_gpu =~ m/gpu=/) {
-              $max_user_gpu =~ s/.*gpu=(\d+).*$/$1/g;
-          } else {
-              $max_user_gpu = $max_job_cpu;
-          }
-          $max_user_mem = $max_resources_per_user;
-          if ($max_user_mem =~ /mem=/) {
-              $max_user_mem =~ s/.*mem=(\d+)\w{1}.*$/$1/g;
-          } else {
-              $max_user_mem = $max_job_mem;
-          }
-      }
+            $max_user_gpu = $max_resources_per_user;
+            if ($max_user_gpu =~ m/gpu=/) {
+                $max_user_gpu =~ s/.*gpu=(\d+).*$/$1/g;
+            }
+            else {
+                $max_user_gpu = $max_job_cpu;
+            }
+            $max_user_mem = $max_resources_per_user;
+            if ($max_user_mem =~ /mem=/) {
+                $max_user_mem =~ s/.*mem=(\d+)\w{1}.*$/$1/g;
+            }
+            else {
+                $max_user_mem = $max_job_mem;
+            }
+        }
 
-      if ($max_wall) {
-          my $days = 0;
-          my $hms = '';
-          if ($max_wall =~ /\-/) {
-              ($days, $hms) = split(/\-/, $max_wall);
-          } else {
-              $hms = $max_wall;
-          }
-          my $hours = 0;
-          my $min = 0;
-          my $sec = 0;
-          if ($hms) {
-              ($hours, $min, $sec) = split(/:/, $hms);
-          }
-          $days = 0 if (!defined($days));
-          $hours = 1 if (!defined($hours));
-          $max_hours = ($days * 24) + $hours;
-      }
+        if ($max_wall) {
+            my $days = 0;
+            my $hms = '';
+            if ($max_wall =~ /\-/) {
+                ($days, $hms) = split(/\-/, $max_wall);
+            }
+            else {
+                $hms = $max_wall;
+            }
+            my $hours = 0;
+            my $min = 0;
+            my $sec = 0;
+            if ($hms) {
+                ($hours, $min, $sec) = split(/:/, $hms);
+            }
+            $days = 0 if (!defined($days));
+            $hours = 1 if (!defined($hours));
+            $max_hours = ($days * 24) + $hours;
+        }
 
-      $avail_qos->{$name} = {
-          max_job_cpu => $max_job_cpu,
-          max_job_gpu => $max_job_gpu,
-          max_job_mem => $max_job_mem,
-          max_user_cpu => $max_user_cpu,
-          max_user_gpu => $max_user_gpu,
-          max_user_mem => $max_user_mem,
-          max_jobs => $max_jobs,
-          max_hours => $max_hours,
-      };
-      ## This is perhaps a little silly/redundant, given that I am immediately
-      ## filling in this information from the default queue.
-      $avail_qos->{$name}->{used_cpu} = 0 if (!defined($avail_qos->{$name}->{used_cpu}));
-      $avail_qos->{$name}->{used_gpu} = 0 if (!defined($avail_qos->{$name}->{used_gpu}));
-      $avail_qos->{$name}->{used_mem} = 0 if (!defined($avail_qos->{$name}->{used_mem}));
-      $avail_qos->{$name}->{used_hours} = 0 if (!defined($avail_qos->{$name}->{used_hours}));
-      $avail_qos->{$name}->{max_job_cpu} = 0 if (!defined($avail_qos->{$name}->{max_job_cpu}));
-      $avail_qos->{$name}->{max_job_gpu} = 0 if (!defined($avail_qos->{$name}->{max_job_gpu}));
-      $avail_qos->{$name}->{max_job_mem} = 0 if (!defined($avail_qos->{$name}->{max_job_mem}));
-      $avail_qos->{$name}->{max_user_cpu} = 0 if (!defined($avail_qos->{$name}->{max_user_cpu}));
-      $avail_qos->{$name}->{max_user_gpu} = 0 if (!defined($avail_qos->{$name}->{max_user_gpu}));
-      $avail_qos->{$name}->{max_user_mem} = 0 if (!defined($avail_qos->{$name}->{max_user_mem}));
-      $avail_qos->{$name}->{max_jobs} = 0 if (!defined($avail_qos->{$name}->{max_jobs}));
-      $avail_qos->{$name}->{max_hours} = 0 if (!defined($avail_qos->{$name}->{max_hours}));
+        $avail_qos->{$name} = {
+            max_job_cpu => $max_job_cpu,
+            max_job_gpu => $max_job_gpu,
+            max_job_mem => $max_job_mem,
+            max_user_cpu => $max_user_cpu,
+            max_user_gpu => $max_user_gpu,
+            max_user_mem => $max_user_mem,
+            max_jobs => $max_jobs,
+            max_hours => $max_hours,
+        };
+        ## This is perhaps a little silly/redundant, given that I am immediately
+        ## filling in this information from the default queue.
+        $avail_qos->{$name}->{used_cpu} = 0 if (!defined($avail_qos->{$name}->{used_cpu}));
+        $avail_qos->{$name}->{used_gpu} = 0 if (!defined($avail_qos->{$name}->{used_gpu}));
+        $avail_qos->{$name}->{used_mem} = 0 if (!defined($avail_qos->{$name}->{used_mem}));
+        $avail_qos->{$name}->{used_hours} = 0 if (!defined($avail_qos->{$name}->{used_hours}));
+        $avail_qos->{$name}->{max_job_cpu} = 0 if (!defined($avail_qos->{$name}->{max_job_cpu}));
+        $avail_qos->{$name}->{max_job_gpu} = 0 if (!defined($avail_qos->{$name}->{max_job_gpu}));
+        $avail_qos->{$name}->{max_job_mem} = 0 if (!defined($avail_qos->{$name}->{max_job_mem}));
+        $avail_qos->{$name}->{max_user_cpu} = 0 if (!defined($avail_qos->{$name}->{max_user_cpu}));
+        $avail_qos->{$name}->{max_user_gpu} = 0 if (!defined($avail_qos->{$name}->{max_user_gpu}));
+        $avail_qos->{$name}->{max_user_mem} = 0 if (!defined($avail_qos->{$name}->{max_user_mem}));
+        $avail_qos->{$name}->{max_jobs} = 0 if (!defined($avail_qos->{$name}->{max_jobs}));
+        $avail_qos->{$name}->{max_hours} = 0 if (!defined($avail_qos->{$name}->{max_hours}));
 
-  }
+    }
     $qos->close();
 
     ## Run through the qos keys and set undefined options to those from the default.
@@ -1094,12 +1139,15 @@ sub Get_Spec {
     if (defined($options->{mem}) && defined($options->{jmem})) {
         print "Both mem and jmem are defined, that is confusing, using jmem.\n";
         $wanted->{mem} = $options->{jmem};
-    } elsif (defined($options->{mem})) {
+    }
+    elsif (defined($options->{mem})) {
         print "Mem is defined, ideally this should be jmem.\n";
         $wanted->{mem} = $options->{mem};
-    } elsif (defined($options->{jmem})) {
+    }
+    elsif (defined($options->{jmem})) {
         $wanted->{mem} = $options->{jmem};
-    } else {
+    }
+    else {
         print "Neither mem nor jmem is defined, defaulting to 10G.\n";
         $wanted->{mem} = 10;
     }
@@ -1108,12 +1156,15 @@ sub Get_Spec {
     if (defined($options->{walltime}) && defined($options->{jwalltime})) {
         print "Both walltime and jwalltime are defined, that is confusing, using jwalltime.\n";
         $walltime_string = $options->{jwalltime};
-    } elsif (defined($options->{walltime})) {
+    }
+    elsif (defined($options->{walltime})) {
         print "Walltime is defined, ideally this should be jwalltime.\n";
         $walltime_string = $options->{walltime};
-    } elsif (defined($options->{jwalltime})) {
+    }
+    elsif (defined($options->{jwalltime})) {
         $walltime_string = $options->{jwalltime};
-    } else {
+    }
+    else {
         print "Neither walltime nor jwalltime is defined, defaulting to 40 minutes.\n";
     }
     my $walltime_hours = Convert_to_Hours($walltime_string);
@@ -1123,12 +1174,15 @@ sub Get_Spec {
     if (defined($options->{cpu}) && defined($options->{jcpu})) {
         print "Both cpu and jcpu are defined, that is confusing, using jcpu.\n";
         $wanted->{cpu} = $options->{jcpu};
-    } elsif (defined($options->{cpu})) {
+    }
+    elsif (defined($options->{cpu})) {
         print "Cpu is defined, ideally this should be jcpu.\n";
         $wanted->{cpu} = $options->{cpu};
-    } elsif (defined($options->{jcpu})) {
+    }
+    elsif (defined($options->{jcpu})) {
         $wanted->{cpu} = $options->{jcpu};
-    } else {
+    }
+    else {
         print "Neither cpu nor jcpu is defined, defaulting to 1.\n";
         $wanted->{cpu} = 1;
     }
@@ -1136,12 +1190,15 @@ sub Get_Spec {
     if (defined($options->{gpu}) && defined($options->{jgpu})) {
         print "Both gpu and jgpu are defined, that is confusing, using jgpu.\n";
         $wanted->{gpu} = $options->{jgpu};
-    } elsif (defined($options->{gpu})) {
+    }
+    elsif (defined($options->{gpu})) {
         print "Gpu is defined, ideally this should be jgpu.\n";
         $wanted->{gpu} = $options->{gpu};
-    } elsif (defined($options->{jgpu})) {
+    }
+    elsif (defined($options->{jgpu})) {
         $wanted->{gpu} = $options->{jgpu};
-    } else {
+    }
+    else {
         $wanted->{gpu} = 0;
     }
 
@@ -1162,129 +1219,134 @@ sub Get_Spec {
 =cut
 sub Get_Usage {
     my $usage = FileHandle->new("squeue --me -o '%all' |");
-    my $current = {};  ## Hash of the current usage by user.
+    my $current = {};           ## Hash of the current usage by user.
     my $all_jobs = {};
     my $count = 0;
   USAGE: while (my $line = <$usage>) {
-      chomp $line;
-      next USAGE if ($line =~ /^ACCOUNT/);
-      $count++;
-      my ($account, $tres_per_node, $min_cpus, $min_tmp_disk, $end_time, $features, $group,
-          $over_sub, $job_id, $name, $comment, $time_limit, $min_memory, $req_nodes, $command,
-          $priority, $qos, $reason, $blank, $st, $user, $reservation, $wckey, $exclude_nodes,
-          $nice, $sct, $job_id2, $exec_host, $cpus, $nodes, $dependency, $array_job_id, $group2,
-          $sockets_per_node, $cores_per_socket, $threads_per_core, $array_task_id, $time_left,
-          $time, $nodeslist, $contiguous, $partition, $priority2, $nodelist_reason, $start_time,
-          $state, $uid, $submit_time, $licenses, $core_spec, $sched_nodes, $work_dir) = split(/\|/, $line);
-      ## Some notes about what some of the above variables look like:
-      ## tres_per_node: 'gres:gpu:3'
-      ## I suspect we can do something fun with the priority information, priority2 looks
-      ## like it would be easier to parse though.
-      ## the group variable looks like it currently contains what I think of as user?
-      $min_memory =~ s/G$//g;
-      ## I am only going to count by Gigabytes of memory.
-      if ($min_memory =~ /M$/) {
-          $min_memory =~ s/M$//g;
-          $min_memory = ceil($min_memory / 1000.0);
-      }
-      my $internal = {
-          account => $account,
-          array_job_id => $array_job_id,
-          array_task_id => $array_task_id,
-          blank => $blank,
-          command => $command,
-          comment => $comment,
-          core_spec => $core_spec,
-          contiguous => $contiguous,
-          cores_per_socket => $cores_per_socket,
-          cpus => $cpus,
-          dependency => $dependency,
-          end_time => $end_time,
-          exclude_nodes => $exclude_nodes,
-          exec_host => $exec_host,
-          features => $features,
-          group => $group,
-          group2 => $group2,
-          jobid2 => $job_id2,
-          licenses => $licenses,
-          min_cpus => $min_cpus,
-          min_memory => $min_memory,
-          min_tmp => $min_tmp_disk,
-          name => $name,
-          nice => $nice,
-          nodelist_reason => $nodelist_reason,
-          nodes => $nodes,
-          nodes_list => $nodeslist,
-          over_sub => $over_sub,
-          partition => $partition,
-          priority => $priority,
-          priority2 => $priority2,
-          qos => $qos,
-          reason => $reason,
-          req_nodes => $req_nodes,
-          reservation => $reservation,
-          sched_nodes => $sched_nodes,
-          sct => $sct,
-          sockets_per_node => $sockets_per_node,
-          st => $st,
-          start_time => $start_time,
-          state => $state,
-          submit_time => $submit_time,
-          threads_per_core => $threads_per_core,
-          time => $time,
-          time_left => $time_left,
-          time_limit => $time_limit,
-          tres_per_node => $tres_per_node,
-          uid => $uid,
-          user => $user,
-          wckey => $wckey,
-          work_dir => $work_dir,
-      };
-      $all_jobs->{$job_id} = $internal;
+        chomp $line;
+        next USAGE if ($line =~ /^ACCOUNT/);
+        $count++;
+        my ($account, $tres_per_node, $min_cpus, $min_tmp_disk, $end_time, $features, $group,
+            $over_sub, $job_id, $name, $comment, $time_limit, $min_memory, $req_nodes, $command,
+            $priority, $qos, $reason, $blank, $st, $user, $reservation, $wckey, $exclude_nodes,
+            $nice, $sct, $job_id2, $exec_host, $cpus, $nodes, $dependency, $array_job_id, $group2,
+            $sockets_per_node, $cores_per_socket, $threads_per_core, $array_task_id, $time_left,
+            $time, $nodeslist, $contiguous, $partition, $priority2, $nodelist_reason, $start_time,
+            $state, $uid, $submit_time, $licenses, $core_spec, $sched_nodes, $work_dir) = split(/\|/, $line);
+        ## Some notes about what some of the above variables look like:
+        ## tres_per_node: 'gres:gpu:3'
+        ## I suspect we can do something fun with the priority information, priority2 looks
+        ## like it would be easier to parse though.
+        ## the group variable looks like it currently contains what I think of as user?
+        $min_memory =~ s/G$//g;
+        ## I am only going to count by Gigabytes of memory.
+        if ($min_memory =~ /M$/) {
+            $min_memory =~ s/M$//g;
+            $min_memory = ceil($min_memory / 1000.0);
+        }
+        my $internal = {
+            account => $account,
+            array_job_id => $array_job_id,
+            array_task_id => $array_task_id,
+            blank => $blank,
+            command => $command,
+            comment => $comment,
+            core_spec => $core_spec,
+            contiguous => $contiguous,
+            cores_per_socket => $cores_per_socket,
+            cpus => $cpus,
+            dependency => $dependency,
+            end_time => $end_time,
+            exclude_nodes => $exclude_nodes,
+            exec_host => $exec_host,
+            features => $features,
+            group => $group,
+            group2 => $group2,
+            jobid2 => $job_id2,
+            licenses => $licenses,
+            min_cpus => $min_cpus,
+            min_memory => $min_memory,
+            min_tmp => $min_tmp_disk,
+            name => $name,
+            nice => $nice,
+            nodelist_reason => $nodelist_reason,
+            nodes => $nodes,
+            nodes_list => $nodeslist,
+            over_sub => $over_sub,
+            partition => $partition,
+            priority => $priority,
+            priority2 => $priority2,
+            qos => $qos,
+            reason => $reason,
+            req_nodes => $req_nodes,
+            reservation => $reservation,
+            sched_nodes => $sched_nodes,
+            sct => $sct,
+            sockets_per_node => $sockets_per_node,
+            st => $st,
+            start_time => $start_time,
+            state => $state,
+            submit_time => $submit_time,
+            threads_per_core => $threads_per_core,
+            time => $time,
+            time_left => $time_left,
+            time_limit => $time_limit,
+            tres_per_node => $tres_per_node,
+            uid => $uid,
+            user => $user,
+            wckey => $wckey,
+            work_dir => $work_dir,
+        };
+        $all_jobs->{$job_id} = $internal;
 
-      my $instance = {
-          $partition => {
-              $account => {
-                  $qos => {
-                      mem => $min_memory,
-                      min_cpu => $min_cpus,
-                      jobs => 1,
-                  }, }, },
-      };
+        my $instance = {
+            $partition => {
+                $account => {
+                    $qos => {
+                        mem => $min_memory,
+                        min_cpu => $min_cpus,
+                        jobs => 1,
+                    }, }, },
+        };
 
-      if ($state eq 'RUNNING') {
-          $instance->{$partition}->{$account}->{$qos}->{running} = 1;
-          $instance->{$partition}->{$account}->{$qos}->{queued} = 0;
-          $instance->{$partition}->{$account}->{$qos}->{failed} = 0;
-      } elsif ($state eq 'PENDING') {
-          $instance->{$partition}->{$account}->{$qos}->{running} = 0;
-          $instance->{$partition}->{$account}->{$qos}->{queued} = 1;
-          $instance->{$partition}->{$account}->{$qos}->{failed} = 0;
-      } elsif ($state eq 'COMPLETING') {
-          $instance->{$partition}->{$account}->{$qos}->{running} = 1;
-          $instance->{$partition}->{$account}->{$qos}->{queued} = 0;
-          $instance->{$partition}->{$account}->{$qos}->{failed} = 0;
-      } elsif ($state eq 'FAILED') {
-          $instance->{$partition}->{$account}->{$qos}->{failed} = 1;
-          $instance->{$partition}->{$account}->{$qos}->{running} = 0;
-          $instance->{$partition}->{$account}->{$qos}->{queued} = 0;
-      } else {
-          ## I think I would like this to print some information about failed jobs perhaps here?
-          $instance->{$partition}->{$account}->{$qos}->{running} = 0;
-          $instance->{$partition}->{$account}->{$qos}->{queued} = 0;
-          $instance->{$partition}->{$account}->{$qos}->{failed} = 1;
-      }
-      if (!defined($current->{$user}->{$partition}->{$account}->{$qos})) {
-          $current->{$user} = $instance;
-      } else {
-          $current->{$user}->{$partition}->{$account}->{$qos}->{running} += $instance->{$partition}->{$account}->{$qos}->{running};
-          $current->{$user}->{$partition}->{$account}->{$qos}->{queued} += $instance->{$partition}->{$account}->{$qos}->{queued};
-          $current->{$user}->{$partition}->{$account}->{$qos}->{failed} += $instance->{$partition}->{$account}->{$qos}->{failed};
-          $current->{$user}->{$partition}->{$account}->{$qos}->{mem} += $instance->{$partition}->{$account}->{$qos}->{mem};
-          $current->{$user}->{$partition}->{$account}->{$qos}->{min_cpu} += $instance->{$partition}->{$account}->{$qos}->{min_cpu};
-          $current->{$user}->{$partition}->{$account}->{$qos}->{jobs} += 1;
-      }
-  }
+        if ($state eq 'RUNNING') {
+            $instance->{$partition}->{$account}->{$qos}->{running} = 1;
+            $instance->{$partition}->{$account}->{$qos}->{queued} = 0;
+            $instance->{$partition}->{$account}->{$qos}->{failed} = 0;
+        }
+        elsif ($state eq 'PENDING') {
+            $instance->{$partition}->{$account}->{$qos}->{running} = 0;
+            $instance->{$partition}->{$account}->{$qos}->{queued} = 1;
+            $instance->{$partition}->{$account}->{$qos}->{failed} = 0;
+        }
+        elsif ($state eq 'COMPLETING') {
+            $instance->{$partition}->{$account}->{$qos}->{running} = 1;
+            $instance->{$partition}->{$account}->{$qos}->{queued} = 0;
+            $instance->{$partition}->{$account}->{$qos}->{failed} = 0;
+        }
+        elsif ($state eq 'FAILED') {
+            $instance->{$partition}->{$account}->{$qos}->{failed} = 1;
+            $instance->{$partition}->{$account}->{$qos}->{running} = 0;
+            $instance->{$partition}->{$account}->{$qos}->{queued} = 0;
+        }
+        else {
+            ## I think I would like this to print some information about failed jobs perhaps here?
+            $instance->{$partition}->{$account}->{$qos}->{running} = 0;
+            $instance->{$partition}->{$account}->{$qos}->{queued} = 0;
+            $instance->{$partition}->{$account}->{$qos}->{failed} = 1;
+        }
+        if (!defined($current->{$user}->{$partition}->{$account}->{$qos})) {
+            $current->{$user} = $instance;
+        }
+        else {
+            $current->{$user}->{$partition}->{$account}->{$qos}->{running} += $instance->{$partition}->{$account}->{$qos}->{running};
+            $current->{$user}->{$partition}->{$account}->{$qos}->{queued} += $instance->{$partition}->{$account}->{$qos}->{queued};
+            $current->{$user}->{$partition}->{$account}->{$qos}->{failed} += $instance->{$partition}->{$account}->{$qos}->{failed};
+            $current->{$user}->{$partition}->{$account}->{$qos}->{mem} += $instance->{$partition}->{$account}->{$qos}->{mem};
+            $current->{$user}->{$partition}->{$account}->{$qos}->{min_cpu} += $instance->{$partition}->{$account}->{$qos}->{min_cpu};
+            $current->{$user}->{$partition}->{$account}->{$qos}->{jobs} += 1;
+        }
+    }
     $usage->close();
     return($current);
 }
@@ -1300,6 +1362,31 @@ sub Get_Usage {
 sub Guess_Time {
     my %args = @_;
     print "Not yet implemented.\n";
+}
+
+sub QOS_Accounts {
+    my ($class, %args) = @_;
+    my $allowed = $args{allowed};
+    my @qos_accounts = ();
+  PART: for my $partition (keys %{$allowed}) {
+        my %inner_part = %{$allowed->{$partition}};
+      CLUST: for my $cluster (keys %inner_part) {
+            my %inner_clust = %{$allowed->{$partition}->{$cluster}};
+          ACCOUNT: for my $account (keys %inner_clust) {
+                my @allowed_qos = @{$inner_clust{$account}};
+              QOS: for my $q (@allowed_qos) {
+                    my $entry = {
+                        qos => $q,
+                        partition => $partition,
+                        cluster => $cluster,
+                        account => $account,
+                    };
+                    push(@qos_accounts, $entry);
+                } ## End iterating over qos in this account
+            } ## End iterating over this account
+        } ## End iterating over this cluster
+    } ## End iterating over this partition
+    return(\@qos_accounts);
 }
 
 =head2 C<Submit>
@@ -1395,7 +1482,8 @@ sub Submit {
     my $partition_string = '';
     if ($class->{chosen_partition}) {
         $partition_string = $class->{chosen_partition};
-    } else {
+    }
+    else {
         ## Partition is often empty, I don't quite know why yet.
         ## print "partition is not defined, setting it to the empty string\n";
         $partition_string = '';
@@ -1432,7 +1520,8 @@ ${script_file}\n" if ($options->{debug});
         my $perl_file = qq"${perl_base}/$options->{jprefix}$options->{jname}.pl";
         if (defined($options->{output_dir})) {
             $perl_base = $options->{output_dir};
-        } elsif (defined($options->{output})) {
+        }
+        elsif (defined($options->{output})) {
             $perl_base = dirname($options->{output});
         }
         my $perl_stderr = qq"${perl_base}/$options->{jprefix}$options->{jname}.stderr";
@@ -1489,7 +1578,8 @@ ${perl_file} \\
             TRIM => 1,
             INTERPOLATE => 1,});
         $tt->process($options->{jtemplate}, $options) || die $tt->error();
-    } else {
+    }
+    else {
         my $nice_string = '';
         $nice_string = qq"--nice=$options->{jnice}" if (defined($options->{jnice}));
         my $array_string = '';
@@ -1576,6 +1666,7 @@ fi
 
     if (!defined($job_id)) {
         warn("The job id did not get defined, submission likely failed.");
+        warn("Attempted submission: qos_string: ${qos_string}, QOS: $class->{chosen_qos}, account: $class->{chosen_account}, cluster: $class->{chosen_cluster}, partition: $class->{chosen_partition}\n");
         return(undef);
     }
     sleep($options->{jsleep});
@@ -1651,10 +1742,12 @@ sub Wait {
     if (ref($job) eq 'HASH') {
         if (defined($job->{jobids})) {
             $id = $job->{jobids};
-        } else {
+        }
+        else {
             $id = $job->{job_id};
         }
-    } else {
+    }
+    else {
         $id = $job;
     }
     if (!defined($id)) {
@@ -1670,7 +1763,7 @@ sub Wait {
         cancelled => 0,
         failed => 0,
     };
-    WAITLOOP: while ($wait_count->{finished} < 1 && $wait_count->{failed} < 1) {
+  WAITLOOP: while ($wait_count->{finished} < 1 && $wait_count->{failed} < 1) {
         sleep(10);
         my $info = $class->Bio::Adventure::Slurm::Check_Job(input => $id, write => 0);
         $datum = $info->[0];
@@ -1679,18 +1772,23 @@ sub Wait {
             print qq"The job ${id}:$datum->{JobName} required $datum->{MaxVMSize}G memory, ";
             print qq"$datum->{MaxDiskWrite}G disk, and ";
             print qq"$datum->{'Elapsed'} time using $datum->{'AveCPUFreq'}Mhz.\n";
-        } elsif ($datum->{State} eq 'PENDING') {
+        }
+        elsif ($datum->{State} eq 'PENDING') {
             $wait_count->{pending}++;
             print "This job is still pending.\n";
-        } elsif ($datum->{State} eq 'CANCELLED') {
+        }
+        elsif ($datum->{State} eq 'CANCELLED') {
             $wait_count->{cancelled}++;
             $wait_count->{finished}++;
             print "This job was cancelled.\n";
-        } elsif ($datum->{State} eq 'RUNNING') {
+        }
+        elsif ($datum->{State} eq 'RUNNING') {
             $wait_count->{running}++;
-        } elsif ($datum->{State} eq 'FAILED') {
+        }
+        elsif ($datum->{State} eq 'FAILED') {
             $wait_count->{failed}++;
-        } else {
+        }
+        else {
             print "I need to collect the various states, this one is: $datum->{State}.\n";
         }
     }

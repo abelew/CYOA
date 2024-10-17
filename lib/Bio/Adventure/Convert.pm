@@ -265,8 +265,10 @@ sub Gb2Gff_Worker {
         output_gene_gff => 'gene_gff',
         required => ['input']);
 
-    my $handle = IO::Handle->new;
-    open($handle, "less $options->{input} |");
+    #my $handle = IO::Handle->new;
+    #my $fc = $class->Get_FC(input => $options->{input});
+    #open($handle, "${fc} |");
+    my $handle = Bio::Adventure::Get_FH(input => $options->{input});
     my $seqio = Bio::SeqIO->new(-format => 'genbank', -fh => $handle);
     my $seq_count = 0;
     my $total_nt = 0;
@@ -562,7 +564,7 @@ sub Gff2Fasta {
     my $wanted_tag = $options->{gff_tag};
     my $wanted_type = $options->{gff_type};
     my $chromosomes = $class->Read_Genome_Fasta(genome => $genome);
-    my $gff_handle = FileHandle->new("less ${gff} |");
+    my $gff_handle = Bio::Adventure::Get_FH(input => $gff);
     my $nt_out = Bio::SeqIO->new(
         -format => 'Fasta',
         -file => qq">${species}_${wanted_type}_${wanted_tag}_nt.fasta");
@@ -1019,7 +1021,7 @@ sub Species2SF {
 
     ## Read the GFF
     print "Reading $paths->{gff}\n";
-    my $gff_fh = FileHandle->new(qq!less $paths->{gff} | grep -v "^#" |!);
+    my $gff_fh = Bio::Adventure::Get_FH(input => $paths->{gff}, suffix => '| grep -v "^#"');
     my $sf_by_contig = {};
     my $input_gff = new Bio::FeatureIO(-format => 'GFF', -version => 3, -fh => $gff_fh);
   INFEAT: while (my $feature = $input_gff->next_feature()) {

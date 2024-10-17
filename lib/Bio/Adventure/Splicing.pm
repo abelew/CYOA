@@ -24,6 +24,234 @@ use Spreadsheet::Read;
 use String::Approx qw"amatch";
 use Symbol qw"gensym";
 
+
+sub RMats {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['input', 'species'],
+        type => 'SE',
+        numerator => 't4h',
+        denominator => 'no',
+        condition_column => 'drug',
+        file_column => 'bamfile',
+        mapper => 'hisat',
+        paired => 0,
+        jcpu => 16,
+        jprefix => '90',
+        read_length => 100,);
+    my $jname = qq"rmats_$options->{species}_$options->{condition_column}";
+    my $rmats_dir = qq"outputs/$options->{jprefix}${jname}";
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $gtf_file = $paths->{gtf};
+    die("Rmats requires a gtf file: ${gtf_file}, which is missing.") unless (-r $gtf_file);
+    if (!-r $options->{input}) {
+        die("Cannot open input spreadsheet: $options->{input}");
+    }
+
+    ## The following basenames will define the locations of the output files and logs
+    ## for each step performed.
+    my $rmats_tmp = qq"${rmats_dir}/tmp";
+    my $bam_group1 = qq"${rmats_dir}/group1.txt";
+    my $bam_group2 = qq"${rmats_dir}/group2.txt";
+    my $made = make_path($rmats_tmp);
+
+    ## The following few lines read in the sample sheet and extract
+    ## the samples associated with each experimental condition.
+    ## Reminder to self: if the various spreadsheet reader modules are
+    ## not installed, this just returns a somewhat unhelpful undef.
+    my $reader = Spreadsheet::Read->new($options->{input});
+    my $sheet = $reader->sheet(1);
+    ## Strangely, Spreadsheet::Read only uses numeric values for columns, so grab the first row
+    ## and get the number of my column from it...
+    my $file_number = undef;
+    my $condition_number = undef;
+    my $numeric_condition = Scalar::Util::looks_like_number($options->{condition_column});
+    my $numeric_file = Scalar::Util::looks_like_number($options->{file_column});
+    if ($numeric_condition) {
+        $condition_number = $options->{condition_column};
+    }
+    if ($numeric_file) {
+        $file_number = $options->{file_column};
+    }
+    if (!defined($condition_number) && !defined($file_number)) {
+        my @column_names = $sheet->cellrow(1);
+        my $count = 0;
+      COLUMNS: for my $name (@column_names) {
+            $count++;
+            if ($name eq $options->{file_column}) {
+                print "Found $options->{file_column} as number: $count\n";
+                $file_number = $count;
+            }
+            if ($name eq $options->{condition_column}) {
+                print "Found $options->{condition_column} as number: $count\n";
+                $condition_number = $count;
+            }
+        }
+    }
+
+    ## Keep in mind that cellcolumn is 1-indexed and it provides an
+    ## array which includes the header as the first element.  Thus if
+    ## I want the sample IDs, I pull cellcolumn(1) and if I do not
+    ## want to include the header (which I don't), I will need to
+    ## shift (or just skip it) the first element off the result.
+    ## Either way, I want arrays containing the sample IDs, filenames,
+    ## and conditions.
+    my @samplenames = $sheet->cellcolumn(1);
+    shift @samplenames;
+    my @filenames = $sheet->cellcolumn($file_number);
+    my $filename_heading = shift @filenames;
+    my @conditions = $sheet->cellcolumn($condition_number);
+    my $condition_heading = shift @conditions;
+    ## Map samples to files and conditions
+    my %samples_to_files = ();
+    my %samples_to_conditions = ();
+    ## Mape conditions to lists of samples/files.
+    my %files_by_condition = ();
+    my %samples_by_condition = ();
+    my $sample_count = -1;
+    my $group1_string = '';
+    my $group2_string = '';
+  SAMPLENAMES: for my $s (@samplenames) {
+        $sample_count++;
+        my $f = $filenames[$sample_count];
+        my $cond = $conditions[$sample_count];
+        if (!defined($s)) {
+            print "The samplename at row ${sample_count} is not defined, skipping it.\n";
+            next SAMPLENAMES;
+        }
+        if (!defined($f)) {
+            print "This sample: ${s} does not have a file, skipping it.\n";
+            next SAMPLENAMES;
+        }
+        if (!-r $f) {
+            print "The file for ${s} is not readable, skipping it.\n";
+            next SAMPLENAMES;
+        }
+        if (defined($options->{numerator}) && defined($options->{denominator})) {
+            if ($cond eq $options->{numerator}) {
+                print "Adding ${f} sample ${s} as numerator: $options->{numerator}.\n";
+                $group1_string .= qq"${f},";
+            } elsif ($cond eq $options->{denominator}) {
+                print "Adding ${f} sample ${s} as denominator: $options->{denominator}.\n";
+                $group2_string .= qq"${f},";
+            } else {
+                print "Skipping sample ${s}, it is neither numerator nor denominator.\n";
+                next SAMPLENAMES;
+            }
+        }
+        $samples_to_files{$s} = $f;
+        $samples_to_conditions{$s} = $cond;
+        print "Working on $cond\n";
+        my @cond_samples = ();
+        my @cond_filenames = ();
+        if (defined($files_by_condition{$cond})) {
+            @cond_filenames = @{$files_by_condition{$cond}};
+            @cond_samples = @{$samples_by_condition{$cond}};
+        }
+        push(@cond_filenames, $f);
+        push(@cond_samples, $s);
+        $files_by_condition{$cond} = \@cond_filenames;
+        $samples_by_condition{$cond} = \@cond_samples;
+    } ## End iterating over the samples
+    $group1_string =~ s/\,$//g;
+    $group2_string =~ s/\,$//g;
+    my $g1_fh = FileHandle->new(qq">${bam_group1}");
+    print $g1_fh qq"${group1_string}\n";
+    $g1_fh->close();
+    my $g2_fh = FileHandle->new(qq">${bam_group2}");
+    print $g2_fh qq"${group2_string}\n";
+    $g2_fh->close();
+    my $stdout = qq"${rmats_dir}/rmats.stdout";
+    my $stderr = qq"${rmats_dir}/rmats.stderr";
+    my $comment = qq"## Invoke rMats.";
+    my $jstring = qq!mkdir -p ${rmats_tmp}
+rmats.py \\
+  --b1 ${bam_group1} \\
+  --b2 ${bam_group2} \\
+  --gtf ${gtf_file} \\
+  -t paired --nthread $options->{jcpu} --od ${rmats_dir} --tmp ${rmats_tmp} \\
+  --readLength $options->{read_length} --variable-read-length \\
+  2>${stderr} 1>${stdout}
+!;
+    my $rmats_job = $class->Submit(
+        comment => $comment,
+        cpus => $options->{jcpu},
+        jdepends => $options->{jdepends},
+        jmem => $options->{jmem},
+        jname => $jname,
+        jprefix => $options->{jprefix},
+        jstring => $jstring,
+        output => qq"${rmats_dir}/rmats.stdout",
+        stdout => qq"${rmats_dir}/rmats.stdout",
+        stderr => qq"${rmats_dir}/rmats.stderr",);
+    return($rmats_job);
+}
+
+sub Spladder {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['input', 'species'],
+        type => 'SE',
+        numerator => 't4h',
+        denominator => 'no',
+        condition_column => 'drug',
+        file_column => 'bamfile',
+        mapper => 'hisat',
+        paired => 0,
+        jcpu => 16,
+        jprefix => '90',
+        read_length => 100,);
+    my $jname = qq"spladder_$options->{species}_$options->{condition_column}";
+    my $spladder_dir = qq"outputs/$options->{jprefix}${jname}";
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $gtf_file = $paths->{gtf};
+    die("Spladder requires a gtf file: ${gtf_file}, which is missing.") unless (-r $gtf_file);
+    if (!-r $options->{input}) {
+        die("Cannot open input spreadsheet: $options->{input}");
+    }
+
+    my $made = make_path($spladder_dir);
+    my $stdout = qq"${spladder_dir}/spladder.stdout";
+    my $stderr = qq"${spladder_dir}/spladder.stderr";
+    my $info = $class->Bio::Adventure::Metadata::Get_Metadata_Column(
+        input => $options->{input},
+        condition_column => $options->{condition_column},
+        file_column => $options->{file_column},
+        type => 'file');
+    my @groups = keys %{$info->{wanted_by_cond}};
+    my %group_strings = ();
+    my $detect_string = '';
+    for my $g (@groups) {
+        my $group_string = join(',', @{$info->{wanted_by_cond}{$g}});
+        $group_strings{$g} = $group_string;
+        $detect_string .= qq"spladder.py -a ${gtf_file} \\
+  -b ${group_string} \\
+  -o ${spladder_dir}/${g} \\
+  -T y 2>>${stderr} 1>>${stdout}
+";
+    }
+    my $comment = qq"## Invoke spladder.";
+    my $jstring = qq!mkdir -p ${spladder_dir}
+
+${detect_string}
+!;
+    my $spladder_job = $class->Submit(
+        comment => $comment,
+        cpus => $options->{jcpu},
+        jdepends => $options->{jdepends},
+        jmem => $options->{jmem},
+        jname => $jname,
+        jprefix => $options->{jprefix},
+        jstring => $jstring,
+        output => qq"${spladder_dir}/spladder.stdout",
+        stdout => qq"${spladder_dir}/spladder.stdout",
+        stderr => qq"${spladder_dir}/spladder.stderr",);
+    return($spladder_job);
+}
+
+
 =head2 C<Suppa>
 
   Set up and invoke Suppa, a differential transcript and splicing
@@ -508,7 +736,8 @@ sub SLSearch {
         for my $i (@input_lst) {
             $input_string .= "${i} ";
         }
-    } else {
+    }
+    else {
         if (-r $options->{input}) {
             push(@input_lst, $options->{input});
             $input_string = $options->{input};
@@ -530,7 +759,6 @@ sub SLSearch {
     }
 
     my $log_file = qq"$paths->{output_dir}/slsearch_log.txt";
-    print "TESTME: $log_file and $options->{input} and paired: $paired\n";
     my $log_fh = FileHandle->new(">${log_file}");
     print $log_fh qq"Searching for putative SL/polyA containing reads
 in the file(s): $options->{input}.\n";
@@ -660,24 +888,373 @@ ${rev_cmd} 2>>${stderr} 1>>${stdout}
 
 }
 
+=head2 C<SLSeq_Recorder>
+
+  Use the reads from a SLSeq experiment to define the 5' UTRs of parasite genes.
+  This is taking ideas from 10.1038/s41598-017-03987-0 and hopefully improving
+  the logic a bit.
+
+  There is an important caveat: this code currently assumes/requires paired-end reads.
+
+  The general idea: Read in the extant gene annotations and make a contig-keyed hash
+  where each key is comprised of an array of gene features including the relevant
+  information about the current gene and the 'next' gene (reading from beginning to end
+  of each contig).  Then read each aligned read from a position-sorted bam file from hisat
+  or whatever and keep only the reads which are: a) pointing in the same direction as the ORF
+  b) positioned in the 5' UTR of an ORF (thus the information about the next gene).  Given that,
+  record every SL position with respect to the AUG and count how many reads are observed at every
+  relative position.  Upon completion, write up a new gff file with new features of type 'SLSeq'
+  that have a new start for the + and new end for the - strand features.
+
+=over
+
+=item C<Arguments>
+
+  input(required): Sorted/indexed bam from hisat/bowtie/bwa/etc
+  species: Find the original genome/gff annotations with this.
+  gff_type(protein_coding_gene): Use this feature type to create new features.
+  output_type(SLSeq_gene): Create new features of this type.
+  id_tag(ID): Identify genes using this feature tag.
+
+=back
+
+=cut
 sub SLSeq_Recorder {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
-        required => ['input', 'species'],
+        required => ['species', 'input',],
         gff_type => 'protein_coding_gene',
+        output_type => 'SLSeq_gene',
+        jprefix => '50',
         id_tag => 'ID',);
-    my $gff = qq"$options->{libpath}/$options->{libtype}/gff/$options->{species}.gff";
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $output_dir = $paths->{output_dir};
+    make_path($output_dir) unless (-d $output_dir);
+    my $output_gff = qq"${output_dir}/$options->{species}_maximum_utr.gff";
+    my $output_tsv = qq"${output_dir}/$options->{species}_recorded_sl.tsv";
+    my $jname = qq"$options->{jprefix}SLSeq_$options->{species}";
+    my $jstring = qq!use Bio::Adventure::Splicing;
+my \$result = \$h->Bio::Adventure::Splicing::SLSeq_Recorder_Worker(
+  gff_type => '$options->{gff_type}',
+  id_tag => '$options->{id_tag}',
+  input => '$options->{input}',
+  jname => '${jname}',
+  output => '${output_gff}',
+  output_tsv => '${output_tsv}',
+  output_dir => '${output_dir}',
+  output_type => '$options->{output_type}',
+  species => '$options->{species}',);
+!;
+    my $comment = qq!## Seek SL positions.!;
+    my $slseq = $class->Submit(
+        comment => $comment,
+        input => $options->{input},
+        jdepends => $options->{jdepends},
+        jname => $jname,
+        jprefix => '40',
+        jstring => $jstring,
+        output => $output_gff,
+        output_dir => $output_dir,
+        output_tsv => $output_tsv,
+        language => 'perl',);
+    return($slseq);
+}
+
+sub SLSeq_Recorder_Worker {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['species', 'input',],
+        gff_type => 'protein_coding_gene',
+        output_type => 'SLSeq_5pUTR',
+        gff_tag => 'ID',);
+    my $input_gff = qq"$options->{libpath}/$options->{libtype}/gff/$options->{species}.gff";
+    my $fasta = qq"$options->{libpath}/$options->{libtype}/fasta/$options->{species}.fasta";
     unless (-r $options->{input}) {
         die("Unable to find input bam alignment.");
     }
-    my $output_dir = qq"outputs/slseq_recorder";
+    my $output_dir = $options->{output_dir};
     make_path($output_dir) unless (-d $output_dir);
-    my $output_gff = qq"${output_dir}/$options->{species}_maximum_utr.gff";
-    my $output_sl_positions = qq"${output_dir}/$options->{species}_recorded_sl.csv";
-    my $gff_in = FileHandle->new("less $gff |");
-    my $gff_io = Bio::FeatureIO->new(-format => 'gff', -fh => $gff_in);
+    ## Set up the output filehandles:
+    ##  The output csv file.
+    my $output_csv = FileHandle->new(qq">${output_dir}/$options->{species}_recorded_sl.csv");
+    print $output_csv qq"$options->{gff_tag}\tstart\tend\tstrand\trelative_pos\tnum_reads\n";
+    ## The output gff file, this will receive individual gff strings:
+    my $gff_output_filename = qq"${output_dir}/$options->{species}_modified_genes.gff";
+    my $gff_out = FileHandle->new(">${gff_output_filename}");
+    ## Use Bio::Tools::GFF to create the gff strings.
+    my $gffout_io = Bio::Tools::GFF->new(-noparse => 1, -gff_version => 3);
+    ## The log file:
+    my $log_file = qq"${output_dir}/slseq_recorder.log";
+    my $log = FileHandle->new(">${log_file}");
+    print "Starting SLSeq Recorder, reading $options->{gff_tag} tags from $options->{gff_type}
+entries of ${input_gff}.
+Writing results to ${gff_output_filename}.\n";
+    my ($counters, $observed) = Bio::Adventure::Parsers::Count_Extract_GFF(
+        gff => $input_gff, log => $log,
+        gff_type => $options->{gff_type},
+        gff_tag => $options->{gff_tag},);
+    print $log "Beginning to read alignments from: $options->{input}.\n";
+    my $sam = Bio::DB::Sam->new(-bam => $options->{input},
+                                -fasta => ${fasta},);
+    my @targets = $sam->seq_ids;
+    my $num = scalar(@targets);
+    my $bam = Bio::DB::Bam->open($options->{input});
+    my $header = $bam->header;
+    my $target_count = $header->n_targets;
+    my $target_names = $header->target_name;
+    my $align_count = 0;
+    my $million_aligns = 0;
+    my $alignstats = qx"samtools idxstats $options->{input}";
+    my @alignfun = split(/\n/, $alignstats);
+    my @aligns = split(/\t/, $alignfun[0]);
+    my @unaligns = split(/\t/, $alignfun[1]);
+    my $number_reads = $aligns[2] + $unaligns[3];
+    my $output_name = qq"$options->{input}.txt";
+    my $summary_string = qq"There are ${number_reads} alignments in $options->{input}.
+There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
+    print $summary_string;
+    my $new_contig = 'start';
+    my $previous_contig = 'start';
+  BAMLOOP: while (my $align = $bam->read1) {
+        $counters->{reads}++;
+        ## last BAMLOOP if ($counters->{quantified_reads} > 10000);
+        my $read_seqid = $target_names->[$align->tid];
+        ## my $start = $align->pos + 1;
+        ## my $end = $align->calend;
+        my $read_start = $align->pos;
+        my $read_end = $align->calend - 1;
+        my $read_strand = $align->strand;
+        if (!defined($read_strand)) {
+            $counters->{unstranded_reads}++;
+        } elsif ($read_strand eq '1') {
+            $counters->{plus_reads}++;
+        } elsif ($read_strand eq '-1') {
+            $counters->{minus_reads}++;
+        } else {
+            $counters->{notplusminus_reads}++;
+        }
+        ##my $read_seq = $align->query->dna;
+        ##my $read_qual = $align->qual;
+        ##my $read_pairedp = $align->paired;
+        my $read_unmappedp = $align->unmapped;
+        if ($read_unmappedp) {
+            $counters->{unmapped_reads}++;
+        }
+        my $read_mate_unmappedp = $align->munmapped;
+        ##my $read_reversedp = $align->reversed;
+        ##my $read_mate_reversedp = $align->mreversed;
+        ##my $read_mate_id = $align->mtid;
+        ##my $read_mate_start = $align->mpos;
+        ##my $read_properp = $align->proper_pair;
+        if ($read_unmappedp && $read_mate_unmappedp) {
+            $counters->{unmapped_pairs}++;
+            next BAMLOOP;
+        }
+        my @tags = $align->get_all_tags;
+        ##my $score_ref = $align->qscore;
+        ##my $cigar = $align->cigar_str;
+        my $not_primaryp = $align->get_tag_values('NOT_PRIMARY');
+        unless ($not_primaryp) {
+            $counters->{primary_reads}++;
+        }
+        my $supplementalp = $align->get_tag_values('SUPPLEMENTARY');
+        if ($supplementalp) {
+            $counters->{supplemental_reads}++;
+            next BAMLOOP;
+        }
+        if ($not_primaryp) {
+            $counters->{secondary_reads}++;
+            next BAMLOOP;
+        }
+        if ($read_seqid ne $new_contig) {
+            print "Starting new contig: ${read_seqid}\n";
+            $previous_contig = $new_contig;
+            if ($previous_contig ne 'start') {
+                print "Writing data for ${previous_contig}\n";
+                Write_SLData(observed => $observed,
+                             contig => $previous_contig,
+                             output_csv => $output_csv,
+                             gff_tag => $options->{gff_tag},
+                             gffio => $gffout_io,
+                             gff_out => $gff_out,);
+            }
+            $new_contig = $read_seqid;
+        }
+        ## If the read strand is +1, then I want it associated with a feature on the +1 with a start which is > this read start.
+        ## If the read strand is -1, then I want it associated with a feature on the -1 with a end which is < this read end.
+        my $num_features = undef;
+        my $type = ref($observed->{$read_seqid});
+        my $test_features = scalar(@{$observed->{$read_seqid}}) - 1;
+        if (defined($test_features)) {
+            unless (defined($num_features)) {
+                $num_features = $test_features;
+            }
+        } else {
+            $counters->{nogene_contigs}++;
+            print "There appear to be no features for ${read_seqid}\n";
+            next BAMLOOP;
+        }
+        my $checker = 0;
+      FEAT_SEARCH: for my $c (0 .. $num_features) {
+            my $checker++;
+            my $current_feat = $observed->{$read_seqid}[$c];
+            my $current_tag = $current_feat->{primary_tag};
+            my $current_start = $current_feat->{start};
+            my $current_end = $current_feat->{end};
+            my $current_strand = $current_feat->{strand};
+            my $next_distance = $current_feat->{next_distance};
+            my $next_start = $current_feat->{next_start};
+            my $next_strand = $current_feat->{next_strand};
+            my $current_name = $current_feat->{gene_name};
+            last FEAT_SEARCH if ($checker > $num_features);
+            if (!defined($current_strand)) {
+                print $log "In feature search, somehow strand is undefined for: ${current_name}\n";
+                next FEAT_SEARCH;
+            }
+            if ($current_strand eq $read_strand &&
+                $current_start <= $read_start &&
+                $current_end > $read_start) {
+                $counters->{same_strand_in_gene}++;
+                next BAMLOOP;
+            }
+            ## Handle the (rare) case where reads are after a + strand gene and
+            ## before a - strand gene
+            if ($current_strand eq '1' &&
+                $current_end < $read_start &&
+                $next_strand eq '-1' &&
+                $next_start > $read_start) {
+                print "Contig:${read_seqid} Str:${current_strand} St:${read_start} vs. last end:${current_end} next start:${next_start}, unannotated ORF?\n";
+                $counters->{unannotated_read}++;
+                next BAMLOOP;
+            }
+            ## Sadly, I do not think I can exclude the opposite orientation,
+            ## if the current feature is -1 and the next is +1, then the current reads
+            ## may be associated with both
+
+            next FEAT_SEARCH if (!defined($current_strand));
+
+            if ($current_strand ne $read_strand &&
+                $next_strand ne $read_strand) {
+                $counters->{opposite_strand}++;
+                next BAMLOOP;
+            }
+            if ($read_strand eq '1') {
+                my $relative_position = $current_start - $read_start;
+                next FEAT_SEARCH if ($relative_position >= $next_distance);
+                if ($current_start > $read_start) {
+                    $counters->{quantified_reads}++;
+                    ## print "Got a +1 hit: $counters->{quantified_reads}\n";
+                    if (defined($observed->{$read_seqid}[$c]->{observed}->{$relative_position})) {
+                        $observed->{$read_seqid}[$c]->{observed}->{$relative_position}++;
+                    } else {
+                        $observed->{$read_seqid}[$c]->{observed}->{$relative_position} = 1;
+                    }
+                    if ($relative_position > $observed->{$read_seqid}[$c]->{most_upstream}) {
+                        $observed->{$read_seqid}[$c]->{most_upstream} = $relative_position;
+                    }
+                    last FEAT_SEARCH;
+                } else {
+                    next FEAT_SEARCH;
+                }
+            } elsif ($read_strand eq '-1') {
+                my $relative_position = $read_end - $current_end;
+                next FEAT_SEARCH if ($relative_position >= $next_distance);
+                if ($current_end < $read_end) {
+                    $counters->{quantified_reads}++;
+                    ## print "Got a -1 hit: $counters->{quantified_reads}\n";
+                    if (defined($observed->{$read_seqid}[$c]->{observed}->{$relative_position})) {
+                        $observed->{$read_seqid}[$c]->{observed}->{$relative_position}++;
+                    } else {
+                        $observed->{$read_seqid}[$c]->{observed}->{$relative_position} = 1;
+                    }
+                    if ($relative_position > $observed->{$read_seqid}[$c]->{most_upstream}) {
+                        $observed->{$read_seqid}[$c]->{most_upstream} = $relative_position;
+                    }
+                    last FEAT_SEARCH;
+                } else {
+                    next FEAT_SEARCH;
+                }
+            } else { ## End checking the - strand
+                print "What what? Neither +1 nor -1: $read_strand\n";
+                next BAMLOOP;
+            }
+        } ## End iterating over every feature
+    } ## End iterating over the alignments
+    print "Writing data for ${new_contig}\n";
+    Write_SLData(observed => $observed,
+                 contig => $new_contig,
+                 output_csv => $output_csv,
+                 gff_tag => $options->{gff_tag},
+                 gffio => $gffout_io,
+                 gff_out => $gff_out,);
+    use Data::Dumper;
+    print Dumper $counters;
+    $gff_out->close();
+    $log->close();
+    return($observed);
 }
+
+sub Write_SLData {
+    my %args = @_;
+    my $observed = $args{observed};
+    my $contig = $args{contig};
+    my $output_csv = $args{output_csv};
+    my $gff_tag = $args{gff_tag};
+    my $gffio = $args{gffio};
+    my $gff_out = $args{gff_out};
+    my $observed_genes = scalar(@{$observed->{$contig}}) - 1;
+    for my $c (0 .. $observed_genes) {
+        my $feat_info = $observed->{$contig}[$c];
+        my $observations = $feat_info->{observed};
+        my @observed_positions = keys %{$observations};
+        my $gene_name = $feat_info->{gene_name};
+        my $gene_start = $feat_info->{start};
+        my $new_start = $gene_start;
+        my $gene_end = $feat_info->{end};
+        my $new_end = $gene_end;
+        my $gene_strand = $feat_info->{strand};
+        my $farthest = 0;
+        my $num_positions = scalar(@observed_positions);
+        if ($num_positions > 0) {
+            for my $obs (sort {$a <=> $b } @observed_positions) {
+                $farthest = $obs;
+                print $output_csv qq"${gene_name}\t${gene_start}\t${gene_end}\t${gene_strand}\t${obs}\t$observations->{$obs}\n";
+            }
+            if ($gene_strand eq '1') {
+                $new_start = $gene_start - $farthest;
+                $new_end = $gene_start;
+            } elsif ($gene_strand eq '-1') {
+                $new_start = $gene_end;
+                $new_end = $gene_end + $farthest;
+            } else {
+                die("This should not happen, neither +1/-1.\n");
+            }
+            if ($new_start < 0) {
+                print "This is a failed entry: $contig $gene_name with start: $new_start\n";
+                $new_start = 0;
+            }
+            my $standardized = Bio::SeqFeature::Generic->new(
+                -primary_tag => 'SLSeq_gene',
+                -display_name => $gene_name,
+                -seq_id => $contig,
+                -start => $new_start,
+                -end => $new_end,
+                -strand => $gene_strand,
+                -score => 0,
+                -tag => {
+                    $gff_tag => $gene_name,
+                    inference => 'SLSeq',
+                    old_start => $gene_start,
+                    old_end => $gene_end,
+                });
+            my $gff_string = $gffio->gff_string($standardized);
+            print $gff_out "${gff_string}\n";
+        }
+    }
+}
+
 
 =head2 C<SL_UTR>
 
@@ -796,7 +1373,7 @@ in the file(s): $options->{input}.\n";
     ## and for the per-input outputs.  Create a couple of global counters.
 
     my %global_search_result = (
-        found => 0,     ## The total number of observed SL.
+        found => 0,         ## The total number of observed SL.
         fwd_found => 0, ## The number found in the forward orientation.
         rc_found => 0,  ## The number of revcomp found.
         searched => 0); ## The total number of sequences searched.
@@ -823,7 +1400,7 @@ in the file(s): $options->{input}.\n";
             polya_fwd_found => 0,
             polya_rc_found => 0,
             searched => 0);
-        my $reader = FileHandle->new("less ${i} |");
+        my $reader = Bio::Adventure::Get_FH(input => $i);
         my $seqio = Bio::SeqIO->new(-format => $format, -fh => $reader);
       FSA: while (my $seq = $seqio->next_seq) {
             $ind_search_result{searched}++;
@@ -832,15 +1409,14 @@ in the file(s): $options->{input}.\n";
             my $read_seq = $seq->seq;
             my $fwd_end = undef;
             if ($read_seq =~ m/$sl_fwd_search/g) {
-                print "TESTME: Found forward SL: $read_seq\n";
                 $ind_search_result{sl_fwd_found}++;
                 $fwd_end = pos($read_seq);
                 my $new_read = $read_seq;
                 $new_read =~ s/^.*$sl_fwd_search//g;
                 print $output_sl_reads ">${seq_id} fwd
 $new_read\n";
-            } elsif ($read_seq =~ m/$polya_fwd_search/g) {
-                print "TESTME: Found forward polyA: $read_seq\n";
+            }
+            elsif ($read_seq =~ m/$polya_fwd_search/g) {
                 $ind_search_result{polya_fwd_found}++;
                 $fwd_end = pos($read_seq);
                 my $new_read = $read_seq;
@@ -850,7 +1426,6 @@ $new_read\n";
             }
             my $rc_end = undef;
             if ($read_seq =~ m/^.*$sl_rc_search/g) {
-                print "TESTME: Found reverse SL: $read_seq\n";
                 $ind_search_result{sl_rev_found}++;
                 $rc_end = pos($read_seq);
                 my $new_read = reverse($read_seq);
@@ -858,8 +1433,8 @@ $new_read\n";
                 $new_read =~ s/^.*$sl_fwd_search//g;
                 print $output_sl_reads ">${seq_id} rev
 ${new_read}\n";
-            } elsif ($read_seq =~ m/^.*$polya_rc_search/g) {
-                print "TESTME: Found reverse polya: $read_seq\n";
+            }
+            elsif ($read_seq =~ m/^.*$polya_rc_search/g) {
                 $ind_search_result{polya_rev_found}++;
                 $rc_end = pos($read_seq);
                 my $new_read = reverse($read_seq);
@@ -890,7 +1465,7 @@ ${new_read}\n";
                 $global_search_result{found}++;
                 $global_search_result{rc_found}++;
             }
-        }  ## End reading the input fastq/fasta file.
+        }                   ## End reading the input fastq/fasta file.
 
         print $log_fh qq"
 ${ind_name} results:
@@ -909,7 +1484,5 @@ Total results:
   reverse-complement observed: $global_search_result{rc_found}\n";
     $log_fh->close();
 }
-
-
 
 1;

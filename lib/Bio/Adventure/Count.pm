@@ -803,14 +803,14 @@ sub Jellyfish {
     my $inputs = $class->Get_Paths($options->{input});
     my $cwd_name = basename(cwd());
     my $output_dir = qq"outputs/$options->{jprefix}jellyfish_${cwd_name}";
-
-    my $input_string = qq"<(less $options->{input})";
+    my $input_string = $class->Get_FD(input => $options->{input});
     if ($options->{input} =~ /$options->{delimiter}/) {
         ## Then multiple files were provided.
         my @file_list = split(/$options->{delimiter}/, $options->{input});
         $input_string = '';
         for my $f (@file_list) {
-            $input_string .= qq"<(less $f) ";
+            my $fd = $class->Get_FD(input => $f);
+            $input_string .= qq"${fd} ";
         }
     }
 
@@ -938,7 +938,8 @@ sub Jellyfish_Matrix {
         jprefix => 19,);
     my $job_name = $class->Get_Job_Name();
     my $inputs = $class->Get_Paths($options->{input});
-    my $in = FileHandle->new("less $options->{input} |");
+    my $fc = $class->Get_FC(input => $options->{input});
+    my $in = FileHandle->new("${fc} |");
     my $counter = 1;
     my $counts = {};
     my $nmer_count = 0;
@@ -1008,12 +1009,15 @@ sub Kraken {
     my $input_string = "";
     if ($options->{input} =~ /$options->{delimiter}/) {
         my @in = split(/$options->{delimiter}/, $options->{input});
-        $input_string = qq" --paired <(less $in[0]) <(less $in[1]) ";
+        my $r1_fd = $class->Get_FD(input => $in[0]);
+        my $r2_fd = $class->Get_FD(input => $in[1]);
+        $input_string = qq" --paired ${r1_fd} ${r2_fd} ";
         if ($in[0] =~ /\.fastq$/) {
             $input_string = qq" --paired $in[0] $in[1] ";
         }
     } else {
-        $input_string = qq"<(less $options->{input}) ";
+        my $r1_fd = $class->Get_FD(input => $options->{input});
+        $input_string = qq"${r1_fd} ";
         if ($options->{input} =~ /\.fastq$/) {
             $input_string = qq" $options->{input} ";
         }

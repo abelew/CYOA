@@ -17,7 +17,7 @@ Bio::Adventure::Compress - Handle the (de/re)compression of data files.
 =head1 SYNOPSIS
 
 Some tools can handle compressed input, some cannot.  Bio::Adventure makes heavy use
-of bash subshells <(less filename) to automagically handle any format, but at times
+of bash subshells <() to automagically handle any format, but at times
 one must still decompress/recompress some data.
 
 =head1 METHODS
@@ -97,13 +97,12 @@ sub Recompress {
         my $in_base = $in->{filebase_compress};
         my $in_full = $in->{fullpath};
         my $output_file = qq"${in_dir}/${in_base}.xz";
+        my $fc = $class->Get_FC(input => $in_full);
         $output_string .= qq"${output_file}:";
         if ($in_full =~ /\.gz|\.bz2|\.zip/) {
             $jstring .= qq!
-less ${in_full} 2>${in_dir}/${in_base}_decompress.stderr 1>${in_dir}/${in_base}
-xz -9e -f ${in_dir}/${in_base}
-rm ${in_full}
-rm ${in_dir}/${in_base}_decompress.stderr!;
+${fc} | xz -9e -f > ${in_dir}/${in_base}.xz
+!;
         } else {
             $jstring .= qq!
 xz -9e -f ${in_full}

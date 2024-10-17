@@ -206,15 +206,14 @@ sub Parse_Blast {
     my $fh = FileHandle->new(">$output");
     $fh->autoflush(1);
     local $| = 0; ## I want to watch the output as it happens.
-    my $in = FileHandle->new("less ${input} |");
+    my $in = Bio::Adventure::Get_FH(input => $input);
     $XML::SAX::ParserPackage = 'XML::SAX::PurePerl';
     my $searchio = Bio::SearchIO->new(-fh => $in);
     ## Perform a test for the output format, this will close the filehandle, so reopen it after
     my $guessed_format = $searchio->format();
     print STDERR "Guessed the format is: ${guessed_format}\n";
     $in->close();
-    $in = FileHandle->new("less ${input} |");
-
+    $in = Bio::Adventure::Get_FH(input => $input);
     $searchio = Bio::SearchIO->new(-fh => $in, -format => $search_type, -best => ${best},);
     ##   if ($args{output_type} eq '0') { ## use old blast format
     ##     $searchio = new Bio::SearchIO(-format => 'blast', -fh => $in, -best => 1,);

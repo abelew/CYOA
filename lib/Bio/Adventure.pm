@@ -58,6 +58,7 @@ use Bio::Adventure::Feature_Prediction;
 use Bio::Adventure::Index;
 use Bio::Adventure::Map;
 use Bio::Adventure::Metadata;
+use Bio::Adventure::Parsers;
 use Bio::Adventure::Phage;
 use Bio::Adventure::Phylogeny;
 use Bio::Adventure::PopGen;
@@ -334,12 +335,11 @@ $VERSION = '202308';
 $COMPRESSION = 'xz';
 $XZ_OPTS = '-9e';
 $XZ_DEFAULTS = '-9e';
-$ENV{LESS} = '--buffers 0 -B';
 $ENV{PERL_USE_UNSAFE_INC} = 0;
 if (!defined($ENV{TMPDIR})) {
   $ENV{TMPDIR} = '/tmp';
 }
-my $lessopen = Get_Lesspipe();
+## my $lessopen = Get_Lesspipe();
 ## Added to test Bio:DB::SeqFeature::Store
 if (!defined($ENV{PERL_INLINE_DIRECTORY})) {
   my $filename = File::Temp::tempnam($ENV{TMPDIR}, "inline_$ENV{USER}");
@@ -614,29 +614,78 @@ sub Check_Libpath {
   return($ret);
 }
 
-=head2 C<Get_Lesspipe>
+sub Get_FC {
+    my ($class, %args);
+    if ((scalar(@_) % 2) == 1) {
+        ($class, %args) = @_;
+    } else {
+        %args = @_;
+    }
+    my $opener = $args{input};
+    if ($args{input} =~ /\.xz$/) {
+        $opener = qq"xz -dc $args{input}";
+    } elsif ($args{input} =~ /\.bz2$/) {
+        $opener = qq"bunzip2 -c $args{input}";
+    } elsif ($args{input} =~ /\.gz$/) {
+        $opener = qq"gunzip -c $args{input}";
+    } else {
+        $opener = qq"cat $args{input}";
+    }
+    return($opener);
+}
 
- Do the equivalent of $(eval lesspipe)
+sub Get_FD {
+    my ($class, %args);
+    if ((scalar(@_) % 2) == 1) {
+        ($class, %args) = @_;
+    } else {
+        %args = @_;
+    }
+    my $opener = $args{input};
+    if ($args{input} =~ /\.xz$/) {
+        $opener = qq"<(xz -dc $args{input})";
+    } elsif ($args{input} =~ /\.bz2$/) {
+        $opener = qq"<(bunzip2 -c $args{input})";
+    } elsif ($args{input} =~ /\.gz$/) {
+        $opener = qq"<(gunzip -c $args{input})";
+    }
+    return($opener);
+}
 
- On my computer, lesspipe returns:
- export LESSOPEN="| /usr/bin/lesspipe %s";
- export LESSCLOSE="/usr/bin/lesspipe %s %s";
- So, I want to split on = and pull the pieces.
-
-=cut
-sub Get_Lesspipe {
-  my $lesspipe = FileHandle->new("lesspipe |");
-  my $result = {};
-  while (my $line = <$lesspipe>) {
-    chomp $line;
-    my ($var, $string) = split(/=/, $line);
-    $var =~ s/export\s+//g;
-    $string =~ s/"|\;//g;
-    $ENV{$var} = $string;
-    $result->{$var} = $string;
-  }
-  $lesspipe->close();
-  return($result);
+sub Get_FH {
+    my ($class, %args);
+    if ((scalar(@_) % 2) == 1) {
+        ($class, %args) = @_;
+    } else {
+        %args = @_;
+    }
+    my $opener = undef;
+    if ($args{input} =~ /\.xz$/) {
+        $opener = 'xz -dc';
+    } elsif ($args{input} =~ /\.bz2$/) {
+        $opener = 'bunzip2 -c';
+    } elsif ($args{input} =~ /\.gz$/) {
+        $opener = 'gunzip -c';
+    }
+    my $fh;
+    my $cmd;
+    if (defined($opener)) {
+        $cmd = $opener;
+        if ($args{suffix}) {
+            $cmd .= qq" $args{input} $args{suffix} |";
+        } else {
+            $cmd .= qq" $args{input} |";
+        }
+    } else {
+        if ($args{suffix}) {
+            $cmd = qq"cat $args{input} $args{suffix} |";
+        } else {
+            $cmd = qq"<$args{input}";
+        }
+        $fh = FileHandle->new($cmd);
+        }
+    $fh = FileHandle->new($cmd);
+    return($fh);
 }
 
 =head2 C<Get_Paths>
@@ -1417,8 +1466,7 @@ file is not needed.
 =cut
 sub Submit {
   my ($class, %args) = @_;
-  my $options = $class->Get_Vars(
-                                 args => \%args);
+  my $options = $class->Get_Vars(args => \%args);
   my %modules = Get_Modules(caller => 2);
   my $loaded = $class->Module_Loader(%modules);
   my $modulecmd_check = $class->{modulecmd};
@@ -1462,20 +1510,7 @@ module add ';
   ## in order to get them passed to the eventual interpreter
   my $option_file = '';
   if ($options->{language} eq 'perl') {
-    my $option_directory;
-    if (defined($options->{output_dir})) {
-      $option_directory = $options->{output_dir}
-    } elsif (defined($options->{output})) {
-      $option_directory = dirname($options->{output});
-    } elsif (defined($options->{stdout})) {
-      $option_directory = dirname($options->{stdout});
-    } elsif (defined($options->{stderr})) {
-      $option_directory = dirname($options->{stderr});
-    } elsif (defined($options->{input})) {
-      $option_directory = dirname($options->{input});
-    } else {
-      $option_directory = $options->{basedir}
-    }
+    my $option_directory = cwd() . qq"/$class->{logdir}";
     if (!-d $option_directory) {
       my $created = make_path($option_directory);
     }
@@ -1487,10 +1522,10 @@ module add ';
       my $jname = 'unknown';
       $jname = $options->{jname} if (defined($options->{jname}));
       $option_file = File::Temp->new(
-                                     TEMPLATE => qq"${jname}XXXX",
-                                     DIR => $option_directory,
-                                     UNLINK => 0,
-                                     SUFFIX => '.pdata',);
+          TEMPLATE => qq"${jname}XXXX",
+          DIR => $option_directory,
+          UNLINK => 0,
+          SUFFIX => '.pdata',);
       my $option_filename = $option_file->filename;
       $options->{option_file} = $option_filename;
       $class->{option_file} = $option_filename;

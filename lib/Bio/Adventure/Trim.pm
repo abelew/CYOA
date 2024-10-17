@@ -13,6 +13,8 @@ use File::ShareDir qw":ALL";
 use File::Spec;
 use File::Temp qw":POSIX";
 use File::Which qw"which";
+use FileHandle;
+use Bio::SeqIO;
 
 =head1 NAME
 
@@ -154,14 +156,15 @@ sub Cutadapt {
     my $stdout = qq"${out_dir}/cutadapt.stdout";
     my $type_flag = '';
     my $out_suffix = 'fastq';
-    my $input_flags = qq"less ${input} | cutadapt - ";
+    my $input_fc = Bio::Adventure::Get_FC(input => $input);
+    my $input_flags = qq"${input_fc} | cutadapt - ";
     if ($input =~ /\.csfasta/) {
         $type_flag = '-c -t --strip-f3';
         $options = $class->Get_Vars(
             args => \%args,
             required => ['qual'],
         );
-        $input_flags = qq"less ${input} | cutadapt - $options->{qual} "; ## If we are keeping quality files
+        $input_flags = qq"${input_fc} | cutadapt - $options->{qual} "; ## If we are keeping quality files
         $out_suffix = 'fastq';
     }
     my $minarg = '';
@@ -295,8 +298,7 @@ xz -9e -f ${too_long}
  * -w/--thread # threads
  * -s/--split/-S/--split_by_lines/-d/--spit_prefix_digits Splitting output file stuff
 
-One note: it appears that fastp is unable to successfully read from a bash subshell:
-   <(less file.fastq.gz)
+One note: it appears that fastp is unable to successfully read from a bash subshell: <()
 
 =cut
 sub Fastp {
@@ -371,6 +373,133 @@ fastp ${umi_flags} ${input_flags} \\
     return($fastp);
 }
 
+sub PolyA_Extractor {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        min_A => 10,
+        min_seq => 10,
+        jmem => 24,
+        jprefix => '10',
+        jwalltime => '40:00:00',
+        output => qq"outputs/10polyA_extracted/polyA_reads.fastq",
+        required => ['input', ],);
+    my $job_name = $class->Get_Job_Name();
+    my $output_dir;
+    my $final_output;
+    if (defined($options->{output})) {
+        $output_dir = dirname($options->{output});
+        $final_output = $options->{output};
+    } else {
+        $output_dir = qq"outputs/$options->{jprefix}polyA_extracted";
+        $final_output = qq"${output_dir}/poyA_reads.fastq";
+    }
+    my $paths = $class->Get_Paths($final_output);
+    my @inputs = ();
+    if ($options->{input} =~ /$options->{delimiter}/) {
+        @inputs = split(/$options->{delimiter}/, $options->{input});
+    } else {
+        push(@inputs, $options->{input});
+    }
+    my $stdout = qq"${output_dir}/polyA_reads.stdout";
+    my $stderr = qq"${output_dir}/polyA_reads.stderr";
+    my $comment = qq"## Extract polyA reads from a sequencing file. This currently assumes an unstranded library.";
+    my $polyA;
+    for my $input_file (@inputs) {
+        my $jstring = qq!
+use Bio::Adventure;
+use Bio::Adventure::Trim;
+my \$result = Bio::Adventure::Trim::PolyA_Extractor_Worker(\$h,
+  input => '${input_file}',
+  jname => 'polyAextract',
+  jprefix => '$options->{jprefix}',
+  min_A => '$options->{min_A}',
+  min_seq => '$options->{min_seq}',
+  output => '${final_output}',
+  output_dir => '${output_dir}',);
+!;
+        $polyA = $class->Submit(
+            comment => $comment,
+            input => $input_file,
+            jdepends => $options->{jdepends},
+            jmem => $options->{jmem},
+            jname => 'polyAextract',
+            jprefix => $options->{jprefix},
+            jstring => $jstring,
+            language => 'perl',
+            min_A => $options->{min_A},
+            min_seq => $options->{min_seq},
+            output => $final_output,
+            output_dir => $output_dir,
+            stdout => $stdout,
+            stderr => $stderr,);
+        $options->{jdepends} = $polyA->{job_id};
+    }
+    return($polyA);
+}
+
+sub PolyA_Extractor_Worker {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        length => 1000000,
+        jmem => 24,
+        jprefix => '10',
+        jwalltime => '40:00:00',
+        min_A => 10,
+        min_seq => 10,
+        required => ['input', ],);
+    my $out_fh = FileHandle->new(">>$options->{output}");
+    my $out_seq = Bio::SeqIO->new(-fh => $out_fh, -format => 'Fastq');
+    my $log_dir = dirname($options->{stdout});
+    my $log_name = basename($options->{stdout}, ('.stdout'));
+    my $log = FileHandle->new(">>${log_dir}/${log_name}.log");
+    my $reads_counted = 0;
+    my $reads_written = 0;
+    print $log "Starting to process: $options->{input}\n";
+    my $fh = $class->Get_FH(input => $options->{input});
+    my $in_seq = Bio::SeqIO->new(-fh => $fh, -format => 'Fastq');
+    my %info = (
+        reads_counted => 0,
+        reads_written => 0,);
+  FQ: while (my $seq = $in_seq->next_seq) {
+        $info{reads_counted}++;
+        ##print $log "$info{reads_counted}\n";
+        my $id = $seq->id;
+        my $sequence = $seq->seq;
+        ##print $log "SEQ: $sequence\n";
+        my $len = $seq->length;
+        my $match_begin = undef;
+        my $new_seq = '';
+        if ($sequence =~ /A{$options->{min_A},}$/) {
+            $match_begin = $-[0];
+        } elsif ($sequence =~ /^T{$options->{min_A},}/) {
+            $seq = $seq->revcom;
+            $sequence = $seq->seq;
+            $match_begin = $len - $+[0];
+        } else {
+            ##print $log "No match.\n";
+            next FQ;
+        }
+        if ($match_begin < $options->{min_seq}) {
+            ## Too much polyA
+            ##print $log "Matched but Too short.\n";
+            next FQ;
+        }
+        $new_seq = $seq->trunc(1, $match_begin);
+        $info{reads_written}++;
+        ##print $log "Writing a sequence.\n";
+        my $written = $out_seq->write_seq($new_seq);
+    } ## End iterating over every sequence.
+    ##$in_fh->close();
+    ##close(INFH);
+    $fh->close();
+    print $log "Counted: ${reads_counted} and wrote: ${reads_written} reads.\n";
+    $log->close();
+    $out_fh->close();
+    return(\%info);
+}
+
 =head2 C<Racer>
 
  Use the RACER command from hitec to correct sequencer-based errors.
@@ -411,7 +540,8 @@ sub Racer {
         my $name = File::Temp::tempnam($output_dir, 'racer');
         my $output = qq"${output_dir}/$base_list[$c]-corrected.fastq";
         if ($decompress_input) {
-            $jstring .= qq"less $input_list[$c] > ${name}.fastq\n";
+            my $input_fc = Bio::Adventure::Get_FC(input => $input_list[$c]);
+            $jstring .= qq"${input_fc} > ${name}.fastq\n";
         } else {
             $jstring .= qq!ln -sf "\$(pwd)"/$input_list[$c] ${name}.fastq\n!;
         }
@@ -547,7 +677,9 @@ sub Trimomatic_Pairwise {
     $r2b = basename($r2b, @suff);
     my $reader = qq"${r1} ${r2}";
     if ($r1 =~ /\.fastq\.xz$/) {
-        $reader = qq"<(less ${r1}) <(less ${r2})";
+        my $r1_fd = $class->Get_FD(input => $r1);
+        my $r2_fd = $class->Get_FD(input => $r2);
+        $reader = qq"${r1_fd} ${r2_fd}";
     }
     my $r1o = qq"${r1b}-trimmed.fastq";
     my $r1op = qq"${r1b}-trimmed_paired.fastq";
@@ -714,11 +846,12 @@ sub Trimomatic_Single {
 ## The original sequence data is recompressed and saved in the sequences/ directory.!;
     my $stdout = qq"${output_dir}/${basename}-trimomatic.stdout";
     my $stderr = qq"${output_dir}/${basename}-trimomatic.stderr";
+    my $r1_fd = $class->Get_FD(input => $input);
     my $jstring = qq!mkdir -p ${output_dir}
 ## Note that trimomatic prints all output and errors to STDERR, so send both to output
 ${exe} \\
   -phred33 \\
-  <(less ${input}) \\
+  ${r1_fd} \\
   ${output} \\
   ${leader_trim} ILLUMINACLIP:${adapter_file}:2:30:10 \\
   SLIDINGWINDOW:4:25 MINLEN:$options->{length} \\
@@ -827,7 +960,9 @@ sub Umi_Tools_Extract {
         ## I expect umi_tools has similar problems reading from an anonymous bash
         ## handle as per other python programs.
         if ($pair_listing[0] =~ /\.[x|b]z$/) {
-            $umi_input = qq"-I <(less $pair_listing[0]) --read2-in <(less $pair_listing[1])";
+            my $r1_fd = $class->Get_FD(input => $pair_listing[0]);
+            my $r2_fd = $class->Get_FD(input => $pair_listing[1]);
+            $umi_input = qq"-I ${r1_fd} --read2-in ${r2_fd}";
             $umi_output = qq"-S $paths->{output_dir}/r1_extracted.fastq.gz --read2-out $paths->{output_dir}/r2_extracted.fastq.gz";
         } else {
             $umi_input = qq"-I $pair_listing[0] --read2-in $pair_listing[1]";
@@ -839,7 +974,8 @@ sub Umi_Tools_Extract {
         $test_file = File::Spec->rel2abs($options->{input});
         if ($test_file =~ /\.[x|b]z$/) {
             ## It is noteworthy that I modified hisat2 on my computer so this is never necessary.
-            $umi_input = qq" -I <(less ${test_file})";
+            my $r1_fd = $class->Get_FD(input => $test_file);
+            $umi_input = qq" -I ${r1_fd}";
         }
 
     }

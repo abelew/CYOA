@@ -314,6 +314,108 @@ sub Get_Aragorn {
     return(\@aragorn_features);
 }
 
+sub Get_Metadata_Column {
+    my ($class, %args) = @_;
+    my $input = $args{input};
+    my $wanted_sheet = $args{sheet};
+    $wanted_sheet = 1 unless ($wanted_sheet);
+    my $condition_column = $args{condition_column};
+    my $wanted_column = $args{wanted_column};
+    my $type = $args{type};
+    $type = 'file' unless ($type);
+    ## The following few lines read in the sample sheet and extract
+    ## the samples associated with each experimental condition.
+    ## Reminder to self: if the various spreadsheet reader modules are
+    ## not installed, this just returns a somewhat unhelpful undef.
+    my $reader = Spreadsheet::Read->new($input);
+    my $sheet = $reader->sheet($wanted_sheet);
+    ## Strangely, Spreadsheet::Read only uses numeric values for columns, so grab the first row
+    ## and get the number of my column from it...
+    my $wanted_number = undef;
+    my $condition_number = undef;
+    my $numeric_condition = Scalar::Util::looks_like_number($condition_column);
+    my $numeric_file = Scalar::Util::looks_like_number($wanted_column);
+    if ($numeric_condition) {
+        $condition_number = $condition_column;
+    }
+    if ($numeric_file) {
+        $wanted_number = $wanted_column;
+    }
+    if (!defined($condition_number) && !defined($wanted_number)) {
+        my @column_names = $sheet->cellrow(1);
+        my $count = 0;
+      COLUMNS: for my $name (@column_names) {
+            $count++;
+            if ($name eq $wanted_column) {
+                print "Found ${wanted_column} as number: ${count}\n";
+                $wanted_number = $count;
+            }
+            if ($name eq $condition_column) {
+                print "Found ${condition_column} as number: ${count}\n";
+                $condition_number = $count;
+            }
+        }
+    }
+
+    ## Keep in mind that cellcolumn is 1-indexed and it provides an
+    ## array which includes the header as the first element.  Thus if
+    ## I want the sample IDs, I pull cellcolumn(1) and if I do not
+    ## want to include the header (which I don't), I will need to
+    ## shift (or just skip it) the first element off the result.
+    ## Either way, I want arrays containing the sample IDs, filenames,
+    ## and conditions.
+    my @samplenames = $sheet->cellcolumn(1);
+    shift @samplenames;
+    my @wanted_names = $sheet->cellcolumn($wanted_number);
+    my $wanted_heading = shift @wanted_names;
+    my @conditions = $sheet->cellcolumn($condition_number);
+    my $condition_heading = shift @conditions;
+    ## Map samples to files and conditions
+    my %samples_to_wanted = ();
+    my %samples_to_conditions = ();
+    ## Mape conditions to lists of samples/files.
+    my %wanted_by_condition = ();
+    my %samples_by_condition = ();
+    my $sample_count = -1;
+    my %group_strings = ();
+  SAMPLENAMES: for my $s (@samplenames) {
+        $sample_count++;
+        my $f = $wanted_names[$sample_count];
+        my $cond = $conditions[$sample_count];
+        if (!defined($s)) {
+            print "The samplename at row ${sample_count} is not defined, skipping it.\n";
+            next SAMPLENAMES;
+        }
+        if (!defined($f)) {
+            print "This sample: ${s} is not defined, skipping it.\n";
+            next SAMPLENAMES;
+        }
+        if ($type eq 'file' && !-r $f) {
+            print "The file for ${s} is not readable, skipping it.\n";
+            next SAMPLENAMES;
+        }
+        $samples_to_wanted{$s} = $f;
+        $samples_to_conditions{$s} = $cond;
+        print "Working on ${cond}\n";
+        my @cond_samples = ();
+        my @cond_wanted = ();
+        if (defined($wanted_by_condition{$cond})) {
+            @cond_wanted = @{$wanted_by_condition{$cond}};
+            @cond_samples = @{$samples_by_condition{$cond}};
+        }
+        push(@cond_wanted, $f);
+        push(@cond_samples, $s);
+        $wanted_by_condition{$cond} = \@cond_wanted;
+        $samples_by_condition{$cond} = \@cond_samples;
+    } ## End iterating over the samples
+    my $ret = {
+        wanted => $wanted_column,
+        wanted_by_cond => \%wanted_by_condition,
+        samples_by_cond => \%samples_by_condition
+    };
+    return($ret);
+}
+
 =head2 C<Kraken_Accession>
 
  Parse the kraken_report text file.
@@ -344,9 +446,12 @@ sub Kraken_Best_Hit {
     my $input_string = "";
     if ($options->{input} =~ /$options->{delimiter}/) {
         my @in = split(/$options->{delimiter}/, $options->{input});
-        $input_string = qq" --paired <(less $in[0]) <(less $in[1]) ";
+        my $r1_fd = $class->Get_FD(input => $in[0]);
+        my $r2_fd = $class->Get_FD(input => $in[1]);
+        $input_string = qq" --paired ${r1_fd} ${r2_fd} ";
     } else {
-        $input_string = qq"<(less $options->{input}) ";
+        my $r1_fd = $class->Get_FD(input => $options->{input});
+        $input_string = qq"${r1_fd} ";
     }
     my $comment = qq!## This is a kraken2 submission script
 !;
@@ -698,7 +803,7 @@ gbf: ${output_gbf}, tbl: ${output_tbl}, xlsx: ${output_xlsx}.\n";
     ## While I am reading the information from the existing genbank file, grab the sequences out
     ## and send them to the merged data so that I can write the starts/ends/strands/sequences.
     print $log_fh "Reading genbank file $options->{input_genbank} to acquire features.\n";
-    my $in = FileHandle->new("less $options->{input_genbank} |");
+    my $in = Bio::Adventure::Get_FH(input => $options->{input_genbank});
     my $seqio = Bio::SeqIO->new(-format => 'genbank', -fh => $in);
     my $seq_count = 0;
     my $total_nt = 0;
@@ -1121,7 +1226,7 @@ sub Merge_Prodigal {
     my (%args) = @_;
     my $primary_key = $args{primary_key};
     my $merged_data = $args{output};
-    my $in = FileHandle->new("less $args{input} |");
+    my $in = Bio::Adventure::Get_FH(input => $args{input});
     while (my $line = <$in>) {
         chomp $line;
         my ($contig, $prod, $cds, $start, $end, $score, $strand, $phase, $tags) = split(/\t/, $line);
@@ -1149,7 +1254,7 @@ sub Merge_Glimmer {
     my (%args) = @_;
     my $primary_key = $args{primary_key};
     my $merged_data = $args{output};
-    my $in = FileHandle->new("less $args{input} |");
+    my $in = Bio::Adventure::Get_FH(input => $args{input});
     while (my $line = <$in>) {
         chomp $line;
         my ($contig, $prod, $cds, $start, $end, $score, $strand, $phase, $tags) = split(/\t/, $line);

@@ -147,6 +147,7 @@ cd \${start}
 =head2 C<Interproscan>
 
  Invoke interproscan on a set of sequences.
+ 10.1093/bioinformatics/btu031
 
  Interproscan is (I think) the gold-standard of similarity-based search
  tools.  It provides a single interface for searching against a
@@ -196,8 +197,9 @@ sub Interproscan {
 !;
     my $stdout = qq"${output_dir}/interproscan.stdout";
     my $stderr = qq"${output_dir}/interproscan.stderr";
+    my $r1_fd = $class->Get_FD(input => $abs_input);
     my $jstring = qq!mkdir -p ${output_dir}
-perl -pe 's/\\*//g' <(less ${abs_input}) > ${output_dir}/${input_uncomp}
+perl -pe 's/\\*//g' ${r1_fd} > ${output_dir}/${input_uncomp}
 start=\$(pwd)
 cd ${output_dir}
 interproscan.sh --cpu $options->{jcpu} --enable-tsv-residue-annot \\
