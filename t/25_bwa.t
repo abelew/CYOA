@@ -19,17 +19,19 @@ mkdir($new);
 chdir($new);
 
 make_path('genome/indexes'); ## Make a directory for the phix indexes.
+make_path('genome/gff');
+make_path('genome/fasta');
 if (!-r 'test_forward.fastq.gz') {
     ok(cp($input_file, 'test_forward.fastq.gz'), 'Copying data.');
 }
 
-if (!-r 'genome/phix.fasta') {
-    ok(cp($phix_fasta, 'genome/phix.fasta'), 'Copying phix fasta file.');
+if (!-r 'genome/fasta/phix.fasta') {
+    ok(cp($phix_fasta, 'genome/fasta/phix.fasta'), 'Copying phix fasta file.');
     ## my $uncompressed = qx"gunzip genome/phix.fastq.gz && mv genome/phix.fasta.gz genome/phix.fasta";
 }
 
-if (!-r 'genome/phix.gff') {
-    ok(cp($phix_gff, 'genome/phix.gff'), 'Copying phix gff file.');
+if (!-r 'genome/gff/phix.gff') {
+    ok(cp($phix_gff, 'genome/gff/phix.gff'), 'Copying phix gff file.');
     ## my $uncompressed = qx"gunzip genome/phix.gff.gz && mv genome/phix.gff.gz genome/phix.gff";
 }
 

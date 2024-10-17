@@ -13,32 +13,37 @@ my $input_file = qq"${start_dir}/test_forward.fastq.gz";
 my $phix_fasta = qq"${start_dir}/genome/phix.fasta";
 my $phix_gff = qq"${start_dir}/genome/phix.gff";
 
-
 my $start = getcwd();
 my $new = 'test_output';
 mkdir($new);
 chdir($new);
-make_path('genome/indexes'); ## Make a directory for the phix indexes.
-
-if (!-r 'test_forward.fastq.gz') {
-    ok(cp($input_file, 'test_forward.fastq.gz'), 'Copying data.');
-}
-
-if (!-r 'genome/phix.fasta') {
-    ok(cp($phix_fasta, 'genome/phix.fasta'), 'Copying phix fasta file.');
-    ## my $uncompressed = qx"gunzip genome/phix.fastq.gz && mv genome/phix.fasta.gz genome/phix.fasta";
-}
-
-if (!-r 'genome/phix.gff') {
-    ok(cp($phix_gff, 'genome/phix.gff'), 'Copying phix gff file.');
-    ## my $uncompressed = qx"gunzip genome/phix.gff.gz && mv genome/phix.gff.gz genome/phix.gff";
-}
-
 my $cyoa = Bio::Adventure->new(
     cluster => 0,
     basedir => cwd(),
     libdir => cwd(),
     stranded => 'no');
+my $paths = $cyoa->Bio::Adventure::Config::Get_Paths(species => 'phix');
+use Data::Dumper;
+print Dumper $paths;
+
+make_path('genome/indexes'); ## Make a directory for the phix indexes.
+make_path('genome/fasta');
+make_path('genome/gff');
+
+if (!-r 'test_forward.fastq.gz') {
+    ok(cp($input_file, 'test_forward.fastq.gz'), 'Copying data.');
+}
+
+if (!-r 'genome/fasta/phix.fasta') {
+    ok(cp($phix_fasta, 'genome/fasta/phix.fasta'), 'Copying phix fasta file.');
+    ## my $uncompressed = qx"gunzip genome/phix.fastq.gz && mv genome/phix.fasta.gz genome/phix.fasta";
+}
+
+if (!-r 'genome/gff/phix.gff') {
+    ok(cp($phix_gff, 'genome/gff/phix.gff'), 'Copying phix gff file.');
+    ## my $uncompressed = qx"gunzip genome/phix.gff.gz && mv genome/phix.gff.gz genome/phix.gff";
+}
+
 my $bt1 = $cyoa->Bio::Adventure::Map::Bowtie(
     input => qq"test_forward.fastq.gz",
     gff_tag => 'gene_id',

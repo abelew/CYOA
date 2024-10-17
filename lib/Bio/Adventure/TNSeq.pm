@@ -1130,7 +1130,7 @@ sub Transit_TPP {
         jwalltime => 8,
         jprefix => '61',);
     my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Paths($options->{input});
+    my $inputs = $class->Get_Path_Info($options->{input});
     my $ready = $class->Check_Input(files => $options->{input},);
     my $sleep_time = 3;
     my $libtype = 'genome';

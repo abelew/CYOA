@@ -52,7 +52,7 @@ ok(-f $stats_file, 'The hisat stats were recorded.');
 my $actual = $cyoa->Last_Stat(input => $stats_file);
 ok($actual, 'Collect Hisat Statistics');
 
-my $expected = qq"hisat2_phix_genome_test_output.stderr,10000,49,9951,0";
+my $expected = qq"hisat_phix_genome_test_output.stderr,10000,49,9951,0";
 unless(ok($expected eq $actual, 'Are the hisat stats as expected?')) {
     my ($old, $new) = diff($expected, $actual);
     diag("--Expected--\n${old}\n--Actual--\n${new}\n");

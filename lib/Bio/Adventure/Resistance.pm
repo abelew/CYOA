@@ -42,7 +42,7 @@ sub Abricate {
     $identity = $options->{identity} if (defined($options->{identity}));
 
     my $job_name = $class->Get_Job_Name();
-    my $input_paths = $class->Get_Paths($options->{input});
+    my $input_paths = $class->Get_Path_Info($options->{input});
     my $input_dir = $input_paths->[0]->{dirname};
     my $input_ext = $input_paths->[0]->{filebase_extension};
     my $input_name;

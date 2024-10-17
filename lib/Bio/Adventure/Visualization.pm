@@ -46,7 +46,7 @@ sub CGView {
         imagemap => 0,);
     my $job_name = $class->Get_Job_Name();
     ## Reminder, this gives me: filename, directory, dirname, fullpath
-    my $job_paths = $class->Get_Paths($options->{input});
+    my $job_paths = $class->Get_Path_Info($options->{input});
     my $job_filename = $job_paths->[0]->{filename};
     my $output_directory = qq"outputs/$options->{jprefix}cgview";
     my $output_base = basename($job_filename, ('.gbk'));

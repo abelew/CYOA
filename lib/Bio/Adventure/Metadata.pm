@@ -136,7 +136,7 @@ sub Generate_Samplesheet {
         type => 'rnaseq',
         jmem => 12,);
     my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Paths($options->{input});
+    my $inputs = $class->Get_Path_Info($options->{input});
     my $cwd_name = basename(cwd());
     my $output_filename = basename($options->{input}, ('.xlsx', '.tsv', '.csv'));
     my $output_dir = dirname($options->{input});
@@ -1483,7 +1483,7 @@ sub BT1_Stats {
         jmem => 1,
         required => ['input']);
     my $bt_input = $options->{input};
-    my $paths = $class->Get_Paths($bt_input);
+    my $paths = $class->Get_Path_Info($bt_input);
     my $bt_type = '';
     $bt_type = $options->{bt_type} if ($options->{bt_type});
     my $jname = 'stats';
@@ -1541,7 +1541,7 @@ sub BT2_Stats {
         jmem => 1,
         required => ['input']);
     my $bt_input = $options->{input};
-    my $paths = $class->Get_Paths($bt_input);
+    my $paths = $class->Get_Path_Info($bt_input);
     my $jname = 'bt2_stats';
     $jname = $options->{jname} if ($options->{jname});
     my $jobid = qq"$paths->[0]->{jbasename}_stats";
@@ -1590,7 +1590,7 @@ sub BWA_Stats {
         args => \%args,
         jmem => 1,);
     my $aln_input = $options->{aln_output};
-    my $paths = $class->Get_Paths($aln_input);
+    my $paths = $class->Get_Path_Info($aln_input);
     $aln_input = qq"${aln_input}.stats";
     my $mem_input = $options->{mem_output};
     $mem_input = qq"${mem_input}.stats";
@@ -1782,7 +1782,7 @@ sub HT2_Stats {
         jmem => 1,
         output_dir => 'outputs',);
     my $ht_input = $options->{input};
-    my $paths = $class->Get_Paths($ht_input);
+    my $paths = $class->Get_Path_Info($ht_input);
     my $jname = 'ht2_stats';
     $jname = $options->{jname} if ($options->{jname});
     my $jobid = qq"$options->{jname}_stats";
@@ -1832,7 +1832,7 @@ sub Salmon_Stats {
         jmem => 1,);
     my $jname = 'stats';
     $jname = $options->{jname} if ($options->{jname});
-    my $paths = $class->Get_Paths($options->{input});
+    my $paths = $class->Get_Path_Info($options->{input});
     my $jobid = qq"$paths->[0]->{jbasename}_stats";
     my $outdir = dirname($options->{input});
     my $output = qq"${outdir}/salmon_stats.csv";
@@ -1875,7 +1875,7 @@ sub Salmon_Strand {
         jmem => 1,);
     my $jname = 'strand';
     $jname = $options->{jname} if ($options->{jname});
-    my $paths = $class->Get_Paths($options->{input});
+    my $paths = $class->Get_Path_Info($options->{input});
     my $jobid = qq"$paths->[0]->{jbasename}_stats";
     my $outdir = dirname($options->{input});
     my $output = qq"${outdir}/salmon_strand.txt";
@@ -1924,7 +1924,7 @@ sub Tophat_Stats {
     my $options = $class->Get_Vars(
         args => \%args,
         jmem => 1,);
-    my $paths = $class->Get_Paths($options->{accepted_input});
+    my $paths = $class->Get_Path_Info($options->{accepted_input});
     my $accepted_input = $options->{accepted_input};
     my $accepted_output = qq"${accepted_input}.stats";
     my $unaccepted_input = $options->{unaccepted_input};

@@ -124,7 +124,7 @@ sub Fastqc {
         jprefix => '01',
         required => ['input',],);
     my $job_name = $class->Get_Job_Name();
-    my $input_paths = $class->Get_Paths($options->{input});
+    my $input_paths = $class->Get_Path_Info($options->{input});
     my $dirname = $input_paths->[0]->{dirname};
     my $jname = qq"fqc_${job_name}";
     if (defined($dirname)) {

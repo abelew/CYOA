@@ -43,7 +43,7 @@ sub Cogent {
         jwalltime => 36,
         type => 'Stranded_UMI',);
     my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Paths($options->{input});
+    my $inputs = $class->Get_Path_Info($options->{input});
     my $cwd_name = basename(cwd());
     my @input_filenames = split(/$options->{delimiter}/, $options->{input});
     my $output_dir = qq"outputs/$options->{jprefix}cogent";
@@ -121,7 +121,7 @@ sub Cutadapt {
         jwalltime => '48:00:00',
         jprefix => '12',);
     my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Paths($options->{input});
+    my $inputs = $class->Get_Path_Info($options->{input});
     my $minlength = $options->{minlength};
     my $maxlength = $options->{maxlength};
     my $arbitrary = '';
@@ -313,7 +313,7 @@ sub Fastp {
         jwalltime => '24:00:00',
         jprefix => '12',);
     my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Paths($options->{input});
+    my $inputs = $class->Get_Path_Info($options->{input});
 
     my $extra_args = $class->Passthrough_Args(arbitrary => $options->{arbitrary});
     $extra_args .= ' -D ' if ($options->{deduplication});
@@ -397,7 +397,7 @@ sub PolyA_Extractor {
         $output_dir = qq"outputs/$options->{jprefix}polyA_extracted";
         $final_output = qq"${output_dir}/poyA_reads.fastq";
     }
-    my $paths = $class->Get_Paths($final_output);
+    my $paths = $class->Get_Path_Info($final_output);
     my @inputs = ();
     if ($options->{input} =~ /$options->{delimiter}/) {
         @inputs = split(/$options->{delimiter}/, $options->{input});

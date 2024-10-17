@@ -169,7 +169,7 @@ sub Check_Job {
     }
     else {
         print "No id provided, reading the jobs.txt file.\n";
-        my $job_file = FileHandle->new("<outputs/logs/jobs.txt");
+        my $job_file = FileHandle->new("<$options->{basedir}/outputs/logs/jobs.txt");
       JOBLOG: while (my $line = <$job_file>) {
             chomp $line;
             next JOBLOG if ($line =~ /^#/);
@@ -284,7 +284,7 @@ sub Check_Job {
                        'ExitCode', 'MaxDiskRead', 'MaxDiskWrite',
                        'MaxPages', 'MaxRSS', 'MaxVMSize', 'Partition',
                        'ReqMem', 'State');
-        my $jobs_csv = 'outputs/logs/jobs.csv';
+        my $jobs_csv = qq"$options->{basedir}/outputs/logs/jobs.csv";
         my @data;
         ## If the csv already exists, append a new record to it by creating a new array
         ## from the existing data and adding the new stuff.
@@ -1406,7 +1406,7 @@ sub Submit {
     my $depends_prefix = '--dependency=afterok';
     ## For arguments to sbatch, start with the defaults in the constructor in $class
     ## then overwrite with any application specific requests from %args
-    my $sbatch_log = 'outputs/log.txt';
+    my $sbatch_log = qq"$options->{basedir}/outputs/log.txt";
 
     ## Get my current usage, which fills in a hash of:
     ## usage->{user}->{partition}->{account}->{qos}->{mem, cpu, jobs, running, queued, failed}
@@ -1700,8 +1700,8 @@ fi
     ##my $reset = Bio::Adventure::Reset_Vars($class);
     ##$reset = Bio::Adventure::Reset_Vars($parent);
     $parent->{language} = 'bash';
-    make_path('outputs/logs');
-    my $job_logger = FileHandle->new(">>outputs/logs/jobs.txt");
+    make_path(qq"$options->{basedir}/outputs/logs");
+    my $job_logger = FileHandle->new(">>$options->{basedir}/outputs/logs/jobs.txt");
     print $job_logger "${jname}\tslurm\t${job_id}\n";
     $job_logger->close();
     return($job);

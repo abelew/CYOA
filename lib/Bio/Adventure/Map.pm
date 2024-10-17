@@ -165,7 +165,6 @@ bowtie \\
     my $bt_job = $class->Submit(
         aligned => $aligned_filename,
         comment => $comment,
-        input => $bt_input,
         jdepends => $options->{jdepends},
         jmem => $options->{jmem},
         jname => $jname,
@@ -181,7 +180,7 @@ bowtie \\
         $bt_job->{index} = $index_job;
     }
 
-    my $expected_hours = $class->Bio::Adventure::Config::Estimate_Time();
+    my $expected_hours = $class->Bio::Adventure::Config::Estimate_Time_Composite(process => 'bt1');
     my $time_string = qq"${expected_hours}:00:00";
     print "TESTME: The time string is: $time_string\n";
     my $compress_files = qq"${bt_dir}/$options->{jbasename}-${bt_type}_unaligned_${species}.fastq:${bt_dir}/$options->{jbasename}-${bt_type}_aligned_${species}.fastq";
@@ -790,7 +789,7 @@ fi
                 stranded => $stranded,
             };
             my %htseq_args = $class->Extra_Options(options => $options, extras => $htseq_extras);
-            my $htmulti = $class->Bio::Adventure::Count::HT_Multi(%htseq_args);
+            my $htmulti = $class->Bio::Adventure::Count::HTSeq(%htseq_args);
             $bwa_job->{$htseq_name} = $htmulti;
         }
         $sam_count++;

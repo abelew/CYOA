@@ -800,7 +800,7 @@ sub Jellyfish {
         return($ret);
     }
     my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Paths($options->{input});
+    my $inputs = $class->Get_Path_Info($options->{input});
     my $cwd_name = basename(cwd());
     my $output_dir = qq"outputs/$options->{jprefix}jellyfish_${cwd_name}";
     my $input_string = $class->Get_FD(input => $options->{input});
@@ -937,7 +937,7 @@ sub Jellyfish_Matrix {
         output => 'fasta_matrix.csv',
         jprefix => 19,);
     my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Paths($options->{input});
+    my $inputs = $class->Get_Path_Info($options->{input});
     my $fc = $class->Get_FC(input => $options->{input});
     my $in = FileHandle->new("${fc} |");
     my $counter = 1;
@@ -1088,7 +1088,7 @@ sub Kraken_to_Matrix {
         required => ['input'],
         jprefix => 21,);
     my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Paths($options->{input});
+    my $inputs = $class->Get_Path_Info($options->{input});
     $inputs = $inputs->[0];
     my $output = qq"$inputs->{directory}/$inputs->{filebase_extension}_matrix.tsv";
     my $stdout = qq"$inputs->{directory}/kraken_to_matrix.stdout";
@@ -1171,7 +1171,7 @@ sub Mash {
         sketch => 9,
         jcpu => 4,);
     my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Paths($options->{input});
+    my $inputs = $class->Get_Path_Info($options->{input});
     ## Unlike most of my jobs, the input argument here is a directory, so just grab it
     my $cwd_name = basename($options->{input});
     my $output_dir = qq"outputs/$options->{jprefix}mash_${cwd_name}/dist";
@@ -1312,7 +1312,7 @@ sub Mpileup {
         required => ['input', 'species'],
         jprefix => 61,);
     my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Paths($options->{input});
+    my $inputs = $class->Get_Path_Info($options->{input});
     ## Unlike most of my jobs, the input argument here is a directory, so just grab it
     my $cwd_name = basename($options->{input});
     my $genome = qq"$options->{libpath}/$options->{libtype}/$options->{species}.fasta";

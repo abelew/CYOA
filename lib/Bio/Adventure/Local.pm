@@ -45,12 +45,12 @@ sub Submit {
         jname => 'unknown',);
     ## For arguments to bash, start with the defaults in the constructor in $class
     ## then overwrite with any application specific requests from %args
-    my $bash_log = 'outputs/log.txt';
+    my $bash_log = qq"$options->{basedir}/outputs/log.txt";
     if (!defined($options->{jname})) {
         $options->{jname} = $class->Get_Job_Name();
     }
     my $jname = qq"$options->{jprefix}$options->{jname}";
-    my $finished_file = qq"outputs/logs/${jname}.finished";
+    my $finished_file = qq"$options->{basedir}/outputs/logs/${jname}.finished";
     my $job = {};
     foreach my $k (keys %args) {
         next if ($k eq 'jstring');

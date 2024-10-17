@@ -39,7 +39,7 @@ sub Casfinder {
         jmem => 8,
         jwalltime => 8,);
     my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Paths($options->{input});
+    my $inputs = $class->Get_Path_Info($options->{input});
     my $cwd_name = basename(cwd());
     my $check = which('casfinder');
     my $casfinder_exe_dir = dirname($check);
@@ -98,7 +98,7 @@ sub Casoff {
         mismatches => 2,
         jwalltime => 8,);
     my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Paths($options->{input});
+    my $inputs = $class->Get_Path_Info($options->{input});
     my $cwd_name = basename(cwd());
     ## Hey, don't forget abs_path requires a file which already exists.
     my $input_filename = basename($options->{input});
@@ -179,7 +179,7 @@ sub Interproscan {
         modules => ['interproscan'],
         required => ['input'],);
     my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Paths($options->{input});
+    my $inputs = $class->Get_Path_Info($options->{input});
     my $cwd_name = basename(cwd());
     ## Hey, don't forget abs_path requires a file which already exists.
     my $abs_input = abs_path($options->{input});
@@ -298,7 +298,7 @@ sub Prokka {
         jmem => 12,
         jprefix => '19',);
     my $job_name = $class->Get_Job_Name();
-    my $input_paths = $class->Get_Paths($options->{input});
+    my $input_paths = $class->Get_Path_Info($options->{input});
     my $kingdom_string = '';
     if ($options->{kingdom} ne '') {
         $kingdom_string = qq" --kingdom $options->{kingdom} --gcode $options->{gcode} ";
@@ -385,7 +385,7 @@ sub Transposonpsi {
         jmem => 8,
         jprefix => '21',);
     my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Paths($options->{input});
+    my $inputs = $class->Get_Path_Info($options->{input});
     my $cwd_name = basename(cwd());
     ## Never implemented!
     my $transposonpsi;
@@ -941,7 +941,7 @@ sub Trinotate {
     my $cwd_name = basename(cwd());
     ## Once again, abs_path only works on stuff which already exists.
     ## So create the output directory, and use that.
-    my $input_paths = $class->Get_Paths($options->{input});
+    my $input_paths = $class->Get_Path_Info($options->{input});
     my $input_full = $input_paths->[0]->{fullpath};
     my $input_file = $input_paths->[0]->{filename};
     my $input_dir = $input_paths->[0]->{dirname};

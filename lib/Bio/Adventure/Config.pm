@@ -6,8 +6,8 @@ use warnings qw"all";
 use Exporter;
 use File::Basename qw"basename dirname";
 use File::Path qw"make_path";
-use File::stat;
 use Getopt::Long qw"GetOptionsFromArray";
+use POSIX qw"ceil";
 
 our @EXPORT = qw"Get_Modules Get_Menus Get_TODOs";
 our @ISA = qw"Exporter";
@@ -23,6 +23,7 @@ sub Get_Caller {
   COUNTER: for my $attempt ($caller_number .. $last_attempt) {
         my ($package, $filename, $line, $sub, $hasargs,
             $wantarray, $evaltext, $is_require, $hints, $bitmask, $hinthash) = caller($attempt);
+        last COUNTER unless (defined($sub));
         if ($sub =~ /^Bio::.*Submit$/) {
             next COUNTER;
         }
@@ -391,7 +392,8 @@ sub Estimate_Memory_Single {
     my @inputs = split(/[:;,\s+]/, $options->{mem_estimator});
     for my $input (@inputs) {
         my $st = stat($input);
-        my $size = $st->size;
+        my ($dev, $ino, $mode, $nlink, $uid, $gid, $rdev, $size,
+            $atime, $mtime, $ctime, $blksize, $blocks) = stat($input);
         my @pieces = split(/\./, $input);
         my $ext = $pieces[$#pieces];
         if (defined($multipliers->{$ext})) {
@@ -426,8 +428,8 @@ sub Estimate_Time_Single {
     my @inputs = split(/[:;,\s+]/, $options->{input});
     my $total_hours = 0;
     for my $input (@inputs) {
-        my $st = stat($input);
-        my $size = $st->size;
+        my ($dev, $ino, $mode, $nlink, $uid, $gid, $rdev, $size,
+            $atime, $mtime, $ctime, $blksize, $blocks) = stat($input);
         my @pieces = split(/\./, $input);
         my $ext = $pieces[$#pieces];
         if (defined($multipliers->{$ext})) {
@@ -445,13 +447,17 @@ sub Estimate_Time_Single {
 
 sub Estimate_Time_Composite {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
-        process => 'xz',
-    );
+    my $options = $class->Get_Vars();
 
-    my $species_file = qq"$options->{libpath}/$options->{libtype}/indexes/$options->{species}";
-    my $species_stat = stat($species_file);
-    my $species_size = $species_stat->size;
+    my $species_file = qq"$options->{libpath}/$options->{libtype}/fasta/$options->{species}.fasta";
+    my $species_size = 1;
+    if (!-r $species_file) {
+        print "The species file does not exist!\n";
+    } else {
+        my ($dev, $ino, $mode, $nlink, $uid, $gid, $rdev, $size,
+        $atime, $mtime, $ctime, $blksize, $blocks) = stat($species_file);
+        $species_size = $size / 1e7;
+    }
 
     ## I need to acquire from slurm the relative cpu frequency, but assuming similar speeds
     ## I should be able to get reasonable time estimates...
@@ -460,20 +466,26 @@ sub Estimate_Time_Composite {
     ## input file size differences negligible with respect to time to run.
     my $total_input_size = 0;
     for my $input (@inputs) {
-        my $st = stat($input);
-        my $size = $st->size;
-        $total_input_size = $total_input_size + $size;
+        if (!-r $input) {
+            die("This file does not exist. $input");
+        } else {
+            my ($dev, $ino, $mode, $nlink, $uid, $gid, $rdev, $size,
+                $atime, $mtime, $ctime, $blksize, $blocks) = stat($input);
+            $total_input_size = $total_input_size + $size;
+        }
     }
 
     # A genome multiplier should be used when the time estimate for a tool can be described as:
     ## (input_size * constant) * (genome_size * constant)
     ## Really it should be the index size, but I assume the fasta is a sufficient proxy.
     my $genome_mult = {
+        bt1 => 1.0,
         hisat => 1.0,
     };
     ## Approximate compression multipliers, taken from:
     ## https://community.centminmod.com/threads/round-3-compression-comparison-benchmarks-zstd-vs-brotli-vs-pigz-vs-bzip2-vs-xz-etc.17259/
     my $multipliers = {
+        bt1 => 1.0,
         hisat => 4.4,
     };
 
@@ -487,7 +499,8 @@ sub Estimate_Time_Composite {
     ## 250Mb input (xz) paired end vs a 1.8Mb genome took 1 minute (60 seconds)
     ## (/ 720.9 12000000.0) -> 6.0e-5
     ## (/ 60 (* 250 18.0)) -> 0.013
-    my $key = $options->{process};
+    my $key = $args{process};
+    $total_input_size = $total_input_size / 1e7;
     my $needed_input_mult = $total_input_size * $multipliers->{$key};
     my $needed_genome_mult = $species_size * $genome_mult->{$key};
     my $needed = ($needed_input_mult * $needed_genome_mult);
@@ -699,6 +712,7 @@ sub Get_Paths {
     my $options = $class->Get_Vars(args => \%args);
     my $subroutine = $args{subroutine};
     $subroutine = Bio::Adventure::Config::Get_Caller() unless($subroutine);
+    $subroutine = 'undef' if (!defined($subroutine));
     my $libpath_prefix = qq"$options->{libpath}/$options->{libtype}";
     my $libdir_prefix = qq"$options->{libdir}/$options->{libtype}";
     my $output_prefix = qq"$options->{output_base}/$options->{jprefix}";

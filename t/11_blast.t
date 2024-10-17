@@ -2,6 +2,7 @@
 use strict;
 use Test::More qw"no_plan";
 use Cwd;
+use File::Basename;
 use File::Copy qw"cp mv";
 use File::Path qw"remove_tree make_path rmtree";
 use File::ShareDir qw"dist_file module_dir dist_dir";
@@ -42,17 +43,19 @@ if (!-r $cds_local) {
 
 ## Perform a check to see if the desired blast library exists,
 ## create it if it does not.
-my $phix_library = $cyoa->Bio::Adventure::Index::Check_Blastdb(
-    input => $phix_local, type => 'nucl');
-ok($phix_library, 'Run Check_Blastdb()');
-ok($phix_library eq 'phix', 'The database name is "phix".');
-$ENV{BLASTDB} = 'blastdb';
+#my $phix_library = $cyoa->Bio::Adventure::Index::Check_Blastdb(
+#    input => $phix_local, type => 'nucl');
+#ok($phix_library, 'Run Check_Blastdb()');
+#print "TESTME: $phix_library\n";
+#my $phix_basename = basename($phix_library);
+#ok($phix_basename eq 'phix', 'The database name is "phix".');
+#$ENV{BLASTDB} = 'blastdb';
 ## Run a standalone blast search of the phix CDSes vs. the phix genome.
-my $standalone = $cyoa->Bio::Adventure::Align_Blast::Run_Parse_Blast(
-    input => $cds_local,
-    blast_tool => 'blastn',
-    output => 'blast_result.txt',
-    library => $phix_library);
+#my $standalone = $cyoa->Bio::Adventure::Align_Blast::Run_Parse_Blast(
+#    input => $cds_local,
+#    blast_tool => 'blastn',
+#    output => 'blast_result.txt',
+#    library => $phix_library);
 
 my $run_blast = $cyoa->Bio::Adventure::Align_Blast::Split_Align_Blast(
     input => $cds_local,

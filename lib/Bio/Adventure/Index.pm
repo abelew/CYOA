@@ -197,8 +197,8 @@ sub Check_Blastdb {
     my $options = $class->Get_Vars(
         args => \%args,
         blast_tool => 'blastn',
-        type => 'prot',
-        required => ['input'],);
+        required => ['input'],
+        type => 'prot',);
     my $libname;
     if (defined($options->{library})) {
         $libname = $options->{library};

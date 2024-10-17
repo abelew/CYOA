@@ -53,7 +53,7 @@ sub Cleanup_Phage_Assembly {
         jname => 'cleanup_phage');
 
     my $job_name = $class->Get_Job_Name();
-    my $input_paths = $class->Get_Paths($options->{input});
+    my $input_paths = $class->Get_Path_Info($options->{input});
 
     my $jstring = qq!## Rando fastq files
 stuff=\$(find . -type f -name '*.fastq')

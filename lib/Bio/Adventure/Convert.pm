@@ -798,7 +798,7 @@ sub Sam2Bam {
         args => \%args,
         required => ['species', 'input'],);
     my @input_list = ();
-    my $paths = $class->Get_Paths($options->{input});
+    my $paths = $class->Get_Path_Info($options->{input});
     if ($options->{input}) {
         push(@input_list, $options->{input});
     } elsif (-r $options->{input} and $options->{input} =~ /\.sam$/) {

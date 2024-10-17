@@ -55,13 +55,14 @@ sub Concatenate_Searches {
         jmem => 8,);
     my $finished = 0;
     my $output = qq"$options->{workdir}/split_search.txt";
-    $output = $options->{output} if (defined($options->{output}));
     $output .= ".xz" unless ($output =~ /\.xz$/);
-    my $comment_string = qq"## Concatenating the output files into ${output}
+    my $comment_string = qq"## Concatenating the blast output files:
+##  $options->{input}
+##  into ${output}
 ";
     my $jstring = qq!
 rm -f ${output}
-for i in \$(/bin/ls $options->{workdir}/split/*.out); do
+for i in $options->{input}; do
   xz -9e -c \$i >> ${output}
 done
 !;

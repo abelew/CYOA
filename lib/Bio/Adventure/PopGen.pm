@@ -38,7 +38,7 @@ sub Angsd_Filter {
         args => \%args,
         required => ['input'],
         pval => 0.01,);
-    my $input_paths = $class->Get_Paths($options->{input});
+    my $input_paths = $class->Get_Path_Info($options->{input});
     my $output_dir = qq"outputs/$options->{jprefix}angsd_$input_paths->{dirname}";
     my $stdout = qq"${output_dir}/angsd.stdout";
     my $stderr = qq"${output_dir}/angsd.stderr";

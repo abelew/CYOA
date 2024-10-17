@@ -38,7 +38,7 @@ sub Compress {
         jprefix => '',
         jwalltime => '24:00:00',
         modules => undef,);
-    my $input_paths = $class->Get_Paths($options->{input});
+    my $input_paths = $class->Get_Path_Info($options->{input});
     my $check = which('xz');
     die('Could not find xz in your PATH.') unless($check);
     my $jstring = "";
@@ -88,7 +88,7 @@ sub Recompress {
         jmem => 8,
         jprefix => '99',
         jwalltime => '12:00:00',);
-    my $input_paths = $class->Get_Paths($options->{input});
+    my $input_paths = $class->Get_Path_Info($options->{input});
 
     my $jstring = "";
     my $output_string = '';

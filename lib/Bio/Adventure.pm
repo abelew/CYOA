@@ -708,14 +708,14 @@ sub Get_FH {
     return($fh);
 }
 
-=head2 C<Get_Paths>
+=head2 C<Get_Path_Info>
 
 Given a file/directory name, provide a set of paths which will
 hopefully prove useful for the various functions in CYOA.  I think
 this function is a good candidate for replacing Check_Input() below.
 
 =cut
-sub Get_Paths {
+sub Get_Path_Info {
     my ($class, @inputs) = @_;
     my %ret = ();
     if ($inputs[0] =~ /[:;,\s]+/) {

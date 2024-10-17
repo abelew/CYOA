@@ -87,7 +87,7 @@ sub RNAFold_Windows_Worker {
         required => ['input', 'output'],
         modules => ['vienna']);
     my $loaded = $class->Module_Loader(modules => $options->{modules});
-    my $input_paths = $class->Get_Paths($options->{output});
+    my $input_paths = $class->Get_Path_Info($options->{output});
     ## Put the data here!  First key is location, second is structure/mfe.
     my $output = $options->{output};
     my $out_dir = dirname($output);

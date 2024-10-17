@@ -279,7 +279,7 @@ sub Classify_Phage {
         topn => 5,
         jmem => 12,
         jprefix => '18',);
-    my $paths = $class->Get_Paths($options->{input});
+    my $paths = $class->Get_Path_Info($options->{input});
     my $output_dir = qq"outputs/$options->{jprefix}classify_$paths->[0]->{dirname}";
     if (-d $output_dir) {
         my $removed = rmtree($output_dir);
@@ -1163,7 +1163,7 @@ sub Phageterm {
         jprefix => '14',
         required => ['input', 'library'],);
     my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Paths($options->{input});
+    my $inputs = $class->Get_Path_Info($options->{input});
     my $cwd_name = basename(cwd());
     my $assembly_relative = $options->{library};
     my $assembly_full = abs_path($options->{library});
@@ -1446,7 +1446,7 @@ sub Phastaf {
         jprefix => '14',
         required => ['input'],);
     my $job_name = $class->Get_Job_Name();
-    my $input_paths = $class->Get_Paths($options->{input});
+    my $input_paths = $class->Get_Path_Info($options->{input});
     my $input_full = $input_paths->[0]->{fullpath};
     my $output_dir = qq"outputs/$options->{jprefix}phastaf";
     $output_dir .= "_$input_paths->[0]->{dirname}" if (defined($input_paths->[0]->{dirname}));
@@ -1740,7 +1740,7 @@ sub Restriction_Catalog {
     if (-d $output_dir) {
         my $removed = rmtree($output_dir);
     }
-    my $paths = $class->Get_Paths($re_output);
+    my $paths = $class->Get_Path_Info($re_output);
     my $comment = '## Go on a restriction enzyme hunt!';
     my $jstring = qq!
 use Bio::Adventure;
@@ -1881,7 +1881,7 @@ sub Terminase_ORF_Reorder {
     if (-d $output_dir) {
         my $removed = rmtree($output_dir);
     }
-    my $paths = $class->Get_Paths($final_output);
+    my $paths = $class->Get_Path_Info($final_output);
 
     my $prodigal_outname = 'prodigal';
     my $prodigal_cds = qq"${output_dir}/${prodigal_outname}_cds.fasta";
@@ -2294,7 +2294,7 @@ sub Xref_Crispr {
     if (-d $output_dir) {
         my $removed = rmtree($output_dir);
     }
-    my $paths = $class->Get_Paths($final_output);
+    my $paths = $class->Get_Path_Info($final_output);
 
     my $comment = qq"## This should cross reference a database of crispr sequences
 ## against an assembly to see if there are likely overlaps.";

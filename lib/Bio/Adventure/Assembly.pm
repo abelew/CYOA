@@ -431,7 +431,7 @@ sub Unicycler_Filter_Worker {
         output => '',
         required => ['input',],);
 
-    my $paths = $class->Get_Paths($options->{output});
+    my $paths = $class->Get_Path_Info($options->{output});
     my $log = FileHandle->new(">$options->{output_log}");
     my $input_contigs = Bio::SeqIO->new(-file => $options->{input}, -format => 'Fasta');
     my $output_contigs = Bio::SeqIO->new(-file => ">$options->{output}", -format => 'Fasta');

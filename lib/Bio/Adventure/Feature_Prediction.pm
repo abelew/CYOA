@@ -306,7 +306,7 @@ sub Phagepromoter {
     my $stdout = qq"${output_dir}/phagepromoter.stdout";
     my $stderr = qq"${output_dir}/phagepromoter.stderr";
     my $output_file = qq"${output_dir}/${job_name}_phagepromoter.tsv";
-    my $input_paths = $class->Get_Paths($options->{input});
+    my $input_paths = $class->Get_Path_Info($options->{input});
     my $input_full = $input_paths->[0]->{fullpath};
     my $comment = '## This is a script to run phagepromoter.';
     my $output_fasta = qq"${output_dir}/output.fasta";
@@ -448,7 +448,7 @@ sub Prodigal {
     my $edge_string = ' -c ';
     $edge_string = '' if ($options->{edge});
 
-    my $inputs = $class->Get_Paths($options->{input});
+    my $inputs = $class->Get_Path_Info($options->{input});
     my $job_name = $class->Get_Job_Name();
     $job_name = basename($job_name, ('.fsa'));
     my $train_string = '';
@@ -558,7 +558,7 @@ sub Rho_Predict {
         jmem => 12,
         jprefix => '51',
         required => ['input',],);
-    my $input_paths = $class->Get_Paths($options->{input});
+    my $input_paths = $class->Get_Path_Info($options->{input});
     my $input_full = $input_paths->[0]->{fullpath};
     my $input_file = $input_paths->[0]->{filename};
     my $cwd_name = basename(cwd());
