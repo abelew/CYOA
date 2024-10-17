@@ -235,11 +235,11 @@ sub Caical_CDS {
     my $cai_fasta = qq">${output_dir}/${out_base}_input.fasta";
     my $seqio_out = Bio::SeqIO->new(-format => 'fasta', -file => $cai_fasta);
   SEQS: while (my $seq = $seqio_in->next_seq) {
-      my $len = $seq->length;
-      if (($len % 3) == 0) {
-          $seqio_out->write($seq);
-      }
-  }
+        my $len = $seq->length;
+        if (($len % 3) == 0) {
+            $seqio_out->write($seq);
+        }
+    }
 }
 
 =back
@@ -436,78 +436,78 @@ Writing filtered results to $options->{output}.
 
     my @hit_lst = ();
   RESULTLOOP: while (my $result = $search_output->next_result) {
-      $result_count++;
-      my $query_name = $result->query_name();
-      my $query_length = $result->query_length();
-      my $query_descr = $result->query_description();
-      my $stats = $result->available_statistics();
-      my $hits = $result->num_hits();
-      print $log "The query being considered is: ${query_name}.\n";
-      my $datum_ref = {
-          description => $query_descr,
-          name => $query_name,
-          stats => $stats,
-          num_hits => $hits,
-          length => $query_length,
-          hit_data => {},
-      };
-      $result_data->{$query_name} = $datum_ref;
-      my $hit_count = 0;
-    HITLOOP: while (my $hits = $result->next_hit()) {
-        $number_hits = $number_hits++;
-        my $hit_name = $hits->name();
-        print $log "This result has a hit on ${hit_name}\n";
-        ## The hit_name should cross reference to one of the two accession columns in xref_aoh
-        ## from the beginning of this function.
-        my $longname = '';
-        my ($taxon, $family, $genus);
-        my $xref_found = 0;
-      XREFLOOP: for my $hashref (@{$xref_aoh}) {
-          my $first_name = $hashref->{virusgenbankaccession};
-          my $second_name = $hashref->{virusrefseqaccession};
-          my $hash_taxon = $hashref->{taxon};
-          my $hash_longname = $hashref->{virusnames};
-          my $hash_family = $hashref->{family};
-          my $hash_genus = $hashref->{genus};
-          if ($hit_name eq $first_name or $hit_name eq $second_name) {
-              $xref_found++;
-              print $log "A cross reference was found to the ICTV taxon: ${hash_taxon}.\n";
-              $longname = $hash_longname;
-              $taxon = $hash_taxon;
-              $family = $hash_family;
-              $genus = $hash_genus;
-              last XREFLOOP;
-          }
-      }
-        my $hit_length = 0;
-        if (defined($hits->length())) {
-            $hit_length = $hits->length();
-        }
-        my $hit_acc = $hits->accession();
-        my $hit_descr = $hits->description();
-        my $hit_score = $hits->score();
-        my $hit_sig = $hits->significance();
-        my $hit_bits = $hits->bits();
-        my %hit_datum = (
-            query_name => $query_name,
-            query_length => $query_length,
-            query_descr => $query_descr,
+        $result_count++;
+        my $query_name = $result->query_name();
+        my $query_length = $result->query_length();
+        my $query_descr = $result->query_description();
+        my $stats = $result->available_statistics();
+        my $hits = $result->num_hits();
+        print $log "The query being considered is: ${query_name}.\n";
+        my $datum_ref = {
+            description => $query_descr,
+            name => $query_name,
             stats => $stats,
-            length => $hit_length,
-            acc => $hit_acc,
-            description => $hit_descr,
-            score => $hit_score,
-            sig => $hit_sig,
-            bit => $hit_bits,
-            longname => $longname,
-            taxon => $taxon,
-            family => $family,
-            genus => $genus);
-        push (@hit_lst, \%hit_datum);
-        $result_data->{$query_name}->{hit_data}->{$hit_name} = \%hit_datum;
-        $hit_count++;
-    } ## End the hitloop.
-  } ## End of the blast search
+            num_hits => $hits,
+            length => $query_length,
+            hit_data => {},
+        };
+        $result_data->{$query_name} = $datum_ref;
+        my $hit_count = 0;
+      HITLOOP: while (my $hits = $result->next_hit()) {
+            $number_hits = $number_hits++;
+            my $hit_name = $hits->name();
+            print $log "This result has a hit on ${hit_name}\n";
+            ## The hit_name should cross reference to one of the two accession columns in xref_aoh
+            ## from the beginning of this function.
+            my $longname = '';
+            my ($taxon, $family, $genus);
+            my $xref_found = 0;
+          XREFLOOP: for my $hashref (@{$xref_aoh}) {
+                my $first_name = $hashref->{virusgenbankaccession};
+                my $second_name = $hashref->{virusrefseqaccession};
+                my $hash_taxon = $hashref->{taxon};
+                my $hash_longname = $hashref->{virusnames};
+                my $hash_family = $hashref->{family};
+                my $hash_genus = $hashref->{genus};
+                if ($hit_name eq $first_name or $hit_name eq $second_name) {
+                    $xref_found++;
+                    print $log "A cross reference was found to the ICTV taxon: ${hash_taxon}.\n";
+                    $longname = $hash_longname;
+                    $taxon = $hash_taxon;
+                    $family = $hash_family;
+                    $genus = $hash_genus;
+                    last XREFLOOP;
+                }
+            }
+            my $hit_length = 0;
+            if (defined($hits->length())) {
+                $hit_length = $hits->length();
+            }
+            my $hit_acc = $hits->accession();
+            my $hit_descr = $hits->description();
+            my $hit_score = $hits->score();
+            my $hit_sig = $hits->significance();
+            my $hit_bits = $hits->bits();
+            my %hit_datum = (
+                query_name => $query_name,
+                query_length => $query_length,
+                query_descr => $query_descr,
+                stats => $stats,
+                length => $hit_length,
+                acc => $hit_acc,
+                description => $hit_descr,
+                score => $hit_score,
+                sig => $hit_sig,
+                bit => $hit_bits,
+                longname => $longname,
+                taxon => $taxon,
+                family => $family,
+                genus => $genus);
+            push (@hit_lst, \%hit_datum);
+            $result_data->{$query_name}->{hit_data}->{$hit_name} = \%hit_datum;
+            $hit_count++;
+        }                       ## End the hitloop.
+    }                           ## End of the blast search
 
     print $log "The number of results recorded: ${result_count}.\n";
     ## Sort largest to smallest score.
@@ -552,8 +552,8 @@ sub Download_NCBI_Assembly_UID {
     my @links = $mech->find_all_links(
         tag => 'a', text_regex => qr/ASM/i);
   FIRST: for my $k (@links) {
-      my ($url2, $title2) = @{$k};
-  }
+        my ($url2, $title2) = @{$k};
+    }
     my $first = $links[0];
     my $title = '';
     ($url, $title) = @{$first};
@@ -584,20 +584,20 @@ sub Download_NCBI_Assembly_Accession {
         tag => 'a', text_regex => qr/FTP/i);
     my $title;
   LINKS: foreach my $l (@links) {
-      ($url, $title) = @{$l};
-      if ($title eq 'FTP directory for GenBank assembly') {
-          my $followed = $mech->follow_link(url => $url);
-          my @final = $mech->find_all_links(
-              tag => 'a', text_regex => qr/gbff.gz$/i);
-          print $out_fh "Final download link: $final[0][0].\n";
-          my $final_followed = $mech->follow_link(url => $final[0][0]);
-          my $output = FileHandle->new(">$args{file}");
-          my $printed = $mech->response->content();
-          print $output $printed;
-          $output->close();
-          last LINKS;
-      }
-  } ## End looking at links hopefully containing an assembly.
+        ($url, $title) = @{$l};
+        if ($title eq 'FTP directory for GenBank assembly') {
+            my $followed = $mech->follow_link(url => $url);
+            my @final = $mech->find_all_links(
+                tag => 'a', text_regex => qr/gbff.gz$/i);
+            print $out_fh "Final download link: $final[0][0].\n";
+            my $final_followed = $mech->follow_link(url => $final[0][0]);
+            my $output = FileHandle->new(">$args{file}");
+            my $printed = $mech->response->content();
+            print $output $printed;
+            $output->close();
+            last LINKS;
+        }
+    }        ## End looking at links hopefully containing an assembly.
     return($title);
 }
 
@@ -720,21 +720,29 @@ sub Filter_Kraken_Worker {
     my $separator;
     if ($options->{type} eq 'domain') {
         $separator = 'd__';
-    } elsif ($options->{type} eq 'phylum') {
+    }
+    elsif ($options->{type} eq 'phylum') {
         $separator = 'p__';
-    } elsif ($options->{type} eq 'class') {
+    }
+    elsif ($options->{type} eq 'class') {
         $separator = 'c__';
-    } elsif ($options->{type} eq 'kingdom') {
+    }
+    elsif ($options->{type} eq 'kingdom') {
         $separator = 'k__';
-    } elsif ($options->{type} eq 'order') {
+    }
+    elsif ($options->{type} eq 'order') {
         $separator = 'o__';
-    } elsif ($options->{type} eq 'family') {
+    }
+    elsif ($options->{type} eq 'family') {
         $separator = 'f__';
-    } elsif ($options->{type} eq 'genus') {
+    }
+    elsif ($options->{type} eq 'genus') {
         $separator = 'g__';
-    } elsif ($options->{type} eq 'species') {
+    }
+    elsif ($options->{type} eq 'species') {
         $separator = 's__';
-    } else {
+    }
+    else {
         $separator = 's__';
     }
 
@@ -801,10 +809,12 @@ sub Filter_Kraken_Worker {
         if (-r $accession_file) {
             print $out "Found fasta file for the putative host: ${host_species_accession}.\n";
             print "Found fasta file for the putative host: ${host_species_accession}.\n";
-        } else {
+        }
+        else {
             $need_download = 1;
         }
-    } else {
+    }
+    else {
         print $out "Downloading new assembly for ${most_species}.\n";
         print "Downloading new assembly for ${most_species}.\n";
         $need_download = 1;
@@ -820,7 +830,8 @@ sub Filter_Kraken_Worker {
         while ($link_retries > 0 && !defined($search_data)) {
             try {
                 $search_data = $mech->get($search_url);
-            } catch ($e) {
+            }
+            catch ($e) {
                 $search_data = undef;
                 warn "Failed to acquired download links, retrying ${link_retries} times.\n";
             }
@@ -859,7 +870,8 @@ sub Filter_Kraken_Worker {
         if (-r $downloaded_file) {
             print STDOUT "The file: ${downloaded_file} already exists.\n";
             print $out "The file: ${downloaded_file} already exists.\n";
-        } else {
+        }
+        else {
             my $assembly_url = qq"https://www.ncbi.nlm.nih.gov/assembly/${accession}";
             print $out "Searching ${assembly_url} for appropriate download links.\n";
             my $assembly_status = '400';
@@ -869,7 +881,8 @@ sub Filter_Kraken_Worker {
                 try {
                     $assembly_data = $mech->get($assembly_url);
                     $assembly_status = $mech->status();
-                } catch ($e) {
+                }
+                catch ($e) {
                     $search_data = undef;
                     warn "Failed to acquired download links, retrying ${link_retries} times.\n";
                 }
@@ -889,21 +902,21 @@ sub Filter_Kraken_Worker {
             my @download_links = $mech->find_all_links(
                 tag => 'a', text_regex => qr/FTP/i);
           LINKS: foreach my $l (@download_links) {
-              my ($download_url, $download_title) = @{$l};
-              if ($download_title eq 'FTP directory for GenBank assembly') {
-                  my $ftp_followed = $mech->follow_link(url => $download_url);
-                  my @download_links = $mech->find_all_links(
-                      tag => 'a', text_regex => qr/gbff.gz$/i);
-                  print $out "Final download link: $download_links[0][0].\n";
-                  my $download_followed = $mech->follow_link(url => $download_links[0][0]);
-                  my $output = FileHandle->new(">${downloaded_file}");
-                  my $printed = $mech->response->content();
-                  print $output $printed;
-                  $output->close();
-                  last LINKS;
-              }
-          } ## End looking at links hopefully containing an assembly.
-        } ## End of when the download file does not exist.
+                my ($download_url, $download_title) = @{$l};
+                if ($download_title eq 'FTP directory for GenBank assembly') {
+                    my $ftp_followed = $mech->follow_link(url => $download_url);
+                    my @download_links = $mech->find_all_links(
+                        tag => 'a', text_regex => qr/gbff.gz$/i);
+                    print $out "Final download link: $download_links[0][0].\n";
+                    my $download_followed = $mech->follow_link(url => $download_links[0][0]);
+                    my $output = FileHandle->new(">${downloaded_file}");
+                    my $printed = $mech->response->content();
+                    print $output $printed;
+                    $output->close();
+                    last LINKS;
+                }
+            } ## End looking at links hopefully containing an assembly.
+        }     ## End of when the download file does not exist.
 
         print $out "Writing a new host_species.txt file with: ${accession}.\n";
         my $host = FileHandle->new(">host_species.txt");
@@ -918,20 +931,22 @@ sub Filter_Kraken_Worker {
         my $converted;
         if (-r $test_input) {
             $converted = $test_input;
-        } else {
+        }
+        else {
             my $converter = $cyoa_shell->Bio::Adventure::Convert::Gb2Gff(
                 input => $downloaded_file,
                 jprefix => qq"$options->{jprefix}_1",);
             $converted = $converter->{output};
         }
-    } ## End checking if the host_species was defined.
+    }                 ## End checking if the host_species was defined.
 
     my $index_input = qq"$options->{libpath}/$options->{libtype}/${host_species_accession}.fsa";
     my $index_location = qq"$options->{libpath}/$options->{libtype}/indexes/${host_species_accession}.1.ht2";
     if (-r $index_location) {
         print $out "Found indexes at: ${index_location}\n";
         print "Found indexes at: ${index_location}\n";
-    } else {
+    }
+    else {
         print $out "Did not find indexes, running Hisat2_Index() now.\n";
         print "Did not find indexes, running Hisat2_Index() now.\n";
         my $indexed = $cyoa_shell->Bio::Adventure::Index::Hisat2_Index(
@@ -962,12 +977,14 @@ sub Filter_Kraken_Worker {
     print $out "Symlinking final output files to $options->{output_dir}\n";
     if (-e $out_r1) {
         print "The file: $out_r1 already exists.\n";
-    } else {
+    }
+    else {
         my $s1 = symlink($in_r1, $out_r1);
     }
     if (-e $out_r2) {
         print "The file: $out_r2 already exists.\n";
-    } else {
+    }
+    else {
         my $s2 = symlink($in_r2, $out_r2);
     }
     return(%species_observed);
@@ -1014,9 +1031,11 @@ sub Get_DTR {
     my $has_type = 1;
     if (!-r $dtr_type_file && !-r $input_dtr) {
         return(undef);
-    } elsif (!-r $dtr_type_file) {
+    }
+    elsif (!-r $dtr_type_file) {
         $has_type = 0;
-    } elsif (!-r $input_dtr) {
+    }
+    elsif (!-r $input_dtr) {
         $has_dtr = 0;
     }
 
@@ -1043,45 +1062,46 @@ sub Get_DTR {
     if ($has_dtr) {
         my $dtr_read = Bio::SeqIO->new(-file => $input_dtr, -format => 'Fasta');
       DTR: while (my $dtr_seq = $dtr_read->next_seq()) {
-          next DTR unless(defined($dtr_seq->id));
-          $dtr_id = $dtr_seq->id;
-          $dtr_sequence = $dtr_seq->seq;
-          $dtr_length = $dtr_seq->length;
-      }
+            next DTR unless(defined($dtr_seq->id));
+            $dtr_id = $dtr_seq->id;
+            $dtr_sequence = $dtr_seq->seq;
+            $dtr_length = $dtr_seq->length;
+        }
         my $contig_counter = 0;
         my $fsa_read = Bio::SeqIO->new(-file => $input_fsa, -format => 'Fasta');
       FSA: while (my $genome_seq = $fsa_read->next_seq()) {
-          $contig_counter++;
-          my $contig_sequence = $genome_seq->seq;
-          my $contig_id = $genome_seq->id;
-          if ($contig_counter == 1) {
-              $first_contig_id = $contig_id;
-          }
-          my $dtr_note = qq"Phageterm determined this DTR is of type ${dtr_type}.";
-        DTR_SEARCH: while ($contig_sequence =~ m/$dtr_sequence/g) {
-            $dtr_count++;
-            my $dtr_name = qq"DTR${dtr_count}";
-            my $dtr_end = pos($contig_sequence);
-            my $dtr_start = $dtr_end - ($dtr_length - 1);
-            my $dtr_feature = Bio::SeqFeature::Generic->new(
-                -primary => 'misc_feature',
-                -seq_id => $contig_id,
-                -source => 'PhageTerm',
-                -start => $dtr_start,
-                -end => $dtr_end,
-                -strand => +1,
-                -score => undef,
-                -frame => 0,
-                -tag => {
-                    'product' => 'Direct Terminal Repeat',
-                    'inference' => 'COORDINATES:profile:PhageTerm',
-                    'note' => $dtr_note,
-                },);
-            $dtr_feature->display_name($dtr_name);
-            push(@dtr_features, $dtr_feature);
-        } ## End matching on this contig
-      } ## End iterating over the contigs
-    } else {
+            $contig_counter++;
+            my $contig_sequence = $genome_seq->seq;
+            my $contig_id = $genome_seq->id;
+            if ($contig_counter == 1) {
+                $first_contig_id = $contig_id;
+            }
+            my $dtr_note = qq"Phageterm determined this DTR is of type ${dtr_type}.";
+          DTR_SEARCH: while ($contig_sequence =~ m/$dtr_sequence/g) {
+                $dtr_count++;
+                my $dtr_name = qq"DTR${dtr_count}";
+                my $dtr_end = pos($contig_sequence);
+                my $dtr_start = $dtr_end - ($dtr_length - 1);
+                my $dtr_feature = Bio::SeqFeature::Generic->new(
+                    -primary => 'misc_feature',
+                    -seq_id => $contig_id,
+                    -source => 'PhageTerm',
+                    -start => $dtr_start,
+                    -end => $dtr_end,
+                    -strand => +1,
+                    -score => undef,
+                    -frame => 0,
+                    -tag => {
+                        'product' => 'Direct Terminal Repeat',
+                        'inference' => 'COORDINATES:profile:PhageTerm',
+                        'note' => $dtr_note,
+                    },);
+                $dtr_feature->display_name($dtr_name);
+                push(@dtr_features, $dtr_feature);
+            }                   ## End matching on this contig
+        }                       ## End iterating over the contigs
+    }
+    else {
         ## There is no dtr file, but there was a dtr type, so let us make a dummy feature for it.
         $dtr_count++;
         $dtr_name = qq"DTR${dtr_count}";
@@ -1222,7 +1242,8 @@ sub Phageterm_Worker {
     my $workdir = $options->{output_dir};
     if (-d $workdir) {
         qx"rm -f ${workdir}/*";
-    } else {
+    }
+    else {
         my $made = make_path($workdir);
     }
     my $phage_log = FileHandle->new(">${workdir}/phageterm_worker.log");
@@ -1251,15 +1272,15 @@ sub Phageterm_Worker {
         if ($in[0] =~ /\.fastq$/) {
             $decompressed_r1 = qx"cp $in[0] ${workdir}/r1.fastq";
             $decompressed_r2 = qx"cp $in[1] ${workdir}/r2.fastq";
-        } else {
-            my $fc1 = Bio::Adventure::Get_FC(input => $in[0]);
-            my $fc2 = Bio::Adventure::Get_FC(input => $in[1]);
-            $decompressed_r1 = qx"${fc1} > ${workdir}/r1.fastq";
-            $decompressed_r2 = qx"${fc2} > ${workdir}/r2.fastq";
+        }
+        else {
+            $decompressed_r1 = qx"less $in[0] > ${workdir}/r1.fastq";
+            $decompressed_r2 = qx"less $in[1] > ${workdir}/r2.fastq";
         }
         print $phage_log "Copied reads to ${workdir} as r1.fastq and r2.fastq.\n";
         $read_string = 'r1.fastq r2.fastq';
-    } else {
+    }
+    else {
         my $r1_filename = basename($options->{input});
         my $r1_dirname = dirname($options->{input});
         my $r1 = abs_path($options->{input});
@@ -1268,9 +1289,9 @@ sub Phageterm_Worker {
         my $decompressed;
         if ($options->{input} =~ /\.fastq$/) {
             $decompressed = qx"cp $options->{input} ${workdir}/r1.fastq";
-        } else {
-            my $fc_in = Bio::Adventure::Get_FC(input => $options->{input});
-            $decompressed = qx"${fc_in} > ${workdir}/r1.fastq";
+        }
+        else {
+            $decompressed = qx"less $options->{input} > ${workdir}/r1.fastq";
         }
         print $phage_log "Copied reads to ${workdir} as r1.fastq.\n";
         $read_string = 'r1.fastq';
@@ -1281,24 +1302,24 @@ sub Phageterm_Worker {
     print $phage_log "Separating contigs from assembly.\n";
     my $contig_number = 0;
   CONTIGS: while (my $contig = $in_assembly->next_seq()) {
-      $contig_number++;
-      my $id = $contig->id;
-      my $contig_name = qq"contig${contig_number}";
-      my $out_cwd_file = qq"${contig_name}.fasta";
-      my $out_file = qq"${workdir}/${out_cwd_file}";
-      my $out_contig = Bio::SeqIO->new(-file => ">${out_file}",
-                                       -format => 'Fasta');
-      print $phage_log "Extracted contig ${contig_number} as ${out_file}.\n";
-      $out_contig->write_seq($contig);
-      ## Now that we have the individual contigs separated, run phageterm on them.
-      print $phage_log "Running phageterm on the individual contig.\n";
-      my $job_string = qq"cd ${workdir} && \\
+        $contig_number++;
+        my $id = $contig->id;
+        my $contig_name = qq"contig${contig_number}";
+        my $out_cwd_file = qq"${contig_name}.fasta";
+        my $out_file = qq"${workdir}/${out_cwd_file}";
+        my $out_contig = Bio::SeqIO->new(-file => ">${out_file}",
+                                         -format => 'Fasta');
+        print $phage_log "Extracted contig ${contig_number} as ${out_file}.\n";
+        $out_contig->write_seq($contig);
+        ## Now that we have the individual contigs separated, run phageterm on them.
+        print $phage_log "Running phageterm on the individual contig.\n";
+        my $job_string = qq"cd ${workdir} && \\
 PhageTerm.py -f ${read_string} \\
   -r ${out_cwd_file} --nrt --report_title ${contig_name} \\
   2>${contig_name}.stderr 1>${contig_name}.stdout && \\
   mv nrt.txt ${contig_name}_nrt.txt";
-      my $running_job = qx"${job_string}";
-  }
+        my $running_job = qx"${job_string}";
+    }
     ## Now that we have run phageterm on each contig
     ## Go back over them and find which (if any) have
     ## a DTR and put the first one on the front of the assembly.
@@ -1306,20 +1327,20 @@ PhageTerm.py -f ${read_string} \\
     print $phage_log "Looking through phageterm results for the first DTR.\n";
     my $dtr_contig = '0';
   DTR_HUNT: for my $num (1 .. $contig_number) {
-      ## There are two conditions required for a good DTR:
-      ## 1.  a direct-term-repeats.fasta file
-      ## 2.  a rewritten genome file, which on occasion is unfortunately empty.
-      my $test_dtr = qq"${workdir}/contig${num}_direct-term-repeats.fasta";
-      my $test_genome = qq"${workdir}/contig${num}_sequence.fasta";
-      my $test_lines = qx"wc -l ${test_genome} | awk '{print \$1}'";
-      ## If we find the dtr file, take note of the contig and break out.
-      print $phage_log "Looking for ${test_dtr} and counting lines of ${test_genome} which is ${test_lines}\n";
-      if (-r $test_genome and $test_lines > 2) {
-          print $phage_log "Using contig $num as the DTR containing contig.\n";
-          $dtr_contig = $num;
-          last DTR_HUNT;
-      }
-  } ## End the DTR hunt
+        ## There are two conditions required for a good DTR:
+        ## 1.  a direct-term-repeats.fasta file
+        ## 2.  a rewritten genome file, which on occasion is unfortunately empty.
+        my $test_dtr = qq"${workdir}/contig${num}_direct-term-repeats.fasta";
+        my $test_genome = qq"${workdir}/contig${num}_sequence.fasta";
+        my $test_lines = qx"wc -l ${test_genome} | awk '{print \$1}'";
+        ## If we find the dtr file, take note of the contig and break out.
+        print $phage_log "Looking for ${test_dtr} and counting lines of ${test_genome} which is ${test_lines}\n";
+        if (-r $test_genome and $test_lines > 2) {
+            print $phage_log "Using contig $num as the DTR containing contig.\n";
+            $dtr_contig = $num;
+            last DTR_HUNT;
+        }
+    }                           ## End the DTR hunt
 
     ## Last step, if we found a dtr, rewrite the assembly with it as the first contig
     ## But first, handle the case where there is no DTR.
@@ -1327,66 +1348,68 @@ PhageTerm.py -f ${read_string} \\
         print $phage_log "No DTR was observed, copying the input to the phageterm output file.\n";
         my $copied = qx"cp $options->{library} ${workdir}/phageterm_final_assembly.fasta && \\
   echo 'no dtr' > ${workdir}/phageterm_final_nodtr.txt";
-  } else {
-      ## Otherwise, put the DTR as the first contig and copy the rest
-      ## There is a caveat here, I need to rename the DTR containing contig to #1
-      ## and then rename any following contigs to 2..n
-      my $new_contig_number = 1;
-      my $new_contig_name = qq"contig${new_contig_number}";
-      print $phage_log "A DTR was found, writing to the phageterm output file.\n";
-      my $out_assembly = Bio::SeqIO->new(-file => qq">${workdir}/phageterm_final_assembly.fasta",
-                                         -format => 'Fasta');
-      print $phage_log "Writing the first output assembly entry: ${workdir}/contig${dtr_contig}_sequence.fasta.\n";
-      my $in_assembly = Bio::SeqIO->new(-file => qq"<${workdir}/contig${dtr_contig}_sequence.fasta",
-                                        -format => 'Fasta');
-      while (my $sequence = $in_assembly->next_seq()) {
-          ## my $print_seq = $sequence->seq;
-          my $test_name = $sequence->display_name($new_contig_name);
-          $out_assembly->write_seq($sequence);
-      }
-      ## For the rest of the contigs, copy the unmodified sequences to the final assembly.
-      print $phage_log "Writing all other contigs to the final assembly.\n";
-    CONTIG_LOOP: for my $num (1 .. $contig_number) {
-        if ($num eq $dtr_contig) {
-            ## print "This contig: ${num} $dtr_contig is the same as the dtr, skipping.\n";
-            next CONTIG_LOOP;
-        }
-        $new_contig_number++;
-        $new_contig_name = qq"contig{$new_contig_number}";
-        print $phage_log "Writing contig ${num} to the final assembly.\n";
-        my $last_contig = Bio::SeqIO->new(-file => qq"<${workdir}/contig${num}.fasta",
+    }
+    else {
+        ## Otherwise, put the DTR as the first contig and copy the rest
+        ## There is a caveat here, I need to rename the DTR containing contig to #1
+        ## and then rename any following contigs to 2..n
+        my $new_contig_number = 1;
+        my $new_contig_name = qq"contig${new_contig_number}";
+        print $phage_log "A DTR was found, writing to the phageterm output file.\n";
+        my $out_assembly = Bio::SeqIO->new(-file => qq">${workdir}/phageterm_final_assembly.fasta",
+                                           -format => 'Fasta');
+        print $phage_log "Writing the first output assembly entry: ${workdir}/contig${dtr_contig}_sequence.fasta.\n";
+        my $in_assembly = Bio::SeqIO->new(-file => qq"<${workdir}/contig${dtr_contig}_sequence.fasta",
                                           -format => 'Fasta');
-        while (my $seq = $last_contig->next_seq()) {
-            my $test_name = $seq->display_name($new_contig_name);
-            $out_assembly->write_seq($seq);
+        while (my $sequence = $in_assembly->next_seq()) {
+            ## my $print_seq = $sequence->seq;
+            my $test_name = $sequence->display_name($new_contig_name);
+            $out_assembly->write_seq($sequence);
         }
-    } ## End the contig loop
-
-      ## Now lets copy the DTR and nrt files
-      my $dtr_file = qq"${workdir}/contig${dtr_contig}_direct-term-repeats.fasta";
-      if (-r $dtr_file) {
-          print $phage_log "Copying the dtr from contig ${dtr_contig} to phageterm_final_dtr.fasta.\n";
-          ## Note, here too we must ensure that the new contig # is 1.
-          ## my $dtr_copy = qx"cp ${workdir}/contig${dtr_contig}_direct-term-repeats.fasta ${workdir}/phageterm_final_dtr.fasta";
-          ## So, copying the dtr file is not appropriate.
-          my $final_dtr_seq = Bio::SeqIO->new(-file => qq">${workdir}/phageterm_final_dtr.fasta",
+        ## For the rest of the contigs, copy the unmodified sequences to the final assembly.
+        print $phage_log "Writing all other contigs to the final assembly.\n";
+      CONTIG_LOOP: for my $num (1 .. $contig_number) {
+            if ($num eq $dtr_contig) {
+                ## print "This contig: ${num} $dtr_contig is the same as the dtr, skipping.\n";
+                next CONTIG_LOOP;
+            }
+            $new_contig_number++;
+            $new_contig_name = qq"contig{$new_contig_number}";
+            print $phage_log "Writing contig ${num} to the final assembly.\n";
+            my $last_contig = Bio::SeqIO->new(-file => qq"<${workdir}/contig${num}.fasta",
                                               -format => 'Fasta');
-          my $dtr_seq = Bio::SeqIO->new(-file => qq"<${dtr_file}",
-                                            -format => 'Fasta');
-          while (my $dtr_sequence = $dtr_seq->next_seq()) {
-              my $start_name = $dtr_sequence->display_name();
-              my $end_name = $start_name;
-              $end_name =~ s/^contig\d+/contig1/g;
-              my $test_name = $dtr_sequence->display_name($end_name);
-              print "Renamed dtr sequence from: $start_name to $end_name\n";
-              $final_dtr_seq->write_seq($dtr_sequence);
-          }
-      } else {
-          print $phage_log "There is not dtr fasta file for ${dtr_contig}.\n";
-      }
-      print $phage_log "Copying the NRT file from ${dtr_contig} to phageterm_final_nrt.txt.\n";
-      my $ntr_copy = qx"cp ${workdir}/contig${dtr_contig}_nrt.txt ${workdir}/phageterm_final_nrt.txt";
-  } ## End when we do find a DTR
+            while (my $seq = $last_contig->next_seq()) {
+                my $test_name = $seq->display_name($new_contig_name);
+                $out_assembly->write_seq($seq);
+            }
+        }                       ## End the contig loop
+
+        ## Now lets copy the DTR and nrt files
+        my $dtr_file = qq"${workdir}/contig${dtr_contig}_direct-term-repeats.fasta";
+        if (-r $dtr_file) {
+            print $phage_log "Copying the dtr from contig ${dtr_contig} to phageterm_final_dtr.fasta.\n";
+            ## Note, here too we must ensure that the new contig # is 1.
+            ## my $dtr_copy = qx"cp ${workdir}/contig${dtr_contig}_direct-term-repeats.fasta ${workdir}/phageterm_final_dtr.fasta";
+            ## So, copying the dtr file is not appropriate.
+            my $final_dtr_seq = Bio::SeqIO->new(-file => qq">${workdir}/phageterm_final_dtr.fasta",
+                                                -format => 'Fasta');
+            my $dtr_seq = Bio::SeqIO->new(-file => qq"<${dtr_file}",
+                                          -format => 'Fasta');
+            while (my $dtr_sequence = $dtr_seq->next_seq()) {
+                my $start_name = $dtr_sequence->display_name();
+                my $end_name = $start_name;
+                $end_name =~ s/^contig\d+/contig1/g;
+                my $test_name = $dtr_sequence->display_name($end_name);
+                print "Renamed dtr sequence from: $start_name to $end_name\n";
+                $final_dtr_seq->write_seq($dtr_sequence);
+            }
+        }
+        else {
+            print $phage_log "There is not dtr fasta file for ${dtr_contig}.\n";
+        }
+        print $phage_log "Copying the NRT file from ${dtr_contig} to phageterm_final_nrt.txt.\n";
+        my $ntr_copy = qx"cp ${workdir}/contig${dtr_contig}_nrt.txt ${workdir}/phageterm_final_nrt.txt";
+    }                           ## End when we do find a DTR
     print $phage_log "Deleting the uncompressed input files.\n";
     my $delete_crap = qx"rm -f ${workdir}/r1.fastq ${workdir}/r2.fastq 2>/dev/null 1>/dev/null";
 }
@@ -1416,7 +1439,7 @@ sub Phastaf {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
-        input_phageterm => '',  ## In case we want to re-analyze the assembly
+        input_phageterm => '', ## In case we want to re-analyze the assembly
         interpret => 1,
         jcpu => 8,
         jmem => 12,
@@ -1542,10 +1565,10 @@ sub Interpret_Phastaf_Worker {
             my $prophage_end = $p->{end};
             my $wanted = undef;
           GET_SEQ: while (my $piece = $in_assembly->next_seq()) {
-              last GET_SEQ if (defined($wanted));
-              next GET_SEQ unless($piece->id eq $prophage_contig);
-              $wanted = $piece;
-          }
+                last GET_SEQ if (defined($wanted));
+                next GET_SEQ unless($piece->id eq $prophage_contig);
+                $wanted = $piece;
+            }
             ## Reopen the assembly for future usage
             $in_assembly = Bio::SeqIO->new(-file => qq"<$options->{input_fna}",
                                            -format => 'Fasta');
@@ -1589,7 +1612,7 @@ sub Interpret_Phastaf_Worker {
             $current_len = $contig_hits->{$contig_number}->{$simple_strain};
         }
         $contig_hits->{$contig_number}->{$simple_strain} = $current_len + $hit_len;
-    } ## End looking over every hit.
+    }                           ## End looking over every hit.
 
     my @contig_keys = ();
     my $num_contigs_with_hits = 0;
@@ -1607,7 +1630,8 @@ sub Interpret_Phastaf_Worker {
 
     if ($num_contigs == 1) {
         print $log "There appears to be a single contig.\n";
-    } elsif ($num_contigs == 2 && $num_contigs_with_hits == 2) {
+    }
+    elsif ($num_contigs == 2 && $num_contigs_with_hits == 2) {
         print $log "There appears to be 2 contigs.  Let us see the intersection of them?\n";
         my @first = $contig_keys[0];
         my @second = $contig_keys[1];
@@ -1658,7 +1682,8 @@ sub Interpret_Phastaf_Worker {
                     input => $full_input);
                 chdir($new_output_base);
             }
-        } else {
+        }
+        else {
             print $log "There are ${num_inter} shared strains in these two contigs.\n";
         }
     }
@@ -1764,38 +1789,38 @@ sub Restriction_Catalog_Worker {
     my $query = Bio::SeqIO->new(-file => $options->{input}, -format => 'Fasta');
     my %data = ();
   SEARCHES: while (my $contig = $query->next_seq()) {
-      my $sequence = $contig->seq;
-      my $analysis = Bio::Restriction::Analysis->new(-seq => $contig);
-      my $internal = {};
-      for my $en ($collection->each_enzyme()) {
-          my $name = $en->name;
-          my $site = $en->site;
-          if (!defined($site)) {
-              $site = '';
-          }
-          my $overhang = $en->overhang_seq;
-          if (!defined($overhang)) {
-              $overhang = '';
-          }
-          my $cuts = $analysis->cuts_by_enzyme($name);
-          if (!defined($cuts)) {
-              $cuts = 0;
-          }
-          my @fragments = $analysis->fragments($en);
-          $internal = {
-              site => $site,
-              overhang => $overhang,
-              cuts => $cuts,
-              fragments => \@fragments,
-          };
-          if ($data{$name}) {
-              $internal->{cuts} = $internal->{cuts} + $data{$name}->{cuts};
-              push(@fragments, $internal->{fragments});
-              $internal->{fragments} = \@fragments;
-          }
-          $data{$name} = $internal;
-      }
-  }
+        my $sequence = $contig->seq;
+        my $analysis = Bio::Restriction::Analysis->new(-seq => $contig);
+        my $internal = {};
+        for my $en ($collection->each_enzyme()) {
+            my $name = $en->name;
+            my $site = $en->site;
+            if (!defined($site)) {
+                $site = '';
+            }
+            my $overhang = $en->overhang_seq;
+            if (!defined($overhang)) {
+                $overhang = '';
+            }
+            my $cuts = $analysis->cuts_by_enzyme($name);
+            if (!defined($cuts)) {
+                $cuts = 0;
+            }
+            my @fragments = $analysis->fragments($en);
+            $internal = {
+                site => $site,
+                overhang => $overhang,
+                cuts => $cuts,
+                fragments => \@fragments,
+            };
+            if ($data{$name}) {
+                $internal->{cuts} = $internal->{cuts} + $data{$name}->{cuts};
+                push(@fragments, $internal->{fragments});
+                $internal->{fragments} = \@fragments;
+            }
+            $data{$name} = $internal;
+        }
+    }
 
     my $re_tsv = FileHandle->new(">$options->{output}");
     print $re_tsv qq"RE\tSite\tOverhang\tCuts\n";
@@ -1953,7 +1978,8 @@ sub Terminase_ORF_Reorder_Worker {
         ## Just in case a path is provided
         my $outfile = basename($options->{output_file});
         $new_filename = qq"${output_dir}/${outfile}";
-    } else {
+    }
+    else {
         $new_filename = basename($options->{input}, ('.fasta'));
         $new_filename = qq"${output_dir}/${new_filename}_reordered.fasta";
     }
@@ -1982,7 +2008,8 @@ sub Terminase_ORF_Reorder_Worker {
     my ($stdout, $stderr, @returns)  = capture {
         try {
             @fasta_output = $search->run($options->{query});
-        } catch ($e) {
+        }
+        catch ($e) {
             print $log "There was an error running standalone fasta: $e\n";
             warn "An error occurred: $e";
         }
@@ -1997,55 +2024,55 @@ sub Terminase_ORF_Reorder_Worker {
     my $element_count = 0;
     my $result_count = 0;
   RESULTS: while (my $result = $search_output->next_result) {
-      $result_count++;
-      my $query_name = $result->query_name();
-      my $query_length = $result->query_length();
-      my $query_descr = $result->query_description();
-      my $stats = $result->available_statistics();
-      my $hits = $result->num_hits();
+        $result_count++;
+        my $query_name = $result->query_name();
+        my $query_length = $result->query_length();
+        my $query_descr = $result->query_description();
+        my $stats = $result->available_statistics();
+        my $hits = $result->num_hits();
 
-      $result_data->{$query_name} = {
-          description => $query_descr,
-          name => $query_name,
-          stats => $stats,
-          num_hits => $hits,
-          length => $query_length,
-          hit_data => [],
-      };
-      my $hit_count = 0;
-    HITLOOP: while (my $hits = $result->next_hit()) {
-        $number_hits = $number_hits++;
-        my $hit_name = $hits->name();
-        my $hit_length = $hits->length();
-        my $hit_strand = $hits->strand('hit');
-        my $query_strand = $hits->strand('query');
-        my $hit_acc = $hits->accession();
-        my $hit_descr = $hits->description();
-        my $hit_score = $hits->score();
-        my $hit_sig = $hits->significance();
-        my $hit_bits = $hits->bits();
-        my @hit_data = @{$result_data->{$query_name}->{hit_data}};
-        my $hit_datum = {
-            name => $hit_name,
-            length => $hit_length,
-            acc => $hit_acc,
-            hit_description => $hit_descr,
-            score => $hit_score,
-            sig => $hit_sig,
-            bit => $hit_bits,
-            hit_strand => $hit_strand,
-            query_strand => $query_strand,
-            query_description => $query_descr,
-            query_length => $query_length,
-            query_name => $query_name,
+        $result_data->{$query_name} = {
+            description => $query_descr,
+            name => $query_name,
+            stats => $stats,
+            num_hits => $hits,
+            length => $query_length,
+            hit_data => [],
         };
-        print $hit_fh "${hit_name}\t${hit_length}\t${hit_acc}\t${hit_descr}\t${hit_score}\t${hit_sig}\t${hit_bits}\t${hit_strand}\t${query_strand}\t${query_descr}\t${query_length}\t${query_name}\n";
-        ## print "HITLOOP: ${hit_name}\t${hit_length}\t${hit_acc}\t${hit_descr}\t${hit_score}\t${hit_sig}\t${hit_bits}\t${hit_strand}\t${query_strand}\t${query_descr}\t${query_length}\t${query_name}\n";
-        push(@hit_data, $hit_datum);
-        $result_data->{$query_name}->{hit_data} = \@hit_data;
-        $hit_count++;
-    } ## End the hitloop.
-  } ## End of the individual fasta search  (maybe not needed?)
+        my $hit_count = 0;
+      HITLOOP: while (my $hits = $result->next_hit()) {
+            $number_hits = $number_hits++;
+            my $hit_name = $hits->name();
+            my $hit_length = $hits->length();
+            my $hit_strand = $hits->strand('hit');
+            my $query_strand = $hits->strand('query');
+            my $hit_acc = $hits->accession();
+            my $hit_descr = $hits->description();
+            my $hit_score = $hits->score();
+            my $hit_sig = $hits->significance();
+            my $hit_bits = $hits->bits();
+            my @hit_data = @{$result_data->{$query_name}->{hit_data}};
+            my $hit_datum = {
+                name => $hit_name,
+                length => $hit_length,
+                acc => $hit_acc,
+                hit_description => $hit_descr,
+                score => $hit_score,
+                sig => $hit_sig,
+                bit => $hit_bits,
+                hit_strand => $hit_strand,
+                query_strand => $query_strand,
+                query_description => $query_descr,
+                query_length => $query_length,
+                query_name => $query_name,
+            };
+            print $hit_fh "${hit_name}\t${hit_length}\t${hit_acc}\t${hit_descr}\t${hit_score}\t${hit_sig}\t${hit_bits}\t${hit_strand}\t${query_strand}\t${query_descr}\t${query_length}\t${query_name}\n";
+            ## print "HITLOOP: ${hit_name}\t${hit_length}\t${hit_acc}\t${hit_descr}\t${hit_score}\t${hit_sig}\t${hit_bits}\t${hit_strand}\t${query_strand}\t${query_descr}\t${query_length}\t${query_name}\n";
+            push(@hit_data, $hit_datum);
+            $result_data->{$query_name}->{hit_data} = \@hit_data;
+            $hit_count++;
+        }   ## End the hitloop.
+    }       ## End of the individual fasta search  (maybe not needed?)
     $hit_fh->close();
 
     ## We wrote the hits, now check to see if we actually need to reorder the assembly.
@@ -2053,7 +2080,8 @@ sub Terminase_ORF_Reorder_Worker {
     print $log "Testing for $options->{test_file}\n";
     if (-r $options->{test_file}) {
         print $log "The test file exists, reorder the genome to the terminase.\n";
-    } else {
+    }
+    else {
         my $full_input = abs_path($options->{input});
         my $pwd = getcwd();
         my $full_new = qq"${pwd}/${new_filename}";
@@ -2066,12 +2094,13 @@ Symlinking ${full_input} to ${full_new} and stopping.\n";
         my $linked = symlink($full_input, $full_new);
         if (-f $full_new) {
             print $log "The symlink succeeded, the file ${full_new} should exist.\n";
-        } else {
+        }
+        else {
             print $log "Something went wrong with ln -s ${full_input} ${full_new}\n";
             my $linked = qx"ln -s ${full_input} ${full_new}";
         }
         return($full_new);
-    } ## End checking for the test file.
+    }                           ## End checking for the test file.
 
     ## At this point we should have a data structure
     ## $result_data, with primary keys as the ORF IDs
@@ -2087,39 +2116,41 @@ Symlinking ${full_input} to ${full_new} and stopping.\n";
     my $best_query_strand;
     my $best_hit_strand;
   SCANNER: foreach my $query_id (keys %{$result_data}) {
-      my $query_description = $result_data->{$query_id}->{query_description};
-      my @hit_arr = @{$result_data->{$query_id}->{hit_data}};
-      my $hits = scalar(@hit_arr);
-      $total_hits = $total_hits + $hits;
-      if ($hits < 1) {
-          next SCANNER;
-      }
-      my $new_best_hit = 0;
-    HITS: for my $hit (@hit_arr) {
-        if ($hit->{sig} > $best_score) {
-            $best_query = $query_id;
-            $best_query_strand = $hit->{query_strand};
-            $best_hit_strand = $hit->{hit_strand};
-            $best_hit_description = $hit->{hit_description};
-            $best_query_description = $hit->{query_description};
-            $best_score = $hit->{sig};
-            my $hit_strand = $hit->{strand};
-            print $log "Found a new best hit ${best_hit_description} ${best_query_description}: ${query_id} with evalue $hit->{sig}\n";
-            print "Found a new best hit ${best_hit_description} ${best_query_description}: ${query_id} with evalue $hit->{sig}\n";
-            print $log "  This is on query strand: ${best_query_strand} and hit strand: ${best_hit_strand}\n";
-            print "  This is on query strand: ${best_query_strand} and hit strand: ${best_hit_strand}\n";
-            $new_best_hit++;
-        } elsif ($hit->{sig} == $best_score) {
-            print $log "Found an equivalent hit: ${query_id} with evalue $hit->{sig}.\n";
-            print "Found an equivalent hit: ${query_id} with evalue $hit->{sig}.\n";
-        } else {
-            next HITS;
+        my $query_description = $result_data->{$query_id}->{query_description};
+        my @hit_arr = @{$result_data->{$query_id}->{hit_data}};
+        my $hits = scalar(@hit_arr);
+        $total_hits = $total_hits + $hits;
+        if ($hits < 1) {
+            next SCANNER;
         }
-    }
-      if ($new_best_hit == 0) {
-          next SCANNER;
-    }
-  } ## Finished iterating over every potential result.
+        my $new_best_hit = 0;
+      HITS: for my $hit (@hit_arr) {
+            if ($hit->{sig} > $best_score) {
+                $best_query = $query_id;
+                $best_query_strand = $hit->{query_strand};
+                $best_hit_strand = $hit->{hit_strand};
+                $best_hit_description = $hit->{hit_description};
+                $best_query_description = $hit->{query_description};
+                $best_score = $hit->{sig};
+                my $hit_strand = $hit->{strand};
+                print $log "Found a new best hit ${best_hit_description} ${best_query_description}: ${query_id} with evalue $hit->{sig}\n";
+                print "Found a new best hit ${best_hit_description} ${best_query_description}: ${query_id} with evalue $hit->{sig}\n";
+                print $log "  This is on query strand: ${best_query_strand} and hit strand: ${best_hit_strand}\n";
+                print "  This is on query strand: ${best_query_strand} and hit strand: ${best_hit_strand}\n";
+                $new_best_hit++;
+            }
+            elsif ($hit->{sig} == $best_score) {
+                print $log "Found an equivalent hit: ${query_id} with evalue $hit->{sig}.\n";
+                print "Found an equivalent hit: ${query_id} with evalue $hit->{sig}.\n";
+            }
+            else {
+                next HITS;
+            }
+        }
+        if ($new_best_hit == 0) {
+            next SCANNER;
+        }
+    }               ## Finished iterating over every potential result.
     print $log "Out of ${total_hits} hits, ${best_query} was chosen with an e-value of: ${best_score}.\n";
     print "Out of ${total_hits} hits, ${best_query} was chosen with an e-value of: ${best_score}.\n";
     print $log "Best terminase description: ${best_query_description}\n";
@@ -2162,11 +2193,12 @@ Symlinking ${full_input} to ${full_new} and stopping.\n";
         my $current_length = $seqobj->length();
         if ($current_id eq $best_contig) {
             $first_object = $seqobj;
-        } else {
+        }
+        else {
             push(@other_objects, $seqobj);
         }
         $assembly_lengths{$current_id} = $current_length;
-    } ## End iterating over the sequences.
+    }                           ## End iterating over the sequences.
 
     ## The last thing to remember is that prodigal encodes its position information
     ## as a set of # thing # thing # things, so lets grab out the information of interest.
@@ -2195,7 +2227,8 @@ Symlinking ${full_input} to ${full_new} and stopping.\n";
   ${first_start}:${first_end} and ${second_start}:${second_end}.\n";
         print $log "Merging two + strand pieces:
   ${first_start}:${first_end} and ${second_start}:${second_end}.\n";
-    } else {
+    }
+    else {
         $first_start = 1;
         $first_end = $best_seq_end;
         $second_start = $best_seq_end + 1;
@@ -2217,7 +2250,8 @@ Symlinking ${full_input} to ${full_new} and stopping.\n";
             $second_seq =~ tr/ATGCUatgcu/TACGAtacga/;
             print $log " and ${second_start}:${second_end}";
             print " and ${second_start}:${second_end}";
-        } else {
+        }
+        else {
             print $log " and nothing, something is weird with the second sequence.";
             print " and nothing, something is weird with the second sequence.";
         }
@@ -2226,7 +2260,8 @@ Symlinking ${full_input} to ${full_new} and stopping.\n";
     my $final_sequence;
     if (defined($second_seq)) {
         $final_sequence = $first_seq . $second_seq;
-    } else {
+    }
+    else {
         $final_sequence = $first_seq;
     }
 
@@ -2315,7 +2350,8 @@ sub Xref_Crispr_Worker {
             my @sequences = @{$crispr->{$host}};
             push(@sequences, $seq);
             $crispr->{$host} = \@sequences;
-        } else {
+        }
+        else {
             $num_hosts++;
             my @sequences = ($seq);
             $crispr->{$host} = \@sequences;
@@ -2336,30 +2372,30 @@ sub Xref_Crispr_Worker {
             my $crispr_len = length($crispr_seq);
             my $fsa_read = Bio::SeqIO->new(-file => $options->{input}, -format => 'Fasta');
           FSA: while (my $genome_seq = $fsa_read->next_seq()) {
-              my $contig_sequence = $genome_seq->seq;
-              my $contig_sequence_rc = $genome_seq->revcom->seq;
-              my $contig_id = $genome_seq->id;
-              my $strand = 1;
-              my $crispr_end = 0;
-              my $crispr_start = 0;
-            CR_SEARCH: while ($contig_sequence =~ m/$crispr_seq/g) {
-                $found++;
-                $found_fwd++;
-                $crispr_end = pos($contig_sequence);
-                $crispr_start = $crispr_end - ($crispr_len - 1);
-                print $output_fh "${host}\t${contig_id}\t${crispr_seq}\t${strand}\t${crispr_start}\t${crispr_end}\n";
-            }
-            RC_SEARCH: while ($contig_sequence_rc =~ m/$crispr_seq/g) {
-                $found++;
-                $found_rev++;
-                $strand = -1;
-                $crispr_start = pos($contig_sequence_rc);
-                $crispr_end = $crispr_start - ($crispr_start - 1);
-                print $output_fh "${host}\t${contig_id}\t${crispr_seq}\t${strand}\t${crispr_start}\t${crispr_end}\n";
-            }
-          } ## End matching on this contig
-        } ## End iterating over the contigs
-    } ## End looking over the hash of crispr sequences
+                my $contig_sequence = $genome_seq->seq;
+                my $contig_sequence_rc = $genome_seq->revcom->seq;
+                my $contig_id = $genome_seq->id;
+                my $strand = 1;
+                my $crispr_end = 0;
+                my $crispr_start = 0;
+              CR_SEARCH: while ($contig_sequence =~ m/$crispr_seq/g) {
+                    $found++;
+                    $found_fwd++;
+                    $crispr_end = pos($contig_sequence);
+                    $crispr_start = $crispr_end - ($crispr_len - 1);
+                    print $output_fh "${host}\t${contig_id}\t${crispr_seq}\t${strand}\t${crispr_start}\t${crispr_end}\n";
+                }
+              RC_SEARCH: while ($contig_sequence_rc =~ m/$crispr_seq/g) {
+                    $found++;
+                    $found_rev++;
+                    $strand = -1;
+                    $crispr_start = pos($contig_sequence_rc);
+                    $crispr_end = $crispr_start - ($crispr_start - 1);
+                    print $output_fh "${host}\t${contig_id}\t${crispr_seq}\t${strand}\t${crispr_start}\t${crispr_end}\n";
+                }
+            }         ## End matching on this contig
+        }             ## End iterating over the contigs
+    }                 ## End looking over the hash of crispr sequences
     $output_fh->close();
     print $log "Found ${found} total sequences, ${found_fwd} forward and ${found_rev} reverse.\n";
     $log->close();

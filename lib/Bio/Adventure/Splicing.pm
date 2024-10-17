@@ -218,24 +218,42 @@ sub Spladder {
     my $info = $class->Bio::Adventure::Metadata::Get_Metadata_Column(
         input => $options->{input},
         condition_column => $options->{condition_column},
-        file_column => $options->{file_column},
+        wanted_column => $options->{file_column},
         type => 'file');
     my @groups = keys %{$info->{wanted_by_cond}};
     my %group_strings = ();
-    my $detect_string = '';
+    my $all_bam = '';
     for my $g (@groups) {
         my $group_string = join(',', @{$info->{wanted_by_cond}{$g}});
         $group_strings{$g} = $group_string;
-        $detect_string .= qq"spladder.py -a ${gtf_file} \\
-  -b ${group_string} \\
-  -o ${spladder_dir}/${g} \\
-  -T y 2>>${stderr} 1>>${stdout}
-";
+        $all_bam .= qq"${group_string},";
     }
+    $all_bam =~ s/\,$//g;
+    my $build_string .= qq"
+spladder build \\
+  --annotation ${gtf_file} \\
+  --bams ${all_bam} \\
+  --outdir ${spladder_dir} \\
+  --output-gff3 \\
+  --parallel 8 --verbose --readlen $options->{read_length} \\
+  2>${stderr} 1>${stdout}
+";
+    my $test_string = qq"
+spladder test \\
+  --conditionA $group_strings{$options->{numerator}} \\
+  --conditionB $group_strings{$options->{denominator}} \\
+  --outdir ${spladder_dir} \\
+  --labelA $options->{numerator} \\
+  --labelB $options->{denominator} \\
+  --out-tag $options->{numerator}_vs_$options->{denominator} \\
+  --diagnose-plots --plot-format png --verbose \\
+  --parallel 8 --high-memory \\
+  2>>${stderr} 1>>${stdout}
+";
     my $comment = qq"## Invoke spladder.";
     my $jstring = qq!mkdir -p ${spladder_dir}
-
-${detect_string}
+${build_string}
+${test_string}
 !;
     my $spladder_job = $class->Submit(
         comment => $comment,

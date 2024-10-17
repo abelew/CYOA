@@ -33,6 +33,10 @@ use File::Which qw"which";
  to a sorted-compressed-indexed bam, count it with htseq-count, compress the various
  output fastq files, and collect a few alignment statistics.
 
+=item C<Arguments>
+
+=over
+
  This requires the arguments: 'input' and 'species'.  The input is likely a
  colon-separated pair of (compressed)fastq files.  The species will be used
  to look for bowtie indexes in ${libdir}/${libtype}/indexes/${species}.
@@ -56,6 +60,8 @@ use File::Which qw"which";
  jprefix(10): Used all over the place to define the prefix job number.
 
  modules(bowtie1)
+
+=back
 
 =cut
 sub Bowtie {
@@ -249,9 +255,9 @@ bowtie \\
  htseq-count, compress the various output fastq files, and collect a
  few alignment statistics.
 
-=over
-
 =item C<Arguments>
+
+=over
 
  input(required): colon-separated pair of (compressed)fastq files.
  species(required): used to look for bowtie indexes in
@@ -269,6 +275,8 @@ bowtie \\
   are the tags in the last column of a gff file.
  jprefix(10): Prefix for the job/output directory
  modules(bowtie2): Load this environment module.
+
+=back
 
 =cut
 sub Bowtie2 {
@@ -512,9 +520,9 @@ sub BT_Multi {
  converts the output (when appropriate) to sorted/indexed bam and passes them to
  htseq.
 
-=over
-
 =item C<Arguments>
+
+=over
 
  input(required): likely a colon-separated pair of (compressed)fastq files.
  species(required): will be used to look for bwa indexes in
@@ -529,6 +537,8 @@ sub BT_Multi {
   are the tags in the last column of a gff file.
  jprefix(30): Prefix for jobname and output directory.
  modules(bwa): load this environment module
+
+=back
 
 =cut
 sub BWA {
@@ -666,7 +676,6 @@ else
   exit \${test}
 fi
 !;
-
             if (defined($reverse_reads)) {
                 $job_string .= qq!mkdir -p ${bwa_dir}
 bwa ${method} ${extra_args} \\
@@ -789,6 +798,21 @@ fi
     return($bwa_job);
 }
 
+=head2 C<Downsample_Guess_Strand>
+
+  Downsample the data and use salmon to guestimate the strandedness of the library.
+
+=item C<Arguments>
+
+=over
+
+ input(required): Trimmed fastq files.
+ species(required): Used to find the salmon indexes.
+ reads(1e6): Pull out this many reads.
+
+=back
+
+=cut
 sub Downsample_Guess_Strand {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
@@ -898,8 +922,6 @@ ${sa_rm}
     return($salmon);
 }
 
-=back
-
 =head2 C<Hisat2>
 
  Invoke hisat2!
@@ -907,9 +929,9 @@ ${sa_rm}
 
  Hisat2 is currently my favorite aligner.
 
-=over
-
 =item C<Arguments>
+
+=over
 
  input(required): Colon separated fastq input files.
  species(required): Set the indexes.
@@ -919,8 +941,9 @@ ${sa_rm}
  libtype('genome'): Change this for different index types (contaminants/rRNA/genome).
  jmem(24): Expected memory required.
  jprefix('40'): Set the job prefix and output directory.
- modules('hisat2','samtools','htseq','bamtools'): Load these
-  environment modules.
+ modules('hisat2','samtools','htseq','bamtools'): Load these environment modules.
+
+=back
 
 =cut
 sub Hisat2 {
@@ -1206,15 +1229,17 @@ hisat2 -x $paths->{index_shell} ${hisat_args} \\
 
  Kallisto and salmon are my two favorite 'voting' based aligners.
 
-=over
-
 =item C<Arguments>
+
+=over
 
  input(required): Colon separated fastq input file(s).
  species(required): Define the location of the indexes.
  jmem(24): Expected memory requirements.
  jprefix('46'): Set the output directory/job prefix.
  modules('kallisto'): Load this environment module.
+
+=back
 
 =cut
 sub Kallisto {
@@ -1360,9 +1385,9 @@ kallisto quant ${ka_args} \\
   Given the context I am using this, it should be unsurprising that it makes trypanosome-specific
   assumptions.
 
-=over
-
 =item C<Arguments>
+
+=over
 
   input(required): Sorted/indexed bam from hisat/bowtie/bwa/etc
   species: Find the original genome/gff annotations with this.
@@ -1415,6 +1440,16 @@ my \$result = \$h->Bio::Adventure::Map::PolyA_Recorder_Worker(
     return($polyA);
 }
 
+=head2 C<PolyA_Recorder_Worker>
+
+  Does the actual work for PolyA_Recorder()
+
+  This currently assumes a fairly specific read orientation and uses a couple of regexes
+  to seek out and extract any polyA reads.  It trims off the As and optionally
+  reverse-complements the sequence so that (hopefully) any valid polyA-derived sequence
+  is in the same orientation as its upstream CDS.
+
+=cut
 sub PolyA_Recorder_Worker {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
@@ -1634,6 +1669,13 @@ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
     return($observed);
 }
 
+=head2 C<Write_PolyA_Data>
+
+ Sister to the Write_SL_Data function.
+
+ Use this to record information about each observed polyA-derived read.
+
+=cut
 sub Write_PolyA_Data {
     my %args = @_;
     my $observed = $args{observed};
@@ -1701,6 +1743,17 @@ sub Write_PolyA_Data {
  10.1186/1471-2105-12-323
 
  The most accurate and slow transcript quantification method.
+
+=item C<Arguments>
+
+=over
+
+ input(required): Trimmed fastq input file(s).
+ species(required): Used to find the indexes
+
+=back
+
+Currently everything else is left as the default.
 
 =cut
 sub RSEM {
@@ -1791,6 +1844,15 @@ sub RSEM {
  10.1038/nmeth.4197
 
  My favorite transcript aware quantification method.
+
+=item C<Arguments>
+
+=over
+
+ input(required): Trimmed file(s) containing the reads.
+ species(required): Used to locate the indexes.
+
+=back
 
 =cut
 sub Salmon {

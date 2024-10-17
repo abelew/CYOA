@@ -498,7 +498,7 @@ sub PolyA_Extractor_Worker {
         $info{reads_written}++;
         ##print $log "Writing a sequence.\n";
         my $written = $out_seq->write_seq($new_seq);
-    }                           ## End iterating over every sequence.
+    } ## End iterating over every sequence.
     ##$in_fh->close();
     ##close(INFH);
     $fh->close();

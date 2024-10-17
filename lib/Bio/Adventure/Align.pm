@@ -570,8 +570,6 @@ location=\$(dirname Mauve)
   Given a directory of nucleotide/amino acid fasta files, invoke orthofinder to look for
   ortholog families.
 
-=over
-
 =item C<Arguments>
 
   input(required): Directory name containing input fasta files.
