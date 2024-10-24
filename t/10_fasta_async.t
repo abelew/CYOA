@@ -60,6 +60,8 @@ my $run_fasta = $cyoa->Bio::Adventure::Align_Fasta::Split_Align_Fasta(
     library => $phix_local,
     fasta_tool => 'fasta36',
     align_jobs => 1,
+    best_only => 1,
+    jprefix => '10',
     parse => 1,);
 ok($run_fasta, 'Run Split_Align_Fasta.');
 my $status = $cyoa->Wait(job => $run_fasta);
@@ -67,7 +69,7 @@ my $status = $cyoa->Wait(job => $run_fasta);
 ## my $parsed_file = 'outputs/fasta_phix_cds_nt_phix/phix_cds_nt_vs_phix.parsed.txt';
 my $parsed_file = $run_fasta->{output};
 ## Caveat: every fasta36 run will give slightly different E-values.
-my $expected = qq"Name
+my $expected = qq"QueryLength
 1406
 136
 890

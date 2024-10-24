@@ -37,8 +37,6 @@ use POSIX qw"ceil";
 
  This is one of the older functions in CYOA and could really use some love.
 
-=item C<Arguments>
-
 =over
 
  blast_format(5): This needs to be one of the parseable formats, which seems
@@ -61,7 +59,7 @@ sub Make_Blast_Job {
         required => ['input'],
         blast_format => 5,
         jdepends => '',
-        jprefix => 89,
+        jprefix =>'89',
         jmem => 24,);
     my $dep = $options->{jdepends};
     my $library = $options->{library};
@@ -70,9 +68,11 @@ sub Make_Blast_Job {
     my $blast_args = $class->Passthrough_Args(arbitrary => $options->{blast_args});
 
     ## Handle array job types for slurm/torque.
-    my $queue_array_string = 'SLURM_ARRAY_TASK_ID';
-    if ($options->{cluster} eq 'torque') {
-        $queue_array_string = 'PBS_ARRAYID';
+    my $array_id_string = 'single_job';
+    if ($options->{cluster} eq 'slurm') {
+        $array_id_string = '${SLURM_ARRAY_TASK_ID}';
+    } elsif ($options->{cluster} eq 'torque') {
+        $array_id_string = '${PBS_ARRAYID}';
     }
 
     my $job_basename = $class->Get_Job_Name();
@@ -95,15 +95,16 @@ sub Make_Blast_Job {
         $jstring = qq!
 cd $options->{workdir}
 export BLASTDB=$ENV{BLASTDB}
-if [[ -f "outputs/split/\${$queue_array_string}/in.fasta" ]]; then
+export IN="$options->{workdir}/split/${array_id_string}/in.fasta"
+if [[ -f "\${IN}" ]]; then
   $options->{blast_tool} -outfmt $options->{blast_format} \\
-    -query $options->{workdir}/split/\${${queue_array_string}}/in.fasta \\
+    -query \${IN} \\
     -db ${library} ${blast_args} \\
-    -out $options->{workdir}/split/\${${queue_array_string}}.out \\
+    -out $options->{workdir}/split/${array_id_string}/${array_id_string}.out \\
     1>${stdout} \\
     2>>${stderr}
 else
-  echo "The input does not exist."
+  echo "The input does not exist: \${IN}"
   exit 0
 fi
 !;
@@ -143,8 +144,6 @@ $options->{blast_tool} -outfmt $options->{blast_format} \\
  parsed table from a series of blast searches.
 
 =over
-
-=item C<Arguments>
 
  output(required): Output file into which to write the results.
  jmem(8): Expected memory.
@@ -186,12 +185,12 @@ my \$final = \$h->Bio::Adventure::Align_Blast->Parse_Search(search_type => 'blas
 
 =over
 
-=item C<Arguments>
-
  input(required): Merged blast output.
  best_only(0): Keep only the best hit for each query?
  evalue(undef): Set an optional evalue cutoff.
  search_type('blastxml'): This needs to be a parseable blast format.
+
+=back
 
 =cut
 sub Parse_Blast {
@@ -306,8 +305,6 @@ sub Parse_Blast {
 
  In addition, this should have the blast parameters as an input
  variable.
-
-=item C<Arguments>
 
 =over
 
@@ -438,8 +435,6 @@ sub Run_Parse_Blast {
     return($number_hits);
 }
 
-=back
-
 =head2 C<Split_Align_Blast>
 
  Split up a pile of sequences and search them in parallel.
@@ -448,24 +443,45 @@ sub Run_Parse_Blast {
  them all separately.  This is the primary function to call when one
  wants to run a whole lot of blast.
 
-=item C<Arguments>
-
 =over
 
- input(required): Fasta file containing the sequences for searching.
- library(required): Fasta file containing the library of sequences to search.
- e(10): Default parameters for blast (this should be blast_param)
- blast_tool(blastn): Which blast method to invoke?
- align_jobs(40): How many jobs to invoke?
- align_parse(0): Start a parsing job upon completion?
- blast_format(5: blastxml): Which blast format for the output?
- best_only(0): Report only the best hits per search?
+=item input(required)
 
-=back
+Fasta file containing the sequences for searching.
+
+=item library(required)
+
+Fasta file containing the library of sequences to search.
+
+=item e(10)
+
+Default parameters for blast (this should be blast_param)
+
+=item blast_tool(blastn)
+
+Which blast method to invoke?
+
+=item align_jobs(40)
+
+How many jobs to invoke?
+
+=item align_parse(0)
+
+Start a parsing job upon completion?
+
+=item blast_format(5: blastxml)
+
+Which blast format for the output?
+
+=item best_only(0)
+
+Report only the best hits per search?
 
 =item C<Invocation>
 
 > cyoa --task align --method blastsplit --input query.fasta --library library.fasta
+
+=back
 
 =cut
 sub Split_Align_Blast {
@@ -512,28 +528,26 @@ blastp is normal protein/protein.
     make_path("${outdir}/blastdb") unless(-d ${outdir});
     my $output = qq"${outdir}/${que}_vs_${lib}.txt";
     $ENV{BLASTDB} = qq"${outdir}/blastdb";
-    $lib = $class->Bio::Adventure::Index::Check_Blastdb(
-        %args, workdir => $outdir);
+    my $blast_lib = $class->Bio::Adventure::Index::Check_Blastdb(
+        %args, workdir => $outdir, input => abs_path($options->{library}));
     my $split_info = $class->Bio::Adventure::Align::Get_Split(
-        %args,
-        align_jobs => $align_jobs);
-    my $num_per_split = $split_info->{num_per_split};
+        %args, align_jobs => $align_jobs);
     my $actual = $class->Bio::Adventure::Align::Make_Directories(
         workdir => $outdir,
-        num_per_split => $split_info,);
+        num_per_split => $split_info->{num_per_split},);
     print "Actually used ${actual} directories to write files.\n";
     my $alignment = $class->Bio::Adventure::Align_Blast::Make_Blast_Job(
         library => $lib,
         align_jobs => $actual,
         input => abs_path($options->{input}),
-        jname => qq"${job_basename}_makejob",
+        jname => qq"${job_basename}_makeblastjob",
         jprefix => qq"$options->{jprefix}_1",
         workdir => $outdir,
         output_type => $options->{blast_format},);
     my $concat_job = $class->Bio::Adventure::Align::Concatenate_Searches(
         input => $alignment->{output},
         jdepends => $alignment->{job_id},
-        jname => qq"${job_basename}_concat",
+        jname => qq"${job_basename}_concatblast",
         jprefix => qq"$options->{jprefix}_2",
         workdir => $outdir,);
     my $parse_input = $concat_job->{output};
@@ -558,7 +572,7 @@ my \$result = \$h->Bio::Adventure::Align::Parse_Search(
         count_output => $count_output,
         jdepends => $concat_job->{job_id},
         jmem => $options->{jmem},
-        jname => qq"${job_basename}_parser",
+        jname => qq"${job_basename}_parseblast",
         jprefix => qq"$options->{jprefix}_3",
         jstring => $jstring,
         language => 'perl',
@@ -606,8 +620,6 @@ orthomcl-pipeline.pl -i input -o output \\
         walltime => '144:00:00',);
     return($job);
 }
-
-=back
 
 =head1 AUTHOR - atb
 

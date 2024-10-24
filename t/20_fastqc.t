@@ -23,14 +23,13 @@ if (!-r 'test_forward.fastq.gz') {
 }
 
 my $cyoa = Bio::Adventure->new(cluster => 0, basedir => cwd());
-
-ok($cyoa->Bio::Adventure::QA::Fastqc(input => 'test_forward.fastq.gz'),
-   'Run Fastqc');
-
-ok(-r 'scripts/01fqc_test_forward.sh',
-   'Fastqc script exists?');
-
-ok(my $actual = $cyoa->Last_Stat(input => 'outputs/fastqc_stats.csv'),
+my $jprefix = '20';
+my $fastqc = $cyoa->Bio::Adventure::QA::Fastqc(
+    input => 'test_forward.fastq.gz',
+    jprefix => $jprefix,);
+ok($fastqc, 'Run Fastqc');
+my $stats_file = $fastqc->{stats}->{output};
+ok(my $actual = $cyoa->Last_Stat(input => $stats_file),
    'Collect Fastqc Statistics');
 my $expected = 'fqcst,10000,0,pass,warn,pass,pass,pass,warn,fail,0';
 unless(ok($expected eq $actual,

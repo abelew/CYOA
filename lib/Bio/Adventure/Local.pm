@@ -195,7 +195,7 @@ echo " \$(hostname) Finished ${script_base} at \$(date), it took \$(( SECONDS / 
     my $bash_pid = open($handle, '-|', ${script_file}) or
         die("The script: ${script_file}
 failed with error: $!.\n");
-    print "Starting a new job: ${bash_pid} $options->{jname}";
+    print "Starting a bash job: ${bash_pid} $options->{jname}";
     if ($options->{jdepends}) {
         print ", depending on $options->{jdepends}.";
     }

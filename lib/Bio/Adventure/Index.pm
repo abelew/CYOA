@@ -95,31 +95,32 @@ sub BT2_Index {
         required => ['input'],
         jprefix => '',);
     my $libtype = $options->{libtype};
-    my $libdir = File::Spec->rel2abs($options->{libpath});
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $libdir = $paths->{index_dir};
     my $species = basename($options->{input}, ('.gz', '.bz2', '.xz'));
     $species = basename($species, ('.fasta', '.fa'));
-    my $copied_location = qq"$options->{libpath}/$options->{libtype}/${species}.fasta";
+    my $copied_location = $paths->{fasta};
     if (!-f $copied_location) {
         my $fc = $class->Get_FC(input => $options->{input});
         my $copied = qx"${fc} > ${copied_location}";
     }
-    my $output_dir = qq"$options->{basedir}/outputs/$options->{jprefix}bt2_index";
-    my $stdout = qq"${output_dir}/index.stdout";
-    my $stderr = qq"${output_dir}/index.stderr";
-    my $jstring = qq!mkdir -p ${output_dir}
+    my $stdout = qq"${libdir}/index.stdout";
+    my $stderr = qq"${libdir}/index.stderr";
+    my $jstring = qq!mkdir -p ${libdir}
 bowtie2-build $options->{input} \\
-  $options->{libdir}/${libtype}/indexes/${species} \\
-  2>${stderr} 1>${stdout}
+  ${libdir}/${species} \\
+  2>${stderr} \\
+  1>${stdout}
 !;
     my $comment = qq!## Generating bowtie2 indexes for species: ${species}
-## in $options->{libdir}/${libtype}/indexes!;
+## in ${libdir}/${species}!;
     my $indexer = $class->Submit(
         comment => $comment,
         jdepends => $options->{jdepends},
         jname => qq"bt2idx_${species}",
         jprefix => $options->{jprefix},
         jstring => $jstring,
-        output => $output_dir,
+        output => $libdir,
         stderr => $stderr,
         stdout => $stdout,
         prescript => $options->{prescript},
@@ -202,7 +203,8 @@ sub Check_Blastdb {
     my $libname;
     if (defined($options->{library})) {
         $libname = $options->{library};
-    } else {
+    }
+    else {
         $libname = $options->{input};
     }
     $libname = basename($libname, ('.fasta', '.fa', '.faa', '.fsa', '.fna'));
@@ -216,9 +218,11 @@ sub Check_Blastdb {
     }
     if ($options->{blast_tool} eq 'blastn') {
         $libtype = 'nucl';
-    } elsif ($options->{blast_tool} eq 'blastp') {
+    }
+    elsif ($options->{blast_tool} eq 'blastp') {
         $libtype = 'prot';
-    } else {
+    }
+    else {
         $libtype = 'nucl';
     }
 
@@ -233,7 +237,8 @@ sub Check_Blastdb {
         my $guess = $seq->alphabet;
         if ($guess eq 'protein') {
             $guesses->{prot}++;
-        } else {
+        }
+        else {
             $guesses->{nucl}++;
         }
     }
@@ -245,7 +250,8 @@ sub Check_Blastdb {
     print "and $guesses->{nucl} were guessed nucleotide.\n";
     if ($guessed eq $libtype) {
         print "The guessed type and provided type agree!\n";
-    } else {
+    }
+    else {
         print "The guessed type and provided type disagree, going with: $guessed.\n";
         $libtype = $guessed;
     }
@@ -265,7 +271,8 @@ sub Check_Blastdb {
     if (!defined($db_directory)) {
         $ENV{BLASTDB} = "$options->{basedir}/blastdb";
         $db_directory = "$options->{basedir}/blastdb";
-    } else {
+    }
+    else {
         $relative_directory = qq"$ENV{BLASTDB}";
     }
 
@@ -276,7 +283,8 @@ sub Check_Blastdb {
         $foundlib++;
         print "Found an existing blast database at ${libname}.\n";
         return($libname);
-    } else {
+    }
+    else {
         print "Did not find an existing blast database.\n";
     }
 
@@ -362,20 +370,12 @@ sub Hisat2_Index {
         output_dir => undef,
         required => ['input'],
         jprefix => '21',);
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $species = basename($options->{input}, ('.fasta', '.fa', '.fsa'));
-    my $stdout = qq"hisat2_index_${species}.stdout";
-    my $stderr = qq"hisat2_index_${species}.stderr";
-    my $output_dir;
-    if (defined($options->{output_dir})) {
-        $output_dir = $options->{output_dir};
-    } else {
-        $output_dir = qq"$options->{basedir}/$options->{jprefix}hisat2_index";
-    }
-    $stdout = qq"${output_dir}/${stdout}";
-    $stderr = qq"${output_dir}/${stderr}";
-    make_path($output_dir, {verbose => 0}) unless (-r $output_dir);
-
+    my $paths = $class->Bio::Adventure::Config::Get_Paths(species => $species);
+    my $output_dir = $paths->{output_dir};
+    print "TESTME: Index_Hisat $species with output_dir: $output_dir\n";
+    my $stdout = qq"${output_dir}/hisat2_index_${species}.stdout";
+    my $stderr = qq"${output_dir}/hisat2_index_${species}.stderr";
     my $copied = undef;
     if (-r $paths->{fasta}) {
         print "The index fasta file appears to exist at: $paths->{fasta}.\n";
@@ -383,8 +383,7 @@ sub Hisat2_Index {
         print "Copying $options->{input} to $paths->{fasta}\n";
         $copied = cp($options->{input}, $paths->{fasta});
     }
-    my $jstring = qq!mkdir -p ${output_dir}
-mkdir -p \$(dirname $paths->{index})
+    my $jstring = qq!
 hisat2-build $options->{input} \\
   $paths->{index} \\
   2>${stderr} \\
@@ -469,34 +468,32 @@ sub Make_Codon_Table {
         args => \%args,
         required => ['species'],
         jprefix => '80',);
-    my $out_table = qq"$options->{libpath}/codon_tables/$options->{species}.txt";
-    my $out_dir = dirname($out_table);
-    unless (-d $out_dir) {
-        my $made = make_path($out_dir);
-    }
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
 
     ## I have a few suffixes for writing genbank files.
     my @potential_suffixes = ('gbff', 'gbk', 'gbf', 'gb', 'genbank');
     my @compressions = ('gz', 'xz', 'bz2');
     my $in_gbff = '';
   POTENTIAL: for my $potential (@potential_suffixes) {
-      my $start = qq"$options->{libpath}/$options->{libtype}/$options->{species}.${potential}";
-      if (-r $start) {
-          $in_gbff = $start;
-          last POTENTIAL;
-      }
-      for my $c (@compressions) {
-          my $comp_test = qq"${start}.${c}";
-          if (-r $comp_test) {
-              $in_gbff = $comp_test;
-              last POTENTIAL;
-          }
-      }
-  }
+        my $start = qq"$paths->{gbk_dir}/$options->{species}.${potential}";
+        print "SEARCHING FOR $start\n";
+        if (-r $start) {
+            $in_gbff = $start;
+            last POTENTIAL;
+        }
+        for my $c (@compressions) {
+            my $comp_test = qq"${start}.${c}";
+            if (-r $comp_test) {
+                $in_gbff = $comp_test;
+                last POTENTIAL;
+            }
+        }
+    }
     ## The table already exists, move on -- or maybe I should have it overwrite?
-    if (-r $out_table) {
+    print "Checking for the existence of a codon table: $paths->{codon_table}\n";
+    if (-r $paths->{codon_table}) {
         return(1);
-  }
+    }
 
     ## This is a little dumb, but an easy way to think through writing out the table.
     ## E.g. I will do a for(for(for())) over these to get the 64 codons.
@@ -507,37 +504,39 @@ sub Make_Codon_Table {
     ## Set up the pieces which will hold the data of interest.
     my $total_codons = 0;
     my %codon_counts = ();
+    print "Getting a FH for ${in_gbff}\n";
     my $in = $class->Get_FH(input => $in_gbff);
     my $seqio = Bio::SeqIO->new(-format => 'genbank', -fh => $in);
     my $seq_count = 0;
   SEQ: while (my $seq = $seqio->next_seq) {
-      $seq_count++;
-      ## print "Starting sequence $seq_count\n";
-      my @feature_list = $seq->get_SeqFeatures();
-      my $f_count = 0;
-    FEAT: for my $f (@feature_list) {
-        next FEAT unless ($f->primary_tag eq 'CDS');
-        $f_count++;
-        ## print "Feature: $f_count\n";
-        my $sequence_string = $f->seq->seq;
-        my $trans = $f->seq->translate->seq;
-        my @seq_str = split(//, $sequence_string);
-        my @tr_str = split(//, $trans);
-      CHOMP: while (scalar(@tr_str) > 0) {
-          my $amino = shift @tr_str;
-          my $nt1 = shift @seq_str;
-          my $nt2 = shift @seq_str;
-          my $nt3 = shift @seq_str;
-          my $codon = qq"${nt1}${nt2}${nt3}";
-          if (defined($codon_counts{$codon})) {
-              $codon_counts{$codon}++;
-          } else {
-              $codon_counts{$codon} = 1;
-          }
-          $total_codons++;
-      } ## Done pulling apart the sequence arrays.
-    } ## Iterating over the features in this sequence.
-  } ## End going through the sequences of the assembly.
+        $seq_count++;
+        ## print "Starting sequence $seq_count\n";
+        my @feature_list = $seq->get_SeqFeatures();
+        my $f_count = 0;
+      FEAT: for my $f (@feature_list) {
+            next FEAT unless ($f->primary_tag eq 'CDS');
+            $f_count++;
+            ## print "Feature: $f_count\n";
+            my $sequence_string = $f->seq->seq;
+            my $trans = $f->seq->translate->seq;
+            my @seq_str = split(//, $sequence_string);
+            my @tr_str = split(//, $trans);
+          CHOMP: while (scalar(@tr_str) > 0) {
+                my $amino = shift @tr_str;
+                my $nt1 = shift @seq_str;
+                my $nt2 = shift @seq_str;
+                my $nt3 = shift @seq_str;
+                my $codon = qq"${nt1}${nt2}${nt3}";
+                if (defined($codon_counts{$codon})) {
+                    $codon_counts{$codon}++;
+                }
+                else {
+                    $codon_counts{$codon} = 1;
+                }
+                $total_codons++;
+            }      ## Done pulling apart the sequence arrays.
+        }          ## Iterating over the features in this sequence.
+    }              ## End going through the sequences of the assembly.
     $in->close();
 
     if ($total_codons == 0) {
@@ -545,7 +544,7 @@ sub Make_Codon_Table {
         return(undef);
     }
     my $divisor = 1000.0 / $total_codons;
-    my $table = FileHandle->new(">${out_table}");
+    my $table = FileHandle->new(">$paths->{codon_table}");
     for my $f (@first) {
         for my $s (@second) {
             my $string = '';
@@ -623,7 +622,7 @@ sub Salmon_Index {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
-        required => ['input'],
+        required => ['input', 'species'],
         decoy => 1,);
     my $libtype = $options->{libtype};
     my $genome = File::Spec->rel2abs($options->{input});
@@ -673,7 +672,8 @@ ${index_string} \\
   2>${stderr} \\
   1>${stdout}
 !;
-    } else {
+    }
+    else {
         warn("This function would prefer to make a decoy aware index set which requires the full genome.");
         say("Waiting 3 seconds to see if you want to quit and gather that genome,
 otherwise a decoy-less index will be generated.");

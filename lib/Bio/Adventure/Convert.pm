@@ -195,10 +195,8 @@ sub Gb2Gff {
         jprefix => '78');
     my $base = basename($options->{input}, ('.xz', '.gz', '.bz2'));
     $base = basename($base, ('.gb', '.gba', '.gbff', '.gbk', '.genbank'));
-    my $dir = dirname($options->{input});
-    if (defined($options->{output_dir})) {
-        $dir = $options->{output_dir};
-    }
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $dir = $paths->{output_dir};
     my $output_fasta = qq"${dir}/${base}.fsa";
     my $output_all_gff = qq"${dir}/${base}_all.gff";
     my $output_gene_gff = qq"${dir}/${base}.gff";
@@ -264,7 +262,8 @@ sub Gb2Gff_Worker {
         output_all_gff => 'all.gff',
         output_gene_gff => 'gene_gff',
         required => ['input']);
-
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    print "Starting Gb2Gff_Worker with $options->{input}\n";
     #my $handle = IO::Handle->new;
     #my $fc = $class->Get_FC(input => $options->{input});
     #open($handle, "${fc} |");
@@ -538,9 +537,7 @@ sub Gff2Fasta {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
-        species => '',
-        input => '',
-        gff => '',
+        required => ['input',],
         gff_tag => 'gene_id',
         gff_type => 'cds',);
     unless ($options->{species} || ($options->{input} && $options->{gff})) {
@@ -565,12 +562,14 @@ sub Gff2Fasta {
     my $wanted_type = $options->{gff_type};
     my $chromosomes = $class->Read_Genome_Fasta(genome => $genome);
     my $gff_handle = Bio::Adventure::Get_FH(input => $gff);
+    my $nt_file = qq"${species}_${wanted_type}_${wanted_tag}_nt.fasta";
+    my $aa_file = qq"${species}_${wanted_type}_${wanted_tag}_aa.fasta";
     my $nt_out = Bio::SeqIO->new(
         -format => 'Fasta',
-        -file => qq">${species}_${wanted_type}_${wanted_tag}_nt.fasta");
+        -file => qq">${nt_file}",);
     my $aa_out = Bio::SeqIO->new(
         -format => 'Fasta',
-        -file => qq">${species}_${wanted_type}_${wanted_tag}_aa.fasta");
+        -file => qq">${aa_file}",);
     ## Note that this and the next line might not be a good idea,
     ## HT_Types only looks at the first n (40,000) records and uses that as a heuristic
     ## to see that the wanted type is actually in the gff file.
@@ -619,7 +618,13 @@ sub Gff2Fasta {
   } ## End LOOP
     $gff_handle->close();
     print "Wrote ${features_written} features to the aa/nt files.\n";
-    return($features_written);
+    my $retlist = {
+        features_written => $features_written,
+        output => $nt_file,
+        output_nt => $nt_file,
+        output_aa => $aa_file,
+    };
+    return($retlist);
 }
 
 =back

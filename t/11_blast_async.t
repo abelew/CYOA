@@ -12,7 +12,7 @@ use Bio::SeqIO;
 use Bio::Adventure;
 
 my $start = getcwd();
-my $new = 'test_output';
+my $new = 'test_output_async';
 mkdir($new);
 chdir($new);
 
@@ -58,6 +58,7 @@ my $standalone = $cyoa->Bio::Adventure::Align_Blast::Run_Parse_Blast(
 
 my $run_blast = $cyoa->Bio::Adventure::Align_Blast::Split_Align_Blast(
     input => $cds_local,
+    jprefix => '11',
     library => $phix_local,
     number => 1,
     parse => 0,);

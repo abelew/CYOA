@@ -3,34 +3,22 @@ use strict;
 use Test::More qw"no_plan";
 use Bio::Adventure;
 use Cwd;
+use File::Basename qw"basename dirname";
 use File::Copy qw"cp mv";
 use File::Path qw"remove_tree make_path rmtree";
 use File::ShareDir qw"dist_file module_dir dist_dir";
 use String::Diff qw"diff";
 use Test::File::ShareDir::Dist { 'Bio-Adventure' => 'share/' };
 my $start_dir = dist_dir('Bio-Adventure');
-my $input = 'test_forward.fastq.gz';
-my $input_file = qq"${start_dir}/${input}";
-my $phix_fasta_local = 'genome/phix.fasta';
-my $phix_fasta = qq"${start_dir}/${phix_fasta_local}";
-my $phix_gff_local = 'genome/phix.gff';
-my $phix_gff = qq"${start_dir}/${phix_gff_local}";
 
 my $start = getcwd();
-my $new = 'test_output';
+my $new = 'test_output_async';
 mkdir($new);
 chdir($new);
 
-make_path('genome/indexes'); ## Make a directory for the phix indexes.
-if (!-r $input) {
-    ok(cp($input_file, $input), 'Copying data.');
-}
-if (!-r $phix_fasta_local) {
-    ok(cp($phix_fasta, $phix_fasta_local), 'Copying phix fasta file.');
-}
-if (!-r $phix_gff_local) {
-    ok(cp($phix_gff, $phix_gff_local), 'Copying phix gff file.');
-}
+my $input_file = qq"${start_dir}/test_forward.fastq.gz";
+my $phix_fasta = qq"${start_dir}/genome/phix.fasta";
+my $phix_gff = qq"${start_dir}/genome/phix.gff";
 
 my $cyoa = Bio::Adventure->new(
     basedir => cwd(),
@@ -39,16 +27,41 @@ my $cyoa = Bio::Adventure->new(
     gff_tag => 'ID',
     gff_type => 'CDS',
     stranded => 'no',
-    vcf_cutoff => 1,
-    jprefix => '30');
-my $index = $cyoa->Bio::Adventure::Index::BT2_Index(input => $phix_fasta_local,);
-my $status = $cyoa->Wait(job => $index);
-ok($status->{State} eq 'COMPLETED', 'The bowtie2 indexing completed.');
+    vcf_cutoff => 1,);
+my $paths = $cyoa->Bio::Adventure::Config::Get_Paths(subroutine => 'Bowtie2');
+ok (-d $paths->{index_dir}, qq"The index directory: $paths->{index_dir} exists\n");
+my $fasta_dir = dirname($paths->{fasta});
+make_path($fasta_dir);
+my $gff_dir = dirname($paths->{gff});
+make_path($gff_dir);
+ok(-d $fasta_dir, qq"The fasta directory exists: ${fasta_dir}.");
+ok(-d $gff_dir, qq"The fasta directory exists: ${gff_dir}.");
+
+if (!-r 'test_forward.fastq.gz') {
+    ok(cp($input_file, 'test_forward.fastq.gz'), 'Copying data.');
+}
+if (!-r 'genome/fasta/phix.fasta') {
+    ok(cp($phix_fasta, 'genome/fasta/phix.fasta'), 'Copying phix fasta file.');
+}
+if (!-r 'genome/gff/phix.gff') {
+    ok(cp($phix_gff, 'genome/gff/phix.gff'), 'Copying phix gff file.');
+}
+
 my $variant = $cyoa->Bio::Adventure::SNP::Align_SNP_Search(
-    input => $input, introns => 0);
-ok($variant, 'Submitted variant search.');
-$status = $cyoa->Wait(job => $variant);
+    input => 'test_forward.fastq.gz',
+    jprefix => '30',);
+ok($variant, 'Submit variant search.');
+my $status = $cyoa->Wait(job => $variant);
 ok($status->{State} eq 'COMPLETED', 'The variant search completed.');
-## I think the freebayes parser runs into a problem when running on the cluster
-## which I have previously associated with not properly copying the inputs
-## to the current working directory.  This requires further investigation.
+use Data::Dumper;
+print Dumper $variant;
+## Some files to check out:
+## $variant->{parse}->{output_by_gene}
+## $variant->{parse}->{output}  {output_penetrance}  {output_count} {output_genome} {output_types}
+## Check that we got some interesting outputs:
+ok(-r $variant->{parse}->{output_by_gene}, "Created the variants by gene: $variant->{parse}->{output_by_gene}.\n");
+ok(-r $variant->{parse}->{output}, "Created the parsed variants: $variant->{parse}->{output}.\n");
+ok(-r $variant->{parse}->{output_penetrance}, "Created the penetrance file: $variant->{parse}->{output_penetrance}.\n");
+ok(-r $variant->{parse}->{output_genome}, "Created the new genome: $variant->{parse}->{output_genome}.\n");
+ok(-r $variant->{parse}->{output_types}, "Created the types: $variant->{parse}->{output_types}.\n");
+chdir($start);

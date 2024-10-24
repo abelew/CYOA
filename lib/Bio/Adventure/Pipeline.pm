@@ -904,10 +904,19 @@ sub Process_RNAseq {
     my @species_list = split(/:/, $options->{species});
     my @type_list = split(/:/, $options->{gff_type});
     my @id_list = split(/:/, $options->{gff_tag});
+    my @intron_list = (1);
+    if (defined($options->{introns})) {
+        if ($options->{introns} =~ /:/) {
+            @intron_list = split(/:/, $options->{introns});
+        } else {
+            @intron_list = ($options->{introns});
+        }
+    }
 
     my $first_species = shift @species_list;
     my $first_type = shift @type_list;
     my $first_id = shift @id_list;
+    my $first_intron = shift @intron_list;
     my $species_length = scalar(@species_list);
     my $first_map;
     my $last_sam_job;
@@ -921,6 +930,7 @@ sub Process_RNAseq {
             gff_type => $first_type,
             gff_tag => $first_id,
             input => $map_input,
+            introns => $first_intron,
             species => $first_species,
             jprefix => $prefix,
             jdepends => $map_prereq,
@@ -940,7 +950,7 @@ sub Process_RNAseq {
                 species => $first_species,
                 gff_type => $first_type,
                 gff_tag => $first_id,
-                introns => $options->{introns},
+                introns => $first_intron,
                 jprefix => $prefix,);
             $jobid = qq"${prefix}freebayes";
             $ret->{$jobid} = $first_snp;
@@ -978,6 +988,8 @@ sub Process_RNAseq {
             $nth_type = $first_type unless (defined($nth_type));
             my $nth_id = $id_list[$c];
             $nth_id = $first_id unless (defined($nth_id));
+            my $nth_intron = $intron_list[$c];
+            $nth_intron = $first_intron unless (defined($nth_intron));
 
             ## Handle if we want to host-filter the data
             $prefix = sprintf("%02d", ($prefix + 1));
@@ -986,6 +998,7 @@ sub Process_RNAseq {
                 $nth_map = $class->Bio::Adventure::Map::Hisat2(
                     jdepends => $last_job,
                     input => $first_map->{unaligned},  ## Not unaligned_comp
+                    introns => $nth_intron,
                     ## because compression is at the end.
                     species => $nth_species,
                     stranded => $options->{stranded},
@@ -1002,6 +1015,7 @@ sub Process_RNAseq {
                     $nth_map = $class->Bio::Adventure::Map::Hisat2(
                         jdepends => $last_sam_job,
                         input => $map_input,
+                        introns => $nth_intron,
                         species => $nth_species,
                         stranded => $options->{stranded},
                         gff_type => $nth_type,
@@ -1020,7 +1034,7 @@ sub Process_RNAseq {
                             species => $nth_species,
                             gff_type => $nth_type,
                             gff_tag => $nth_id,
-                            introns => $options->{introns},
+                            introns => $nth_intron,
                             jprefix => $prefix,);
                         $last_job = $nth_map->{job_id};
                         $jobid = qq"${prefix}freebayes";
@@ -1379,8 +1393,9 @@ sub Phage_Assemble {
         filter => 1,
         host_species => '',
         jsleep => 1,
+        jprefix => '0',
         required => ['input'],);
-    my $prefix = sprintf("%02d", 0);
+    my $prefix = sprintf("%02d", $options->{jprefix});
     my $final_locustag = basename(cwd());
 
     $prefix = sprintf("%02d", ($prefix + 1));

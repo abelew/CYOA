@@ -53,12 +53,14 @@ sub Align_SNP_Search {
     my $bt2_job = $class->Bio::Adventure::Map::Bowtie2(
         gff_type => 'exon',
         input => $query,
-        species => $options->{species},);
+        species => $options->{species},
+        jprefix => qq"$options->{jprefix}_1",);
     my $bamfile = $bt2_job->{samtools}->{output};
     print "About to start SNP search of ${bamfile} against $options->{species}\n";
     my $search = $class->Bio::Adventure::SNP::Freebayes_SNP_Search(
         input => $bamfile,
-        jdepends => $bt2_job->{samtools}->{job_id},);
+        jdepends => $bt2_job->{samtools}->{job_id},
+        jprefix => qq"$options->{jprefix}_2",);
     return($search);
 }
 
@@ -90,8 +92,9 @@ sub Freebayes_SNP_Search {
         jcpu => 4,
         jprefix => '50',
         jwalltime => '48:00:00',);
-    my $input_fasta = qq"$options->{libpath}/$options->{libtype}/$options->{species}.fasta";
-    my $freebayes_dir = qq"outputs/$options->{jprefix}freebayes_$options->{species}";
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $input_fasta = $paths->{fasta};
+    my $freebayes_dir = $paths->{output_dir};
     my $output_file = qq"${freebayes_dir}/$options->{species}.vcf";
     my $output_bcf = qq"${freebayes_dir}/$options->{species}.bcf";
     my $marked = qq"${freebayes_dir}/deduplication_stats.txt";
@@ -101,12 +104,26 @@ sub Freebayes_SNP_Search {
     my $stderr = qq"${freebayes_dir}/$options->{species}.stderr";
 
     ## Taken from the sister mpileup function
-    my $query_home = dirname($options->{input});
+    my $query_dir = dirname($options->{input});
     my $query_base = basename($options->{input}, ('.bam'));
+    my $deduplicate_input = qq"${freebayes_dir}/${query_base}_sorted.bam";
     my $deduplicated = qq"${freebayes_dir}/${query_base}_deduplicated.bam";
 
     my $comment = qq!## This is a freebayes search for variant against ${input_fasta}!;
     my $jstring = qq!
+mkdir -p ${freebayes_dir}
+samtools sort -l 9 -@ 4 $options->{input} -o ${deduplicate_input} \\
+  2>${freebayes_dir}/samtools_sort.out 1>&2
+if [ "\$?" -ne "0" ]; then
+    echo "samtools sort failed."
+fi
+gatk MarkDuplicates \\
+  -I ${deduplicate_input} \\
+  -O ${deduplicated} \\
+  -M ${marked} --REMOVE_DUPLICATES true --COMPRESSION_LEVEL 9 \\
+  2>${gatk_stderr} \\
+  1>${gatk_stdout}
+samtools index ${deduplicated}
 echo "Finished samtools index." >> ${stdout}
 freebayes -f ${input_fasta} \\
   -v ${output_file} \\
@@ -138,7 +155,6 @@ rm ${output_file}
         stdout => $stdout,
         output => $output_bcf,);
 
-    my $prefix = sprintf("%02d", ($options->{jprefix} + 1));
     $comment_string = qq!## This little job should make unique IDs for every detected
 ## SNP and a ratio of snp/total for all snp positions with > 20 reads.
 ## Further customization may follow.
@@ -152,11 +168,11 @@ rm ${output_file}
             gff_type => $options->{gff_type},
             gff_cds_parent_type => $options->{gff_cds_parent_type},
             gff_cds_type => $options->{gff_cds_type},
-            input => ${output_bcf},
+            input => $output_bcf,
             jcpu => 1,
             jdepends => $freebayes->{job_id},
             jname => qq"freebayes_parsenp_intron_${query_base}",
-            jprefix => $prefix,
+            jprefix => qq"$options->{jprefix}_1",
             min_value => $options->{min_value},
             max_value => $options->{max_value},
             qual => $options->{qual},
@@ -170,7 +186,7 @@ rm ${output_file}
             coverage_tag => $options->{coverage_tag},
             gff_tag => $options->{gff_tag},
             gff_type => $options->{gff_type},
-            input => ${output_bcf},
+            input => $output_bcf,
             max_value => $options->{max_value},
             min_value => $options->{min_value},
             qual => $options->{qual},
@@ -180,8 +196,7 @@ rm ${output_file}
             jcpu => 1,
             jdepends => $freebayes->{job_id},
             jname => qq"freebayes_parsenp_${query_base}",
-            jprefix => $prefix,
-            );
+            jprefix => qq"$options->{jprefix}_1",);
     }
     $freebayes->{parse} = $parse;
     return($freebayes);
@@ -236,7 +251,8 @@ echo "Started samtools sort at \$(date)" >> ${vcfutils_dir}/vcfutils_$options->{
 fi
 !;
         } else {
-            $jstring .= qq!samtools sort -l 9 -@ 4 ${query}.bam -o ${deduplicate_input} \\
+            $jstring .= qq!
+samtools sort -l 9 -@ 4 ${query}.bam -o ${deduplicate_input} \\
   2>${vcfutils_dir}/samtools_sort.out 1>&2
 if [ "\$?" -ne "0" ]; then
     echo "samtools sort failed."
@@ -328,11 +344,11 @@ sub SNP_Ratio {
         my $snp_intron = Bio::Adventure::SNP::SNP_Ratio_Intron(%args);
         return($snp_intron);
     }
-
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $print_input = $options->{input};
     my $output_dir = dirname($print_input);
     my $print_output = qq"${output_dir}";
-    my $genome = qq"$options->{libpath}/$options->{libtype}/$options->{species}.fasta";
+    my $genome = $paths->{fasta};
     my $samplename = basename(cwd());
 
     my $output_suffix = '';
@@ -343,14 +359,13 @@ sub SNP_Ratio {
     $output_suffix .= qq"_mtag-$options->{chosen_tag}" if ($options->{chosen_tag});
     my $stdout = qq"${print_output}/stdout";
     my $stderr = qq"${print_output}/stderr";
-    my $output_all = qq"${print_output}/all_tags${output_suffix}.txt";
-    my $output_count = qq"${print_output}/count${output_suffix}.txt";
+    my $output_all = qq"${print_output}/all_tags${output_suffix}.txt.xz";
     my $output_genome = qq"${print_output}/$options->{species}-${samplename}${output_suffix}.fasta";
-    my $output_by_gene = qq"${print_output}/variants_by_gene${output_suffix}.txt";
-    my $output_penetrance = qq"${print_output}/variants_penetrance${output_suffix}.txt";
-    my $output_pkm = qq"${print_output}/pkm${output_suffix}.txt";
+    my $output_by_gene = qq"${print_output}/variants_by_gene${output_suffix}.txt.xz";
+    my $output_penetrance = qq"${print_output}/variants_penetrance${output_suffix}.txt.xz";
+    my $output_pkm = qq"${print_output}/pkm${output_suffix}.txt.xz";
     my $output_types = qq"${print_output}/count_types${output_suffix}.txt";
-
+    my $output_dedup = qq"${print_output}/deduplication_stats.txt";
     my $comment_string = qq!
 ## Parse the SNP data and generate a modified $options->{species} genome.
 ##  This should read the file:
@@ -359,7 +374,6 @@ sub SNP_Ratio {
 ## ${output_genome}
 ## ${output_by_gene}
 ## ${output_penetrance}
-## ${output_count}
 ## ${output_pkm}
 !;
     my $jstring = qq"
@@ -375,7 +389,7 @@ my \$result = \$h->Bio::Adventure::SNP::SNP_Ratio_Worker(
   qual => '$options->{qual}',
   output_dir => '$output_dir',
   output => '${output_all}',
-  output_count => '${output_count}',
+  output_dedup => '${output_dedup}',
   output_genome => '${output_genome}',
   output_by_gene => '${output_by_gene}',
   output_penetrance => '${output_penetrance}',
@@ -388,13 +402,13 @@ my \$result = \$h->Bio::Adventure::SNP::SNP_Ratio_Worker(
         jdepends => $options->{jdepends},
         jmem => 48,
         jname => $options->{jname},
-        jprefix => $options->{jprefix},
+        jprefix => qq"$options->{jprefix}_1",
         jstring => $jstring,
         jwalltime => '10:00:00',
         language => 'perl',
         output_dir => $output_dir,
         output => $output_all,
-        output_count => $output_count,
+        output_dedup => $output_dedup,
         output_genome => $output_genome,
         output_by_gene => $output_by_gene,
         output_penetrance => $output_penetrance,
@@ -426,7 +440,6 @@ sub SNP_Ratio_Worker {
         min_value => 0.8,
         max_value => undef,
         output => 'all.txt',
-        output_count => 'count.txt',
         output_genome => 'new_genome.fasta',
         output_by_gene => 'counts_by_gene.txt',
         output_penetrance => 'variants_penetrance.txt',
@@ -436,14 +449,14 @@ sub SNP_Ratio_Worker {
         qual => 10,
         vcf_cutoff => 5,
         vcf_method => 'freebayes',);
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $species = $options->{species};
     my $out_dir = dirname($options->{output});
     my $log_file = qq"${out_dir}/snp_ratio.stdout";
     my $log = FileHandle->new(">${log_file}");
     my $subst_matrix = $class->Bio::Adventure::Align::Get_Substitution_Matrix(matrix => $options->{matrix});
-
-    my $genome = qq"$options->{libpath}/$options->{libtype}/${species}.fasta";
-    my $gff = qq"$options->{libpath}/$options->{libtype}/${species}.gff";
+    my $genome = $paths->{fasta};
+    my $gff = $paths->{gff};
     print $log "Reading gff: ${gff}, extracting type: $options->{gff_type} features tagged $options->{gff_tag}.\n";
     my $in_bcf = FileHandle->new("bcftools view $options->{input} |");
     print $log "The large matrix of data will be written to: $options->{output}\n";
@@ -884,12 +897,11 @@ sub SNP_Ratio_Intron {
     my $genome = qq"$options->{libpath}/$options->{libtype}/$options->{species}${output_suffix}.fasta";
     my $stdout = qq"${print_output}/stdout";
     my $stderr = qq"${print_output}/stderr";
-    my $output_all = qq"${print_output}/all_tags${output_suffix}.txt";
-    my $output_count = qq"${print_output}/count${output_suffix}.txt";
+    my $output_all = qq"${print_output}/all_tags${output_suffix}.txt.xz";
     my $output_genome = qq"${print_output}/$options->{species}-${samplename}${output_suffix}.fasta";
-    my $output_by_gene = qq"${print_output}/variants_by_gene${output_suffix}.txt";
-    my $output_penetrance = qq"${print_output}/variants_penetrance${output_suffix}.txt";
-    my $output_pkm = qq"${print_output}/pkm${output_suffix}.txt";
+    my $output_by_gene = qq"${print_output}/variants_by_gene${output_suffix}.txt.xz";
+    my $output_penetrance = qq"${print_output}/variants_penetrance${output_suffix}.txt.xz";
+    my $output_pkm = qq"${print_output}/pkm${output_suffix}.txt.xz";
     my $output_types = qq"${print_output}/count_types${output_suffix}.txt";
     my $comment_string = qq!
 ## Parse the SNP data and generate a modified $options->{species} genome.
@@ -916,7 +928,6 @@ my \$result = \$h->Bio::Adventure::SNP::SNP_Ratio_Intron_Worker(
   qual => '$options->{qual}',
   output_dir => '$output_dir',
   output => '${output_all}',
-  output_count => '${output_count}',
   output_genome => '${output_genome}',
   output_by_gene => '${output_by_gene}',
   output_penetrance => '${output_penetrance}',
@@ -944,7 +955,6 @@ my \$result = \$h->Bio::Adventure::SNP::SNP_Ratio_Intron_Worker(
         output_dir => $output_dir,
         qual => $options->{qual},
         output => $output_all,
-        output_count => $output_count,
         output_genome => $output_genome,
         output_by_gene => $output_by_gene,
         output_penetrance => $output_penetrance,
@@ -972,7 +982,6 @@ sub SNP_Ratio_Intron_Worker {
         max_value => undef,
         min_value => 0.1,
         output => 'all.txt',
-        output_count => 'count.txt',
         output_genome => 'new_genome.fasta',
         output_by_gene => 'counts_by_gene.txt',
         output_penetrance => 'counts_penetrance.txt',
@@ -983,13 +992,14 @@ sub SNP_Ratio_Intron_Worker {
         vcf_cutoff => 5,
         vcf_method => 'freebayes',);
     my $species = $options->{species};
-    my $output_dir = dirname($options->{output});
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $output_dir = $paths->{output_dir};
     my $log_file = qq"${output_dir}/snp_ratio_intron.stdout";
     my $log = FileHandle->new(">${log_file}");
     my $subst_matrix = $class->Bio::Adventure::Align::Get_Substitution_Matrix(matrix => $options->{matrix});
 
-    my $genome = qq"$options->{libpath}/$options->{libtype}/${species}.fasta";
-    my $gff = qq"$options->{libpath}/$options->{libtype}/${species}.gff";
+    my $genome = $paths->{fasta};
+    my $gff = $paths->{gff};
     print $log "Reading gff: ${gff}, extracting type: $options->{gff_type} features tagged $options->{gff_tag}.\n";
     my $in_bcf = FileHandle->new("bcftools view $options->{input} |");
     print $log "The large matrix of data will be written to: $options->{output}\n";
@@ -1559,7 +1569,6 @@ sub Test_Worker {
         min_value => 0.5,
         max_value => undef,
         output => 'all.txt',
-        output_count => 'count.txt',
         output_genome => 'new_genome.fasta',
         output_gff => 'new_genome.gff',
         output_by_gene => 'counts_by_gene.txt',

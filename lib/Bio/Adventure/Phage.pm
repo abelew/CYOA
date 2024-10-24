@@ -18,12 +18,14 @@ use Bio::Tools::Run::StandAloneBlastPlus;
 use Capture::Tiny qw":all";
 use Cwd qw"abs_path getcwd cwd";
 use File::Basename;
+use File::Copy qw"cp move";
 use File::Spec;
 use File::Path qw"make_path rmtree";
 use File::Which qw"which";
 use File::ShareDir qw":ALL";
 use Text::CSV qw"csv";
 use WWW::Mechanize;
+use XML::LibXML;
 
 =head2 C<Bacphlip>
 
@@ -202,7 +204,9 @@ sub Caical_Worker {
     }
 
     my $index = qq"$options->{libpath}/codon_tables/${species}.txt";
+    print "Checking for ${index}\n";
     if (!-r $index) {
+        print "Making a codon table for ${species}.\n";
         my $written = $class->Bio::Adventure::Index::Make_Codon_Table(
             species => $species);
     }
@@ -279,8 +283,9 @@ sub Classify_Phage {
         topn => 5,
         jmem => 12,
         jprefix => '18',);
-    my $paths = $class->Get_Path_Info($options->{input});
-    my $output_dir = qq"outputs/$options->{jprefix}classify_$paths->[0]->{dirname}";
+    my $path_info = $class->Get_Path_Info($options->{input});
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $output_dir = $paths->{output_dir};
     if (-d $output_dir) {
         my $removed = rmtree($output_dir);
     }
@@ -489,20 +494,20 @@ Writing filtered results to $options->{output}.
             my $hit_sig = $hits->significance();
             my $hit_bits = $hits->bits();
             my %hit_datum = (
+                acc => $hit_acc,
+                bit => $hit_bits,
+                description => $hit_descr,
+                family => $family,
+                genus => $genus,
+                length => $hit_length,
+                longname => $longname,
                 query_name => $query_name,
                 query_length => $query_length,
                 query_descr => $query_descr,
-                stats => $stats,
-                length => $hit_length,
-                acc => $hit_acc,
-                description => $hit_descr,
                 score => $hit_score,
                 sig => $hit_sig,
-                bit => $hit_bits,
-                longname => $longname,
-                taxon => $taxon,
-                family => $family,
-                genus => $genus);
+                stats => $stats,
+                taxon => $taxon,);
             push (@hit_lst, \%hit_datum);
             $result_data->{$query_name}->{hit_data}->{$hit_name} = \%hit_datum;
             $hit_count++;
@@ -638,11 +643,9 @@ sub Filter_Host_Kraken {
     ## javascript-heavy datasets tree.  As a result, the use of WWW::Mechanize is unlikely to
     ## continue working for a large number of assemblies.  Happily, I now have some examples
     ## of EUtilities searches/downloads which should make this reasonably easy to fix.
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $output_dir = $paths->{output_dir};
     my $comment = '## Use kraken results to choose a host species to filter against.';
-    my $output_dir = qq"outputs/$options->{jprefix}filter_kraken_host";
-    my $stderr = qq"${output_dir}/filter_host.stderr";
-    my $stdout = qq"${output_dir}/filter_host.stdout";
-    make_path($output_dir);
     my $out_r1_name = 'r1_host_filtered.fastq';
     my $out_r2_name = 'r2_host_filtered.fastq';
     my $unal_files = 'r1_host_unaligned.fastq:r2_host_unaligned.fastq';
@@ -652,7 +655,6 @@ sub Filter_Host_Kraken {
     }
     my $output_files = qq"${output_dir}/${out_r1_name}:${output_dir}/${out_r2_name}";
     my $output_unpaired = qq"";
-    my $log = qq"${output_dir}/kraken_filter.log";
     my $jstring = qq!
 use Bio::Adventure;
 use Bio::Adventure::Phage;
@@ -662,10 +664,9 @@ my \$result = Bio::Adventure::Phage::Filter_Kraken_Worker(\$h,
   jdepends => '$options->{jdepends}',
   jname => 'kraken_host',
   jprefix => '$options->{jprefix}',
-  job_log => '${log}',
+  log => '$paths->{log}',
   output => '${output_files}',
   output_unaligned => '${unal_files}',
-  output_dir => '${output_dir}',
   stranded => '$options->{stranded}',);
 !;
     my $host = $class->Submit(
@@ -678,13 +679,12 @@ my \$result = Bio::Adventure::Phage::Filter_Kraken_Worker(\$h,
         jname => 'hostfilter',
         jprefix => $options->{jprefix},
         jstring => $jstring,
-        job_log => $log,
         language => 'perl',
-        stderr => $stderr,
-        stdout => $stdout,
+        log => $paths->{log},
+        stderr => $paths->{stderr},
+        stdout => $paths->{stdout},
         output => $output_files,
         output_unaligned => $unal_files,
-        output_dir => $output_dir,
         stranded => $options->{stranded},);
     return($host);
 }
@@ -711,12 +711,13 @@ sub Filter_Kraken_Worker {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
-        job_log => 'filter_kraken.log',
         jname => 'krakenfilter',
         required => ['input', 'output'],
         output_unaligned => undef,
         stranded => 'no',
         type => 'species',);
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $depends = $options->{jdepends};
     my $separator;
     if ($options->{type} eq 'domain') {
         $separator = 'd__';
@@ -746,8 +747,8 @@ sub Filter_Kraken_Worker {
         $separator = 's__';
     }
 
-    my $output_dir = $options->{output_dir};
-
+    my $output_dir = $paths->{output_dir};
+    my $gbk_dir = $paths->{gbk_dir};
     ## The final output filenames, which may be invoked early
     ## if it is not possible to perform the filtering.
     my ($out_r1, $out_r2) = split(/$options->{delimiter}/, $options->{output});
@@ -759,10 +760,10 @@ sub Filter_Kraken_Worker {
     $in_r1_fastq = File::Spec->rel2abs($in_r1_fastq);
     $in_r2_fastq = File::Spec->rel2abs($in_r2_fastq);
 
-    my $out = FileHandle->new(">$options->{job_log}");
+    my $log = FileHandle->new(">$paths->{log}");
     my $in = FileHandle->new("<$options->{input}");
-    print $out "Starting search for best kraken host strain.\n";
-    print $out "Reading kraken report: $options->{input}.\n";
+    print $log "Starting search for best kraken host strain.\n";
+    print $log "Reading kraken report: $options->{input}.\n";
     my %species_observed = ();
     my $most_species = '';
     my $most_observations = 0;
@@ -780,13 +781,13 @@ sub Filter_Kraken_Worker {
         }
     }
     foreach my $s (keys %species_observed) {
-        print $out "$options->{type} ${s} was observed $species_observed{$s} times.\n";
+        print $log "$options->{type} ${s} was observed $species_observed{$s} times.\n";
     }
-    print $out "\n";
+    print $log "\n";
     $species_observed{most} = {
         species => $most_species,
         observations => $most_observations, };
-    print $out "The most observed species was: ${most_species}.\n";
+    print $log "The most observed species was: ${most_species}.\n";
     print STDOUT "The most observed species was: ${most_species}.\n";
     my $escaped_species = $most_species;
     $escaped_species =~ s/\s/\+/g;
@@ -799,182 +800,174 @@ sub Filter_Kraken_Worker {
             $host_species_accession = $line;
         }
         $host_file->close();
-        print $out "The host_species.txt file already exists and suggests using ${host_species_accession}.\n";
+        print $log "The host_species.txt file already exists and suggests using ${host_species_accession}.\n";
     }
-
+    ## TODO/FIXME: Clean up this logic and simplify to use Prepare::Download_NCBI_Assembly().
+    my $accession_file;
     my $need_download = 0;
-    my $cyoa_shell = Bio::Adventure->new(cluster => 0);
     if (defined($host_species_accession)) {
-        my $accession_file = qq"$options->{libpath}/$options->{libtype}/${host_species_accession}.fasta";
+        $accession_file = qq"$paths->{fasta_dir}/${host_species_accession}.fasta";
+        my $accession_fsa = qq"$paths->{fasta_dir}/${host_species_accession}.fsa";
         if (-r $accession_file) {
-            print $out "Found fasta file for the putative host: ${host_species_accession}.\n";
+            print $log "Found fasta file for the putative host: ${host_species_accession}.\n";
             print "Found fasta file for the putative host: ${host_species_accession}.\n";
-        }
-        else {
+        } elsif (-r $accession_fsa) {
+            print $log "Found fasta file for the putative host: ${host_species_accession}.\n";
+            print "Found fasta file for the putative host: ${host_species_accession}.\n";
+            $accession_file = $accession_fsa;
+        } else {
             $need_download = 1;
         }
-    }
-    else {
-        print $out "Downloading new assembly for ${most_species}.\n";
+    } else {
+        print $log "Downloading new assembly for ${most_species}.\n";
         print "Downloading new assembly for ${most_species}.\n";
         $need_download = 1;
     }
 
     my $search_data = undef;
+    my $downloaded_file;
+    my $accession;
     if ($need_download) {
-        my $search_url = qq"https://www.ncbi.nlm.nih.gov/assembly/?term=${escaped_species}";
-        my $mech = WWW::Mechanize->new(autocheck => 1);
-        print $out "Searching ${search_url} for appropriate download links.\n";
-        my $link_retries = 5;
-        my $search_data = undef;
-        while ($link_retries > 0 && !defined($search_data)) {
-            try {
-                $search_data = $mech->get($search_url);
+        my $fact = Bio::DB::EUtilities->new(-eutil => 'esearch',
+                                            -email => $options->{email},
+                                            -db => 'assembly',
+                                            -usehistory => 'y',
+                                            -term => qq"${escaped_species}[ORGN]");
+        my $hist = $fact->next_History;
+        my $count = $fact->get_count;
+        my @ids = $fact->get_ids();
+        if ($count) {
+            print $log "The search string: ${most_species} returned ${count} ids.\n";
+            $fact->reset_parameters(-eutil => 'esummary',
+                                    -history => $hist,
+                                    -email => $options->{email},
+                                    -db => 'assembly',
+                                    -retmax => 1,
+                                    -id => \@ids,);
+            my $xml_string = $fact->get_Response->content;
+            my $xml = XML::LibXML->new();
+            my $dom = $xml->load_xml(string => $xml_string);
+            my $uid;
+            for my $node ($dom->findnodes('//*[@uid]')) {
+                $uid = $node->getAttribute('uid');
             }
-            catch ($e) {
-                $search_data = undef;
-                warn "Failed to acquired download links, retrying ${link_retries} times.\n";
+            $accession = $dom->getElementsByTagName('AssemblyAccession');
+            my @test = split(/\./, $accession);
+            my $url = $dom->getElementsByTagName('FtpPath_GenBank');
+            print $log "Found ${accession} with uid ${uid} at ${url}.\n";
+            ## This url is a ftp link with a nice series of downloadable files.
+            my $mech = WWW::Mechanize->new(autocheck => 1);
+            my @suffixes = ('_ani_contam_ranges.tsv', '_ani_report.txt',
+                            '_assembly_report.txt', '_assembly_stats.txt',
+                            '_cds_from_genomic.fna.gz', '_fcs_report.txt',
+                            '_feature_count.txt', '_feature_table.txt.gz',
+                            '_genomic.fna.gz', '_genomic.gbff.gz',
+                            '_genomic.gtf.gz', '_protein.faa.gz',
+                            '_protein.gpff.gz', '_rna_from_genomic.fna.gz',
+                            '_translated_cds.faa.gz');
+            my %downloads;
+            for my $suffix (@suffixes) {
+                my $name = $suffix;
+                $name =~ s/^_//g;
+                $name = basename($name, ('.gz'));
+                my $url_basename = basename($url);
+                my $url_suffix = qq"${url_basename}${suffix}";
+                $downloads{$name} = qq"${url}/${url_suffix}";
             }
-            $link_retries--;
-            sleep(10);
-        }
-        if (!defined($search_data)) {
+            print $log "The full download url for the genbank file is: $downloads{'genomic.gbff'}.\n";
+            $downloaded_file = qq"$paths->{gbk_dir}/${accession}.gbff";
+            print $log "Downloading to ${downloaded_file}.\n";
+            ## Note: get of a compressed file returns the plain text.
+            $mech->get($downloads{'genomic.gbff'});
+            $mech->save_content($downloaded_file);
+        } else {
             print STDOUT "The search for an assembly for ${escaped_species} failed, unable to filter.\n";
-            print $out "The search for an assembly for ${escaped_species} failed, unable to filter.\n";
+            print $log "The search for an assembly for ${escaped_species} failed, unable to filter.\n";
             print STDOUT "Symlinking the input to the filtered output.\n";
-            print $out "Symlinking the input to the filtered output.\n";
+            print $log "Symlinking the input to the filtered output.\n";
             my $sad_r1 = symlink($in_r1_fastq, $out_r1);
             my $sad_r2 = symlink($in_r2_fastq, $out_r2);
             return(undef);
         }
-
-        my @search_links = $mech->find_all_links(
-            tag => 'a', text_regex => qr/ASM/i);
-        if (!@search_links) {
-            print STDOUT "The search for an assembly for ${escaped_species} failed, unable to filter.\n";
-            print $out "The search for an assembly for ${escaped_species} failed, unable to filter.\n";
+        if (!-r $downloaded_file) {
+            print $log "Unable to download assembly information for: ${accession}.\n";
+            print STDOUT "The search for an assembly for ${most_species} failed, unable to filter.\n";
+            print $log "The search for an assembly for ${most_species} failed, unable to filter.\n";
             print STDOUT "Symlinking the input to the filtered output.\n";
-            print $out "Symlinking the input to the filtered output.\n";
+            print $log "Symlinking the input to the filtered output.\n";
             my $sad_r1 = symlink($in_r1_fastq, $out_r1);
             my $sad_r2 = symlink($in_r2_fastq, $out_r2);
             return(undef);
         }
-        my $first_hit = $search_links[0];
-        my ($assembly_link, $assembly_title) = @{$first_hit};
-        my $accession = basename($assembly_link);
-        if ($accession =~ /\,/) {
-            my @multiple = split(/\,/, $accession);
-            $accession = $multiple[0];
-        }
-        my $downloaded_file = qq"$options->{libpath}/$options->{libtype}/${accession}.gbff.gz";
-        if (-r $downloaded_file) {
-            print STDOUT "The file: ${downloaded_file} already exists.\n";
-            print $out "The file: ${downloaded_file} already exists.\n";
-        }
-        else {
-            my $assembly_url = qq"https://www.ncbi.nlm.nih.gov/assembly/${accession}";
-            print $out "Searching ${assembly_url} for appropriate download links.\n";
-            my $assembly_status = '400';
-            my $assembly_retries = 5;
-            my $assembly_data = undef;
-            while ($assembly_retries > 0 && !defined($assembly_data)) {
-                try {
-                    $assembly_data = $mech->get($assembly_url);
-                    $assembly_status = $mech->status();
-                }
-                catch ($e) {
-                    $search_data = undef;
-                    warn "Failed to acquired download links, retrying ${link_retries} times.\n";
-                }
-                sleep(10);
-                $assembly_retries--;
-            }
-            if ($assembly_status ne '200') {
-                print "Unable to download assembly information for: $assembly_url\n";
-                print STDOUT "The search for an assembly for ${escaped_species} failed, unable to filter.\n";
-                print $out "The search for an assembly for ${escaped_species} failed, unable to filter.\n";
-                print STDOUT "Symlinking the input to the filtered output.\n";
-                print $out "Symlinking the input to the filtered output.\n";
-                my $sad_r1 = symlink($in_r1_fastq, $out_r1);
-                my $sad_r2 = symlink($in_r2_fastq, $out_r2);
-                return(undef);
-            }
-            my @download_links = $mech->find_all_links(
-                tag => 'a', text_regex => qr/FTP/i);
-          LINKS: foreach my $l (@download_links) {
-                my ($download_url, $download_title) = @{$l};
-                if ($download_title eq 'FTP directory for GenBank assembly') {
-                    my $ftp_followed = $mech->follow_link(url => $download_url);
-                    my @download_links = $mech->find_all_links(
-                        tag => 'a', text_regex => qr/gbff.gz$/i);
-                    print $out "Final download link: $download_links[0][0].\n";
-                    my $download_followed = $mech->follow_link(url => $download_links[0][0]);
-                    my $output = FileHandle->new(">${downloaded_file}");
-                    my $printed = $mech->response->content();
-                    print $output $printed;
-                    $output->close();
-                    last LINKS;
-                }
-            } ## End looking at links hopefully containing an assembly.
-        }     ## End of when the download file does not exist.
-
-        print $out "Writing a new host_species.txt file with: ${accession}.\n";
+        print $log "Writing a new host_species.txt file with: ${accession}.\n";
         my $host = FileHandle->new(">host_species.txt");
         print $host qq"${accession}\n";
         $host->close();
         $host_species_accession = $accession;
-
+        $accession_file = qq"$paths->{fasta_dir}/${accession}.fsa";
         ## Convert the assembly to fasta/gff/etc.
-        print $out "Converting ${downloaded_file} assembly to fasta/gff.\n";
+        print $log "Converting ${downloaded_file} assembly to fasta/gff.\n";
         my $test_name = basename($downloaded_file, ('.gz', '.gbff'));
-        my $test_input = qq"$options->{libpath}/$options->{libtype}/${test_name}.fasta";
         my $converted;
-        if (-r $test_input) {
-            $converted = $test_input;
-        }
-        else {
-            my $converter = $cyoa_shell->Bio::Adventure::Convert::Gb2Gff(
+        if (defined($accession_file) && -r $accession_file) {
+            $converted = $accession_file;
+        } else {
+            print "TESTME: About to convert: ${downloaded_file} to ${accession_file}.\n";
+            my $converter = $class->Bio::Adventure::Convert::Gb2Gff(
                 input => $downloaded_file,
+                jdepends => $depends,
                 jprefix => qq"$options->{jprefix}_1",);
+            $depends = $converter->{job_id};
             $converted = $converter->{output};
+            move($converted, $accession_file);
         }
-    }                 ## End checking if the host_species was defined.
+    } ## End checking if the host_species was defined.
 
-    my $index_input = qq"$options->{libpath}/$options->{libtype}/${host_species_accession}.fsa";
-    my $index_location = qq"$options->{libpath}/$options->{libtype}/indexes/${host_species_accession}.1.ht2";
+    my $index_location = qq"$paths->{index_dir}/${host_species_accession}.1.ht2";
     if (-r $index_location) {
-        print $out "Found indexes at: ${index_location}\n";
+        print $log "Found indexes at: ${index_location}\n";
         print "Found indexes at: ${index_location}\n";
-    }
-    else {
-        print $out "Did not find indexes, running Hisat2_Index() now.\n";
+    } else {
+        print $log "Did not find indexes, running Hisat2_Index() now.\n";
         print "Did not find indexes, running Hisat2_Index() now.\n";
-        my $indexed = $cyoa_shell->Bio::Adventure::Index::Hisat2_Index(
-            input => $index_input,
+        my $indexed = $class->Bio::Adventure::Index::Hisat2_Index(
+            input => $accession_file,
+            jdepends => $depends,
             jprefix => qq"$options->{jprefix}_2",
             output_dir => $options->{output_dir});
+        $depends = $indexed->{job_id};
         ## Check to see if there is a text file containing the putative host species
         ## If it does not exist, write it with the species name.
     }
     ## Now perform the filter using our temp_cyoa.
 
-    print $out "Filtering out reads which map to ${host_species_accession}.\n";
-    my $filter = $cyoa_shell->Bio::Adventure::Map::Hisat2(
+    print $log "Filtering out reads which map to ${host_species_accession}.\n";
+    ## Add a quick test to see if this is a rerun of a previous attempt
+    ## and therefore the output from racer may be compressed.
+    my @test_fastq = split(/:/, $options->{input_fastq});
+    if (!-r $test_fastq[0] && -r qq"$test_fastq[0].xz") {
+        $options->{input_fastq} = qq"$test_fastq[0].xz:$test_fastq[1].xz";
+    }
+    my $filter = $class->Bio::Adventure::Map::Hisat2(
         compress => 0,
         do_htseq => 0,
+        get_insertsize => 0,
         input => $options->{input_fastq},
+        jdepends => $depends,
         jprefix => qq"$options->{jprefix}_3",
+        language => 'bash',
         output_dir => $options->{output_dir},
         output_unaligned => $options->{output_unaligned},
         species => $host_species_accession,
         stranded => $options->{stranded},);
     my $filtered_reads = $filter->{unaligned};
     my ($in_r1, $in_r2) = split(/$options->{delimiter}/, $filtered_reads);
+    print "TESTME Filtered reads: $filtered_reads\n";
     $in_r1 = File::Spec->rel2abs($in_r1);
     $in_r2 = File::Spec->rel2abs($in_r2);
     unlink $out_r1 if (-l $out_r1);
     unlink $out_r2 if (-l $out_r2);
-    print $out "Symlinking final output files to $options->{output_dir}\n";
+    print $log "Symlinking final output files to $options->{output_dir}\n";
     if (-e $out_r1) {
         print "The file: $out_r1 already exists.\n";
     }
@@ -1859,6 +1852,8 @@ sub Restriction_Catalog_Worker {
  jprefix('15'): Job/directory prefix.
  modules('fasta', 'blast', 'blastdb'): Environment modules to load.
 
+=back
+
 =cut
 sub Terminase_ORF_Reorder {
     my ($class, %args) = @_;
@@ -1874,35 +1869,33 @@ sub Terminase_ORF_Reorder {
         species => 'phages',
         test_file => 'direct-term-repeats.fasta',);
     my $input_dir = basename(dirname($options->{input}));
-    my $output_dir = qq"outputs/$options->{jprefix}termreorder_${input_dir}";
-    my $stderr = qq"${output_dir}/termreorder.stderr";
-    my $stdout = qq"${output_dir}/termreorder.stdout";
-    my $final_output = qq"${output_dir}/final_assembly.fasta";
-    if (-d $output_dir) {
-        my $removed = rmtree($output_dir);
+
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $output_dir = $paths->{output_dir};
+    if (-d $paths->{output_dir}) {
+        my $removed = rmtree($paths->{output_dir});
+        make_path($paths->{output_dir});
     }
-    my $paths = $class->Get_Path_Info($final_output);
 
     my $prodigal_outname = 'prodigal';
-    my $prodigal_cds = qq"${output_dir}/${prodigal_outname}_cds.fasta";
-
     my $term_prodigal = $class->Bio::Adventure::Feature_Prediction::Prodigal(
         gcode => $options->{gcode},
         input => $options->{input},
         jdepends => $options->{jdepends},
+        jname => 'terminase_reorder',
         jprefix => $options->{jprefix},
-        output_dir => $output_dir,
+        output_dir => $paths->{output_dir},
         prodigal_outname => $prodigal_outname,
         species => $options->{species},);
     ## Once that is finished running, we should have files:
     ## 'translated.fasta' and 'cds.fasta' which we can use to go terminase hunting.
     ## I am duplicating a bunch of options here, that might be dumb.
     $options->{jdepends} = $term_prodigal->{job_id};
+    my $prodigal_cds = $term_prodigal->{output_cds};
     my $comment = qq"## This should use the predicted prodigal ORFs to search against a
 ## local terminase sequence database.  Then for each contig, move the best
 ## terminase hit to the front of the sequence.\n";
-    my $output_tsv = qq"${output_dir}/$options->{library}_summary.tsv";
-    my $new_jprefix = qq"$options->{jprefix}_1";
+    my $output_tsv = qq"$paths->{output_dir}/$options->{library}_summary.tsv";
     my $jstring = qq!
 use Bio::Adventure;
 use Bio::Adventure::Phage;
@@ -1910,13 +1903,12 @@ my \$result = Bio::Adventure::Phage::Terminase_ORF_Reorder_Worker(\$h,
   evalue => '$options->{evalue}',
   fasta_tool => '$options->{fasta_tool}',
   input => '$options->{input}',
-  jdepends => '$options->{jdepends}',
   jname => 'terminase_reorder',
-  jprefix => '$new_jprefix',
+  jprefix => '$options->{jprefix}',
   library => '$options->{library}',
   query => '${prodigal_cds}',
-  output => '${final_output}',
-  output_dir => '${output_dir}',
+  output => '$paths->{output}',
+  output_dir => '$paths->{output_dir}',
   test_file => '$options->{test_file}',);
 !;
     my $tjob = $class->Submit(
@@ -1927,22 +1919,20 @@ my \$result = Bio::Adventure::Phage::Terminase_ORF_Reorder_Worker(\$h,
         jdepends => $options->{jdepends},
         jmem => $options->{jmem},
         jname => 'terminase_reorder',
-        jprefix => $new_jprefix,
+        jprefix => $options->{jprefix},
         jstring => $jstring,
         language => 'perl',
         library => $options->{library},
-        output => $final_output,
-        output_dir => $output_dir,
+        output => $paths->{output},
+        output_dir => $paths->{output_dir},
         output_tsv => $output_tsv,
         query => $prodigal_cds,
-        stderr => $stderr,
-        stdout => $stdout,
+        stderr => $paths->{stderr},
+        stdout => $paths->{stdout},
         test_file => $options->{test_file},);
     $tjob->{prodigal_job} = $term_prodigal;
     return($tjob);
 }
-
-=back
 
 =head2 C<Terminase_ORF_Reorder_Worker>
 
@@ -1966,9 +1956,14 @@ sub Terminase_ORF_Reorder_Worker {
         test_file => '',);
     my %modules = Get_Modules(caller => 1);
     my $loaded = $class->Module_Loader(%modules);
-    my $blast_db = $ENV{BLASTDB};
     my $unloaded = $class->Module_Reset(env => $loaded);
-    my $output_dir = dirname($options->{output});
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $output_dir = $paths->{output_dir};
+    my $output_file = qq"${output_dir}/final_assembly.fasta";
+    if ($options->{output_file}) {
+        my $outfile = basename($options->{output_file});
+        $output_file = qq"${output_dir}/${outfile}";
+    }
     my $log = FileHandle->new(">${output_dir}/reorder.log");
     ## First check for the test file, if it exists, then this should
     ## just symlink the input to the output until I think of a smarter
@@ -1978,21 +1973,22 @@ sub Terminase_ORF_Reorder_Worker {
         ## Just in case a path is provided
         my $outfile = basename($options->{output_file});
         $new_filename = qq"${output_dir}/${outfile}";
-    }
-    else {
+    } else {
         $new_filename = basename($options->{input}, ('.fasta'));
         $new_filename = qq"${output_dir}/${new_filename}_reordered.fasta";
     }
-
     ## Now perform the search for potential terminases.
-    my $library_file = qq"${blast_db}/$options->{library}.fasta";
+    my $library_file = qq"$paths->{blast_dir}/$options->{library}.fasta";
+    if (!-r $library_file) {
+        dir("The library file: ${library_file} does not exist.");
+    }
     my $fasta_output = Bio::SearchIO->new(-format => 'fasta', );
     my $number_hits = 0;
     print $log "Starting fasta search of $options->{input}
   against ${library_file} using tool: $options->{fasta_tool}.\n";
     my $query = Bio::SeqIO->new(-file => $options->{input}, -format => 'Fasta');
     print $log "Opening: $options->{input} as a fasta file.\n";
-    my $fasta_outfile = qq"${output_dir}/$options->{library}_hits.txt";
+    my $fasta_outfile = qq"${output_dir}/$options->{library}_vs_$options->{query}.txt";
     my @params = (
         b => 1,
         O => $fasta_outfile,
@@ -2014,11 +2010,17 @@ sub Terminase_ORF_Reorder_Worker {
             warn "An error occurred: $e";
         }
     };
+    if (-r $fasta_outfile) {
+        print "The fasta36 output file exists: $fasta_outfile\n";
+    } else {
+        die("The fasta36 output file does not exist: $fasta_outfile");
+    }
 
     ## Collect the results from the fasta search and write them out.
     my $hit_fh = FileHandle->new(">${output_dir}/$options->{library}_summary.tsv");
     print $hit_fh "Name\tLength\tAccession\tDescription\tScore\tSignificance\tBit\tHitStrand\tQueryStrand\n";
-    print "Name\tLength\tAccession\tDescription\tScore\tSignificance\tBit\tHitStrand\tQueryStrand\n";
+    my $full_outfile = abs_path($fasta_outfile);
+    print "TESTME: $full_outfile\n";
     my $result_data = {};
     my $search_output = Bio::SearchIO->new(-file => $fasta_outfile, -format => 'fasta');
     my $element_count = 0;
@@ -2100,7 +2102,7 @@ Symlinking ${full_input} to ${full_new} and stopping.\n";
             my $linked = qx"ln -s ${full_input} ${full_new}";
         }
         return($full_new);
-    }                           ## End checking for the test file.
+    } ## End checking for the test file.
 
     ## At this point we should have a data structure
     ## $result_data, with primary keys as the ORF IDs
@@ -2138,19 +2140,17 @@ Symlinking ${full_input} to ${full_new} and stopping.\n";
                 print $log "  This is on query strand: ${best_query_strand} and hit strand: ${best_hit_strand}\n";
                 print "  This is on query strand: ${best_query_strand} and hit strand: ${best_hit_strand}\n";
                 $new_best_hit++;
-            }
-            elsif ($hit->{sig} == $best_score) {
+            } elsif ($hit->{sig} == $best_score) {
                 print $log "Found an equivalent hit: ${query_id} with evalue $hit->{sig}.\n";
                 print "Found an equivalent hit: ${query_id} with evalue $hit->{sig}.\n";
-            }
-            else {
+            } else {
                 next HITS;
             }
         }
         if ($new_best_hit == 0) {
             next SCANNER;
         }
-    }               ## Finished iterating over every potential result.
+    } ## Finished iterating over every potential result.
     print $log "Out of ${total_hits} hits, ${best_query} was chosen with an e-value of: ${best_score}.\n";
     print "Out of ${total_hits} hits, ${best_query} was chosen with an e-value of: ${best_score}.\n";
     print $log "Best terminase description: ${best_query_description}\n";

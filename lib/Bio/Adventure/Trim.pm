@@ -224,21 +224,27 @@ xz -9e -f ${too_long}
         prescript => $options->{prescript},
         postscript => $options->{postscript},
         output => $compressed_out,);
+    my $additional_jobs = 0;
     if ($options->{type} eq 'old_tnseq') {
+        $additional_jobs += 1;
         my $ta_check = $class->Bio::Adventure::TNSeq::TA_Check(
             comment => '## Check that TAs exist.',
             input => $compressed_out,
             jdepends => $cutadapt->{job_id},
             jname => qq"tacheck_${job_name}",
-            jprefix => $options->{jprefix} + 1,);
+            jprefix => qq"$options->{jprefix}_${additional_jobs}",);
         $cutadapt->{tacheck} = $ta_check;
     }
+    $additional_jobs += 1;
+    print "Running cutadapt_stats with $stdout\n";
     my $stats = $class->Bio::Adventure::Metadata::Cutadapt_Stats(
-        input => $cutadapt->{stdout},
+        input => $stdout,
         jcpu => 1,
         jmem => 1,
+        jprefix => qq"$options->{jprefix}_${additional_jobs}",
         jwalltime => '00:03:00',
         jdepends => $cutadapt->{job_id},);
+    $cutadapt->{stats} = $stats;
     return($cutadapt);
 }
 

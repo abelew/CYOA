@@ -404,7 +404,11 @@ sub Merge_CDS_Predictions {
     ## Even though it is a bit redundant, record all the output filenames now
     ## so that they are easily accessible for the various downstream search tools.
     my $output_dir =  qq"outputs/$options->{jprefix}merge_cds_predictions";
+    make_path($output_dir);
     my $output_basename = basename($options->{input}, ('.gbk'));
+    my $stdout = qq"${output_dir}/${output_basename}.stdout";
+    my $stderr = qq"${output_dir}/${output_basename}.stderr";
+
     ## The 'raw' genome
     my $output_genome = qq"${output_dir}/${output_basename}.fna";
     ## The full assembly
@@ -449,6 +453,7 @@ my \$result = \$h->Bio::Adventure::Annotation_Genbank::Merge_CDS_Predictions_Wor
   output_gbk => '${output_gbk}', ## .gbk, cleaned genbank file.
   output_tsv => '${output_tsv}', ## .tsv
   output_log => '${output_log}', ## Run log
+  output => '${output_gbk}',
   primary_key => '$options->{primary_key}',);
 ?;
     my $merge_orfs = $class->Submit(
@@ -475,7 +480,10 @@ my \$result = \$h->Bio::Adventure::Annotation_Genbank::Merge_CDS_Predictions_Wor
         output_gbk => $output_gbk,
         output_tsv => $output_tsv,
         output_log => $output_log,
-        primary_key => $options->{primary_key},);
+        output => $output_gbk,
+        primary_key => $options->{primary_key},
+        stdout => $stdout,
+        stderr => $stderr,);
     return($merge_orfs);
 }
 
@@ -535,6 +543,7 @@ sub Merge_CDS_Predictions_Worker {
         output_gbf => 'assembly.gbf',
         output_gbk => 'assembly.gbk',
         output_tsv => 'assembly.tsv',
+        output => 'assembly.gbk',
         jprefix => '19',);
 
     ## Start gathering features from each of the annotation methods:

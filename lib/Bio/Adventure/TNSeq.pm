@@ -1131,6 +1131,7 @@ sub Transit_TPP {
         jprefix => '61',);
     my $job_name = $class->Get_Job_Name();
     my $inputs = $class->Get_Path_Info($options->{input});
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $ready = $class->Check_Input(files => $options->{input},);
     my $sleep_time = 3;
     my $libtype = 'genome';
@@ -1145,7 +1146,7 @@ sub Transit_TPP {
         $suffix_name .= qq"_$options->{jname}";
     }
 
-    my $tpp_dir = qq"outputs/$options->{jprefix}transit_$options->{species}";
+    my $tpp_dir = $paths->{output_dir};
     if ($args{tpp_dir}) {
         $tpp_dir = $args{tpp_dir};
     }
@@ -1184,9 +1185,17 @@ ${r2_fc} > ${tpp_dir}/r2.fastq";
 
     my $stdout = qq"${tpp_dir}/${tpp_basename}.stdout";
     my $stderr = qq"${tpp_dir}/${tpp_basename}.stderr";
-    my $tpp_genome = qq"$options->{libdir}/$options->{libtype}/$options->{species}.fasta";
+    my $tpp_genome = $paths->{fasta};
     my $tpp_output = qq"${tpp_dir}/${tpp_basename}";
     my $sam_filename = qq"${tpp_output}.sam";
+    my $bam_filename = qq"${tpp_output}.bam";
+    my $wig_filename = qq"${tpp_output}.wig";
+    my $count_filename = qq"${tpp_output}.counts";
+    my $stats_filename = qq"${tpp_output}.tn_stats";
+    my $reads1_filename = qq"${tpp_output}.reads1";
+    my $trimmed1_filename = qq"${tpp_output}.trimmed1";
+    my $reads2_filename = qq"${tpp_output}.reads2";
+    my $trimmed2_filename = qq"${tpp_output}.trimmed2";
 
     my $error_file = qq"${tpp_dir}/tpp_$options->{species}_${tpp_basename}.stderr";
     my $comment = qq!## This is a transit preprocessing alignment of $options->{input} against
@@ -1205,13 +1214,20 @@ tpp -ref ${tpp_genome} \\
   2>${stderr} 1>${stdout}
 ${tpp_post}
 !;
-    print "About to submit with jprefix: $class->{jprefix} vs $options->{jprefix}\n";
     my $tpp_job = $class->Submit(
         comment => $comment,
         input => $tpp_input,
         jname => $tpp_name,
         jstring => $jstring,
         output => $sam_filename,
+        output_bam => $bam_filename,
+        output_wig => $wig_filename,
+        output_count => $count_filename,
+        output_stats => $stats_filename,
+        output_r1 => $reads1_filename,
+        output_r1tr => $trimmed1_filename,
+        output_r2 => $reads2_filename,
+        output_r2tr => $trimmed2_filename,
         stdout => $stdout,
         stderr => $stderr,);
     $options->{jprefix} = $options->{jprefix} + 1;

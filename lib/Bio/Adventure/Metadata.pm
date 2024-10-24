@@ -1522,6 +1522,7 @@ echo "\$stat_string" >> ${stat_output}!;
         jprefix => $options->{jprefix},
         jstring => $jstring,
         jmem => 1,
+        output => $stat_output,
         stdout => $stat_output,
         jwalltime => '00:01:00',);
     return($stats);
@@ -1650,15 +1651,12 @@ sub Cutadapt_Stats {
         required => ['input'],
         jmem => 1,
         jname => 'cutst',
-        jprefix => 12,
         paired => 1,);
     my $jname = $options->{jname};
     my $input_file = $options->{input};
-    my $stat_output = qq"outputs/cutadapt_stats.csv";
-    if ($options->{direction}) {
-        $stat_output = qw"outputs/cutadapt.stdout";
-        $jname = qq"$options->{jname}_$options->{direction}";
-    }
+    my $paths = $class->Get_Path_Info($options->{input})->[0];
+    my $input_dir = $paths->{directory};
+    my $stat_output = qq"${input_dir}/cutadapt_stats.csv";
     my $comment = '## This should collect cutadapt statistics.';
     my $jstring = qq!
 if [ \! -r "${stat_output}" ]; then
@@ -1715,13 +1713,14 @@ sub Fastqc_Stats {
         required => ['input'],
         jmem => 1,
         jname => 'fqcst',
-        jprefix => 11,
         paired => 1,);
     my $jname = $options->{jname};
+    my $paths = $class->Get_Path_Info($options->{input})->[0];
     my $input_file = $options->{input};
-    my $stat_output = qq"outputs/fastqc_stats.csv";
+    my $input_dir = $paths->{directory};
+    my $stat_output = qq"${input_dir}/fastqc_stats.csv";
     if ($options->{direction}) {
-        $stat_output = qq"outputs/fastqc_$options->{direction}_stats.csv";
+        $stat_output = qq"${input_dir}/fastqc_$options->{direction}_stats.csv";
         $jname = qq"$options->{jname}_$options->{direction}";
     }
     my $comment = '## This is a stupidly simple job to collect alignment statistics.';

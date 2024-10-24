@@ -59,6 +59,7 @@ if (!-r $cds_local) {
 
 my $run_blast = $cyoa->Bio::Adventure::Align_Blast::Split_Align_Blast(
     input => $cds_local,
+    jprefix => '11',
     library => $phix_local,
     number => 1,
     parse => 1,);

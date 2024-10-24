@@ -15,6 +15,7 @@ use List::Util qw"uniq";
 use Text::CSV;
 use Text::CSV_XS::TSV;
 use WWW::Mechanize;
+use XML::LibXML;
 
 =head1 NAME
 
@@ -27,6 +28,85 @@ use WWW::Mechanize;
  $hpgl->Prepare(csv => 'all_samples.csv');
 
 =head1 Methods
+
+=cut
+
+## Taking the wall of code out of Phage::Filter_Kraken_Worker
+## I am hoping to make this more robust and useful elsewhere.
+sub Download_NCBI_Assembly {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars();
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $output_dir = $paths->{output_dir};
+    my $gbk_dir = $paths->{gbk_dir};
+    ## The final output filenames, which may be invoked early
+    ## if it is not possible to perform the filtering.
+    my $log = FileHandle->new(">$paths->{log}");
+    my $search_string = $options->{input};
+    print $log "Downloading new assembly by searching for ${search_string}.\n";
+    my $escaped_search = $search_string;
+    $escaped_search =~ s/\s/\+/g;
+    my $search_data = undef;
+    my $downloaded_file;
+    my $fact = Bio::DB::EUtilities->new(-eutil => 'esearch',
+                                        -email => $options->{email},
+                                        -db => 'assembly',
+                                        -usehistory => 'y',
+                                        -term => qq"${escaped_search}[ORGN]");
+    my $hist = $fact->next_History;
+    my $count = $fact->get_count;
+    my @ids = $fact->get_ids();
+    my $accession;
+    if ($count) {
+        print $log "The search string: ${search_string} returned ${count} ids.\n";
+        $fact->reset_parameters(-eutil => 'esummary',
+                                -history => $hist,
+                                -email => $options->{email},
+                                -db => 'assembly',
+                                -retmax => 1,
+                                -id => \@ids,);
+        my $xml_string = $fact->get_Response->content;
+        my $xml = XML::LibXML->new();
+        my $dom = $xml->load_xml(string => $xml_string);
+        my $uid;
+        for my $node ($dom->findnodes('//*[@uid]')) {
+            $uid = $node->getAttribute('uid');
+        }
+        $accession = $dom->getElementsByTagName('AssemblyAccession');
+        my @test = split(/\./, $accession);
+        my $url = $dom->getElementsByTagName('FtpPath_GenBank');
+        print $log "Found ${accession} with uid ${uid} at ${url}.\n";
+        ## This url is a ftp link with a nice series of downloadable files.
+        my $mech = WWW::Mechanize->new(autocheck => 1);
+        my @suffixes = ('_ani_contam_ranges.tsv', '_ani_report.txt',
+                        '_assembly_report.txt', '_assembly_stats.txt',
+                        '_cds_from_genomic.fna.gz', '_fcs_report.txt',
+                        '_feature_count.txt', '_feature_table.txt.gz',
+                        '_genomic.fna.gz', '_genomic.gbff.gz',
+                        '_genomic.gtf.gz', '_protein.faa.gz',
+                        '_protein.gpff.gz', '_rna_from_genomic.fna.gz',
+                        '_translated_cds.faa.gz');
+        my %downloads;
+        for my $suffix (@suffixes) {
+            my $name = $suffix;
+            $name =~ s/^_//g;
+            $name = basename($name, ('.gz'));
+            my $url_basename = basename($url);
+            my $url_suffix = qq"${url_basename}${suffix}";
+            $downloads{$name} = qq"${url}/${url_suffix}";
+        }
+        print $log "The full download url for the genbank file is: $downloads{'genomic.gbff'}.\n";
+        $downloaded_file = qq"$paths->{gbk_dir}/${accession}.gbff.gz";
+        print $log "Downloading to ${downloaded_file}.\n";
+        $mech->get($downloads{'genomic.gbff'});
+        $mech->save_content($downloaded_file);
+    } else {
+        print STDOUT "The search for an assembly for ${search_string} failed.\n";
+    }
+    if (!-r $downloaded_file) {
+        print $log "Unable to download assembly information for: ${accession}.\n";
+    }
+}
 
 =head2 C<Download_NCBI_Accession>
 
@@ -80,7 +160,7 @@ sub Download_NCBI_Accession {
             } else {
                 next ITEMS;
             }
-        }                       ## End checking the document summary
+        } ## End checking the document summary
 
         ## Now check if we already have this file
         if (-r qq"${acc_version}.gb") {

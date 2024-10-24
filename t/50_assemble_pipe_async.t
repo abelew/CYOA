@@ -15,7 +15,7 @@ my $phix_fasta = qq"${start_dir}/genome/phix.fastq";
 my $phix_gff = qq"${start_dir}/genome/phix.gff";
 
 my $start = getcwd();
-my $a = 'test_output';
+my $a = 'test_output_async';
 my $actual = '';
 my $expected = '';
 my $test_file = '';
@@ -29,13 +29,13 @@ ok(cp($input_r2, 'r2.fastq.xz'), 'Copying r2.') if (!-r 'r2.fastq.xz');
 ## Invoke the pipeline, keep it within our test directory with basedir.
 my $cyoa = Bio::Adventure->new(basedir => cwd());
 my $assemble = $cyoa->Bio::Adventure::Pipeline::Phage_Assemble(
-    input => 'r1.fastq.xz:r2.fastq.xz',);
+    input => 'r1.fastq.xz:r2.fastq.xz', jprefix => '50');
 
 my $job_id;
 my $status;
 
 ## Check the trimomatic output.
-my $id = '01trim';
+my $id = '51trim';
 $test_file = $assemble->{$id}->{stderr};
 $job_id = $assemble->{$id}->{job_id};
 $status = $cyoa->Wait(job => $job_id);

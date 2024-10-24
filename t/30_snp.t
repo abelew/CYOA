@@ -37,9 +37,22 @@ my $cyoa = Bio::Adventure->new(
     gff_tag => 'ID',
     gff_type => 'CDS',
     stranded => 'no',
-    vcf_cutoff => 1,
-    jprefix => '30');
-my $index = $cyoa->Bio::Adventure::Index::BT2_Index(input => $phix_fasta,);
+    vcf_cutoff => 1,);
+my $index = $cyoa->Bio::Adventure::Index::BT2_Index(input => $phix_fasta,
+                                                    jprefix => '30',);
 my $variant = $cyoa->Bio::Adventure::SNP::Align_SNP_Search(
-    input => qq"test_forward.fastq.gz",);
+    input => 'test_forward.fastq.gz',
+    jprefix => '30',);
 ok($variant, 'Ran variant search.');
+use Data::Dumper;
+print Dumper $variant;
+## Some files to check out:
+## $variant->{parse}->{output_by_gene}
+## $variant->{parse}->{output}  {output_penetrance}  {output_count} {output_genome} {output_types}
+## Check that we got some interesting outputs:
+ok(-r $variant->{parse}->{output_by_gene}, "Created the variants by gene: $variant->{parse}->{output_by_gene}.\n");
+ok(-r $variant->{parse}->{output}, "Created the parsed variants: $variant->{parse}->{output}.\n");
+ok(-r $variant->{parse}->{output_penetrance}, "Created the penetrance file: $variant->{parse}->{output_penetrance}.\n");
+ok(-r $variant->{parse}->{output_genome}, "Created the new genome: $variant->{parse}->{output_genome}.\n");
+ok(-r $variant->{parse}->{output_types}, "Created the types: $variant->{parse}->{output_types}.\n");
+chdir($start);

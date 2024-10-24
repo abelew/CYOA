@@ -713,19 +713,17 @@ sub Insert_Size {
         args => \%args,
         required => ['input',],
         jprefix => '50',);
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $output_base = basename($options->{input}, ('.bam'));
-    my $output_dir = dirname($options->{input});
-    $output_base = qq"${output_dir}/${output_base}";
-    my $output_file = qq"${output_base}_insert_size.txt";
-    my $output_pdf = qq"${output_base}_insert_size.pdf";
-    my $output_stderr = qq"${output_base}_insert_size.stderr";
-    my $output_stdout = qq"${output_base}_insert_size.stdout";
+    my $output_dir = $paths->{output_dir};
+    my $output_file = qq"${output_dir}/${output_base}_insert_size.txt";
+    my $output_pdf = qq"${output_dir}/${output_base}_insert_size.pdf";
     my $jstring = qq!
 gatk CollectInsertSizeMetrics \\
   -I $options->{input} \\
   -O ${output_file} \\
   -H ${output_pdf} \\
-  -M 0.5
+  -M 0.5 2>$paths->{stderr} 1>$paths->{stdout}
 !;
 
     my $comment_string = qq"## Use gatk to collect insert size statistics.";
@@ -740,8 +738,8 @@ gatk CollectInsertSizeMetrics \\
         jstring => $jstring,
         jwalltime => '2:00:00',
         output => $output_file,
-        stderr => $output_stderr,
-        stdout => $output_stdout,);
+        stderr => $paths->{stderr},
+        stdout => $paths->{stdout},);
     return($gatk);
 }
 
@@ -782,18 +780,14 @@ sub Jellyfish {
           my $job = $class->Bio::Adventure::Count::Jellyfish(
               %{$options},
               length => $first);
-        my $prefix_count = 0;
       KMERARR: for my $k (@kmer_array) {
-          $prefix_count++;
-          my $new_jprefix = qq"$options->{jprefix}_${prefix_count}";
           my $job = $class->Bio::Adventure::Count::Jellyfish(
               %{$options},
-              jprefix => $new_jprefix,
-              length => $first);
+              length => $k);
           if ($count == 0) {
               $ret = $job;
           } else {
-              $ret->{$count} = $job;
+              $ret->{$k} = $job;
           }
           $count++;
       }
@@ -858,14 +852,6 @@ jellyfish dump ${count_file} > ${count_fasta} \\
     $comment = qq"## This should create a matrix with rows as kmers and elements
 ## comprised of the number of occurrences.
 ";
-    my $new_prefix = $options->{jprefix};
-    if ($options->{jprefix} =~ /_/) {
-        my ($pre, $post) = split(/_/, $options->{jprefix});
-        $post = $post + 1;
-        $new_prefix = qq"${pre}_${post}";
-    } else {
-        $new_prefix = $options->{jprefix} + 1;
-    }
     $jstring = qq!
 use Bio::Adventure;
 use Bio::Adventure::Phage;
@@ -873,7 +859,6 @@ my \$result = \$h->Bio::Adventure::Count::Jellyfish_Matrix(
   input => '${count_fasta}',
   jdepends => '$jelly->{job_id}',
   jname => 'jelly_matrix',
-  jprefix => '${new_prefix}',
   output_dir => '${output_dir}',  ## Defines where the pdata goes.
   output => '${matrix_file}',);
 !;
@@ -882,7 +867,7 @@ my \$result = \$h->Bio::Adventure::Count::Jellyfish_Matrix(
         input => $count_fasta,
         jdepends => $jelly->{job_id},
         jname => qq"jelly_matrix_$options->{length}",
-        jprefix => $new_prefix,
+        jprefix => qq"$options->{jprefix}_1",
         jstring => $jstring,
         jcpu => 1,
         language => 'perl',
@@ -897,7 +882,7 @@ my \$result = \$h->Bio::Adventure::Count::Jellyfish_Matrix(
         input => $compress_files,
         jdepends => $matrix_job->{job_id},
         jname => qq"xzjelly_$options->{length}",
-        jprefix => $options->{jprefix} + 1,
+        jprefix => qq"$options->{jprefix}_2",
         jcpu => 1,
         jmem => 4,);
     $jelly->{compression} = $comp;

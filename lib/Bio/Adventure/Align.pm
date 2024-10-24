@@ -148,18 +148,19 @@ sub Get_Substitution_Matrix {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
-        matrix => 'BLOSUM50',
-    );
-    my $download_url = $options->{matrix};
-    unless ($options->{matrix} =~ /^http/) {
-        $download_url = qq"ftp://ftp.ncbi.nlm.nih.gov/blast/matrices/$options->{matrix}";
+        matrix => 'BLOSUM50',);
+    my $matrix = 'BLOSUM50';
+    $matrix = $options->{matrix} if (defined($options->{matrix}));
+    my $download_url = $matrix;
+    unless ($download_url =~ /^http/) {
+        $download_url = qq"ftp://ftp.ncbi.nlm.nih.gov/blast/matrices/${matrix}";
     }
     ## For now, just download it to the cwd.
     my $mech = WWW::Mechanize->new;
-    my $downloaded = $mech->get($download_url, ':content_file' => $options->{matrix});
+    my $downloaded = $mech->get($download_url, ':content_file' => $matrix);
     my $parser = Bio::Matrix::IO->new(-format => 'scoring',
-                                      -file => $options->{matrix},);
-    my $matrix = $parser->next_matrix;
+                                      -file => $matrix,);
+    $matrix = $parser->next_matrix;
     return($matrix);
 }
 
@@ -331,6 +332,16 @@ sub Parse_Search {
     return($ret);
 }
 
+=head2 C<Pairwise_Similarity_Matrix>
+
+  Use Blast to make a matrix of pairwise similarities between genes.
+
+  I don't remember writing this, nor what it does.  Glancing at the code,
+  it looks like it does what it says on the tin, it takes some input fasta files
+  and performs pairwise blast searches on them, then writes out the evalues etc
+  as matrices.
+
+=cut
 sub Pairwise_Similarity_Matrix {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
@@ -488,6 +499,11 @@ sub Pairwise_Similarity_Matrix {
     $score_fh->close();
 }
 
+=head2 C<Map_Accession>
+
+  Pull taxonomy information from a NCBI-formatted fasta header line.
+
+=cut
 sub Map_Accession {
     my %args = @_;
     my $in = Bio::SeqIO->new(-file => $args{fasta}, -format => 'fasta');
@@ -516,12 +532,17 @@ sub Map_Accession {
   Invoke Mauve on a set of assemblies to look for synteny/gain/loss/rearrangements.
   10.1371/journal.pone.0011147
 
-=over
+=over 5
 
-=item C<Arguments>
+=item input(required)
 
-  input(required): Directory containing a series of assemblies to compare.
-  reference(required): Reference genome to use as the root.
+  Directory containing a series of assemblies to compare.
+
+=item reference(required)
+
+   Reference genome to use as the root.
+
+=back
 
 =cut
 sub ProgressiveMauve {
@@ -571,9 +592,13 @@ location=\$(dirname Mauve)
   Given a directory of nucleotide/amino acid fasta files, invoke orthofinder to look for
   ortholog families.
 
-=item C<Arguments>
+=over
 
-  input(required): Directory name containing input fasta files.
+=item input(required)
+
+Directory name containing input fasta files.
+
+=back
 
 =cut
 sub OrthoFinder {
@@ -621,14 +646,14 @@ rmdir ${outdir}/output/Results_${month_date}
     my $orthofinder_single_output = qq"${outdir}/output/Orthogroups/Orthogroups_SingleCopyOrthologues.txt";
     my $namer_out = qq"${outdir}/orthogroups_all_named.tsv";
     my $single_out = qq"${outdir}/orthogroups_single_named.tsv";
-    my $fasta_dir = dirname($options->{input});
+    my $fasta_dir = qq"${outdir}/input";
     my $ortho = $class->Submit(
         comment => $comment,
         input => $options->{input},
         jdepends => $options->{jdepends},
         jmem => $options->{jmem},
         jname => $jname,
-        jprefix => $options->{jprefix},
+        jprefix => qq"$options->{jprefix}_1",
         jstring => $jstring,
         output => $orthofinder_all_output,
         single_out => $orthofinder_single_output,
@@ -639,16 +664,16 @@ rmdir ${outdir}/output/Results_${month_date}
     $comment = qq'## Extracting ortholog names.';
     $stdout = qq"${outdir}/name_orthogroups.stdout";
     $stderr = qq"${outdir}/name_orthogroups.stderr";
-    $jname = qq'$options->{jprefix}orthofinder_namer';
+    $jname = qq'orthofinder_namer';
     $jstring = qq!use Bio::Adventure::Align;
 my \$result = \$h->Bio::Adventure::Align::Orthofinder_Names_Worker(
-  all_input => '$orthofinder_all_output',
-  single_input => '$orthofinder_single_output',
-  named_out => '$namer_out',
-  single_name_out => '$single_out',
-  fasta_dir => '$fasta_dir',
-  stdout => '$stdout',
-  stderr => '$stderr',);
+  all_input => '${orthofinder_all_output}',
+  single_input => '${orthofinder_single_output}',
+  named_out => '${namer_out}',
+  single_name_out => '${single_out}',
+  fasta_dir => '${fasta_dir}',
+  stdout => '${stdout}',
+  stderr => '${stderr}',);
 !;
     my $namer = $class->Submit(
         all_input => $orthofinder_all_output,
@@ -657,7 +682,7 @@ my \$result = \$h->Bio::Adventure::Align::Orthofinder_Names_Worker(
         jstring => $jstring,
         jdepends => $ortho->{job_id},
         jname => $jname,
-        jprefix => $options->{jprefix},
+        jprefix => qq"$options->{jprefix}_2",
         language => 'perl',
         single_input => $orthofinder_single_output,
         output => $orthofinder_all_output,
@@ -672,13 +697,27 @@ my \$result = \$h->Bio::Adventure::Align::Orthofinder_Names_Worker(
 
 =head2 C<Orthofinder_Names_Worker>
 
-  Associate gene names with the ortholog families produced by orthofinder.
+Associate gene names with the ortholog families produced by orthofinder.
 
-  Orthofinder produces really interesting outputs, but there is one conspicuously missing:
-  a file which provides gene names/descriptions associated with the gene groups in each
-  family.  This function seeks to ameliorate this problem by reading the input fasta files
-  to extract some helpful information and appending the result to the tsv ortholog family
-  files.
+Orthofinder produces really interesting outputs, but there is one conspicuously missing:
+a file which provides gene names/descriptions associated with the gene groups in each
+family.  This function seeks to ameliorate this problem by reading the input fasta files
+to extract some helpful information and appending the result to the tsv ortholog family
+files.
+
+=over
+
+=item named_out(all_orthogroups_named.tsv)
+
+Filename for named orthogroups.  The worst thing
+about orthofinder is that it does not provide readable names for the groups it detects,
+so I added a function which tries to address this failing.
+
+=item single_name_out(single_orthogroups_named.tsv)
+
+Ibid, but for 1:1 mapped groups.
+
+=back
 
 =cut
 sub Orthofinder_Names_Worker {
@@ -694,10 +733,12 @@ sub Orthofinder_Names_Worker {
     my $all_groups = $options->{all_input};
     my $single_groups = $options->{single_input};
     my $outdir = dirname($all_groups);
+    my $log = FileHandle->new(">${outdir}/orthonamer.log");
     my $all_out = $options->{named_out};
     my $single_out = $options->{single_name_out};
     my $fasta_dir = $options->{fasta_dir};
     my @input_files = glob("${fasta_dir}/*.fa*");
+    my $species_gene_id = '';
     for my $in (@input_files) {
         my $species_name = basename($in, ('.faa'));
         ## my $protein_desc->{$species_name} = {};
@@ -725,20 +766,21 @@ sub Orthofinder_Names_Worker {
 
           $protein_desc->{$species_name}->{$id} = $desc;
       }
-        print "Finished extracting ids from: ${species_name}.\n";
+        print $log "Finished extracting ids from: ${species_name}.\n";
     }
 
     die("Could not find the file of all groups.") unless (-f $all_groups);
-    die("Could not find the file of all outputs.") unless (-f $all_out);
-    print "Opening all_groups: ${all_groups}\n";
+    print $log "Opening all_groups: ${all_groups}\n";
     my $orth = FileHandle->new("<${all_groups}");
-    print "Opening all_out: ${all_out}\n";
+    print $log "Opening all_out: ${all_out}\n";
     my $new_orth = FileHandle->new(">${all_out}");
-    print $new_orth "Orthogroup\t";
+    my $header_line = "Orthogroup\t";
     for my $n (sort keys %{$protein_desc}) {
-        print $new_orth "${n}\t";
+        $header_line .= "${n}\t${n}_name\t";
     }
-    print $new_orth "\n";
+    $header_line =~ s/\t$//g;
+    $header_line .= "\n";
+    print $new_orth $header_line;
 
     my $line_count = 0;
     my @group_order = ();
@@ -749,6 +791,7 @@ sub Orthofinder_Names_Worker {
       chomp $line;
       $line_count++;
       my @groups = split(/\t/, $line);
+      ## print "TESTME1: Created @groups from $line\n";
       my $group = shift @groups;
       if ($line_count == 1) {
           @group_order = @groups;
@@ -759,47 +802,61 @@ sub Orthofinder_Names_Worker {
       my $species_count = 0;
     SPECIES_IDS: for my $sp (0 .. $#group_order) {
         my $species = $group_order[$sp];
-        print "Seeking out species IDs for ${species}\n";
+        print $log "Seeking out species IDs for ${species}\n";
         my $group_ids = $groups[$sp];
         my @species_gene_ids = ();
-        my $species_gene_id = '';
-        if ($group_ids) {
+        if (defined($group_ids)) {
             @species_gene_ids = split(/[:;,]/, $group_ids);
         } else {
-            print "I do not have group IDs for $species on line $line_count\n";
-            print "$line\n";
+            print $log "I do not have group IDs for $species on line ${line_count}\n";
+            print $log "${line}\n";
         }
         my $first_name = 'undef';
-
-        if (scalar(@species_gene_ids) > 0) {
+        my $number_species_hits = scalar(@species_gene_ids);
+        if ($number_species_hits > 0) {
             $species_gene_id = $species_gene_ids[0];
-            ## print "The first ID in this group is: $species_gene_id\n";
             my $test_name = $protein_desc->{$species}->{$species_gene_id};
             if (defined($protein_desc->{$species}->{$species_gene_id})) {
-                ## print "And it has name: $test_name\n";
+                print $log "The first ID in this group is: ${species_gene_id} with name: $test_name\n";
                 my $tmp = 0;
             } else {
                 my $tmp = 0;
-                ## print "I do not appear to have an entry for $species and $species_gene_id\n";
+                print $log "I do not appear to have an entry for ${species} and ${species_gene_id}\n";
             }
-        } elsif (scalar(@species_gene_ids) == 0) {
+        } elsif ($number_species_hits == 0) {
+            if (!defined($group_ids)) {
+                $group_ids = 'undefined';
+            }
             $species_gene_id = $group_ids;
+            ## print "TESTME: I think group_ids is undef: $group_ids\n";
         } else {
             $species_gene_id = 'undefined';
         }
 
-        print "About to extract first name: $species_gene_id\n";
+        if (!defined($species_gene_id)) {
+            $species_gene_id = 'undefined';
+        }
+        print $log "About to extract first name: ${species_gene_id}\n";
 
         my $first_description = '';
         if (defined($protein_desc->{$species}->{$species_gene_id})) {
             $first_description = $protein_desc->{$species}->{$species_gene_id};
         }
-        $write_string .= qq!\t"$groups[$species_count]"\t"${species_gene_id}"\t"${first_description}"!;
+        my $group_string = $groups[$species_count];
+        if (!defined($group_string)) {
+            $group_string = 'undefined';
+        }
+        if (!defined($first_description)) {
+            $first_description = 'no description found';
+        }
+        $write_string .= qq!\t"${group_string}"\t"${species_gene_id}"\t"${first_description}"!;
+        ## print "TESTME: $write_string\n";
         $ortho_names->{$species}->{$group}->{id} = $species_gene_id;
         $ortho_names->{$species}->{$group}->{descr} = $first_description;
 
         $species_count++;
     }
+      $write_string =~ s/\t$//g;
       $write_string .= "\n";
       print $new_orth $write_string;
   }
@@ -808,12 +865,13 @@ sub Orthofinder_Names_Worker {
     $new_orth->close();
 
     my $new_single_orth = FileHandle->new(">${single_out}");
-
-    print $new_single_orth "Orthogroup\t";
+    my $single_header = "Orthogroup\t";
     for my $sp (@group_order) {
-        print $new_single_orth qq"${sp}\t";
+        $single_header .=  qq"${sp}\t${sp}_name\t";
     }
-    print $new_single_orth "\n";
+    $single_header =~ s/\t$//g;
+    $single_header .= "\n";
+    print $new_single_orth $single_header;
 
     my $single_orth = FileHandle->new("<${single_groups}");
 
@@ -826,11 +884,13 @@ sub Orthofinder_Names_Worker {
           ## $ortho_names->{$sp}->{$group} = $first_species_name;
           $print_string .= qq"$ortho_names->{$sp}->{$group}->{id}\t$ortho_names->{$sp}->{$group}->{descr}\t";
       }
+      $print_string =~ s/\t$//g;
       $print_string .= "\n";
       print $new_single_orth $print_string;
   }
     $single_orth->close();
     $new_single_orth->close();
+    $log->close();
 }
 
 =head1 AUTHOR - atb

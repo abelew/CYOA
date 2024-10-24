@@ -33,8 +33,6 @@ use File::Which qw"which";
  to a sorted-compressed-indexed bam, count it with htseq-count, compress the various
  output fastq files, and collect a few alignment statistics.
 
-=item C<Arguments>
-
 =over
 
  This requires the arguments: 'input' and 'species'.  The input is likely a
@@ -182,7 +180,6 @@ bowtie \\
 
     my $expected_hours = $class->Bio::Adventure::Config::Estimate_Time_Composite(process => 'bt1');
     my $time_string = qq"${expected_hours}:00:00";
-    print "TESTME: The time string is: $time_string\n";
     my $compress_files = qq"${bt_dir}/$options->{jbasename}-${bt_type}_unaligned_${species}.fastq:${bt_dir}/$options->{jbasename}-${bt_type}_aligned_${species}.fastq";
     my $comp = $class->Bio::Adventure::Compress::Recompress(
         comment => '## Compressing the sequences which failed to align against ${bt_reflib} using options ${bt_args}.',
@@ -254,8 +251,6 @@ bowtie \\
  htseq-count, compress the various output fastq files, and collect a
  few alignment statistics.
 
-=item C<Arguments>
-
 =over
 
  input(required): colon-separated pair of (compressed)fastq files.
@@ -300,9 +295,8 @@ sub Bowtie2 {
         return(@result_lst);
     }
 
-    my $ready = $class->Check_Input(
-        files => $options->{input},
-    );
+    my $ready = $class->Check_Input(files => $options->{input},);
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my %bt_jobs = ();
     my $libtype = 'genome';
     my $bt2_args = $options->{bt2_args};
@@ -314,7 +308,7 @@ sub Bowtie2 {
         $suffix_name .= qq"_$options->{jname}";
     }
 
-    my $bt_dir = qq"outputs/$options->{jprefix}bowtie2_$options->{species}";
+    my $bt_dir = $paths->{output_dir};
     if ($args{bt_dir}) {
         $bt_dir = $args{bt_dir};
     }
@@ -337,18 +331,20 @@ sub Bowtie2 {
     }
 
     ## Check that the indexes exist
-    my $bt_reflib = "$options->{libpath}/$options->{libtype}/indexes/$options->{species}";
-    my $bt_reftest = qq"${bt_reflib}.1.bt2";
-    my $bt_reftest_large = qq"${bt_reflib}.1.bt2l";
+    my $job_suffix = 0;
+    my $bt_reflib = $paths->{index_shell};
+    my $bt_reftest = $paths->{index_file_shell};
+    my $bt_reftest_large = $paths->{index_file2_shell};
     my $index_job;
     if (!-r $bt_reftest && !-r $bt_reftest_large) {
+        $job_suffix++;
         print "Hey! The Indexes do not appear to exist, check this out: ${bt_reftest}\n";
         sleep(20);
-        my $genome_input = qq"$options->{libpath}/$options->{libtype}/$options->{species}.fasta";
+        my $genome_input = $paths->{fasta};
         $index_job = $class->Bio::Adventure::Index::BT2_Index(
             input => $genome_input,
             jdepends => $options->{jdepends},
-            jprefix => $options->{jprefix} - 1,
+            jprefix => qq"$options->{jprefix}_${job_suffix}",
             libtype => $libtype,);
         $options->{jdepends} = $index_job->{job_id};
     }
@@ -390,46 +386,51 @@ bowtie2 -x ${bt_reflib} ${bt2_args} \\
         stdout => $stdout,
         unaligned => $unaligned_filename,);
     my $compression_files = qq"${bt_dir}/$options->{jbasename}_unaligned_$options->{species}.fastq:${bt_dir}/$options->{jbasename}_aligned_$options->{species}.fastq";
+    $job_suffix++;
     my $comp = $class->Bio::Adventure::Compress::Recompress(
         comment => '## Compressing the sequences which failed to align against ${bt_reflib} using options ${bt2_args}.',
         input => $compression_files,
         jdepends => $bt2_job->{job_id},
         jname => qq"xzun_${suffix_name}",
-        jprefix => $options->{jprefix} + 1,);
+        jprefix => qq"$options->{jprefix}_${job_suffix}",);
     $bt2_job->{compression} = $comp;
     ## BT1_Stats also reads the trimomatic output, which perhaps it should not.
     ## my $trim_output_file = qq"outputs/$options->{jbasename}-trimomatic.out";
+    $job_suffix++;
     my $stats = $class->Bio::Adventure::Metadata::BT2_Stats(
         input => $stderr,
         count_table => qq"$options->{jbasename}.count.xz",
         jdepends => $bt2_job->{job_id},
         jname => qq"bt2st_${suffix_name}",
-        jprefix => $options->{jprefix} + 3,);
+        jprefix => qq"$options->{jprefix}_${job_suffix}",);
     $bt2_job->{stats} = $stats;
+    $job_suffix++;
     my $sam_job = $class->Bio::Adventure::Convert::Samtools(
         input => $sam_filename,
         jdepends => $bt2_job->{job_id},
         jname => qq"s2b_${suffix_name}",
-        jprefix => $options->{jprefix} + 4,);
+        jprefix => qq"$options->{jprefix}_${job_suffix}",);
     $bt2_job->{samtools} = $sam_job;
     my $htseq_input = $sam_job->{output};
     my $htmulti;
     if ($options->{count}) {
         if ($libtype eq 'rRNA') {
+            $job_suffix++;
             $htmulti = $class->Bio::Adventure::Count::HTSeq(
                 input => $sam_job->{output},
                 jdepends => $sam_job->{job_id},
                 jname => $suffix_name,
-                jprefix => $options->{jprefix} + 5,
+                jprefix => qq"$options->{jprefix}_${job_suffix}",
                 libtype => $libtype,
                 mapper => 'bowtie2',
                 stranded => $stranded,);
         } else {
+            $job_suffix++;
             $htmulti = $class->Bio::Adventure::Count::HT_Multi(
                 input => $sam_job->{output},
                 jdepends => $sam_job->{job_id},
                 jname => $suffix_name,
-                jprefix => $options->{jprefix} + 6,
+                jprefix => qq"$options->{jprefix}_${job_suffix}",
                 libtype => $libtype,
                 mapper => 'bowtie2',
                 stranded => $stranded,);
@@ -438,8 +439,6 @@ bowtie2 -x ${bt_reflib} ${bt2_args} \\
     }
     return($bt2_job);
 }
-
-=back
 
 =head2 C<Bowtie_RRNA>
 
@@ -518,8 +517,6 @@ sub BT_Multi {
  Perform a bwa alignment using both the sam(s|p)e and aln algorithms.  It then
  converts the output (when appropriate) to sorted/indexed bam and passes them to
  htseq.
-
-=item C<Arguments>
 
 =over
 
@@ -801,8 +798,6 @@ fi
 
   Downsample the data and use salmon to guestimate the strandedness of the library.
 
-=item C<Arguments>
-
 =over
 
  input(required): Trimmed fastq files.
@@ -927,8 +922,6 @@ ${sa_rm}
  10.1038/s41587-019-0201-4
 
  Hisat2 is currently my favorite aligner.
-
-=item C<Arguments>
 
 =over
 
@@ -1160,6 +1153,7 @@ hisat2 -x $paths->{index_shell} ${hisat_args} \\
     if ($options->{get_insertsize}) {
         my $sizes = $class->Bio::Adventure::Count::Insert_Size(
             input => $sam_job->{output},
+            jprefix => qq"$options->{jprefix}_3",
             jdepends => $sam_job->{job_id},);
         $hisat_job->{insertsizes} = $sizes;
     }
@@ -1219,16 +1213,12 @@ hisat2 -x $paths->{index_shell} ${hisat_args} \\
     return($hisat_job);
 }
 
-=back
-
 =head2 C<Kallisto>
 
  Perform a kallisto transcript quantification.
  10.1038/nbt.3519
 
  Kallisto and salmon are my two favorite 'voting' based aligners.
-
-=item C<Arguments>
 
 =over
 
@@ -1383,8 +1373,6 @@ kallisto quant ${ka_args} \\
 
   Given the context I am using this, it should be unsurprising that it makes trypanosome-specific
   assumptions.
-
-=item C<Arguments>
 
 =over
 
@@ -1734,16 +1722,12 @@ sub Write_PolyA_Data {
     }
 }
 
-=back
-
 =head2 C<RSEM>
 
  Invoke RSEM.
  10.1186/1471-2105-12-323
 
  The most accurate and slow transcript quantification method.
-
-=item C<Arguments>
 
 =over
 
@@ -1843,8 +1827,6 @@ sub RSEM {
  10.1038/nmeth.4197
 
  My favorite transcript aware quantification method.
-
-=item C<Arguments>
 
 =over
 

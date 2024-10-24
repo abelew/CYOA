@@ -520,7 +520,7 @@ sub Choose_QOS {
                 } elsif ($num_potential > 1) {
                     my $chosen_path = $class->Choose_Among_Potential_QOS(potential => $potential_qos);
                     $chosen_qos = $chosen_path->{qos};
-                    print "TESTME: Invoked Choose_Among_Potential_QOS: $chosen_qos\n";
+                    ## print "TESTME: Invoked Choose_Among_Potential_QOS: $chosen_qos\n";
                     $qos_info->{$chosen_qos}->{used_mem} = $qos_info->{$chosen_qos}->{used_mem} + $wanted_spec->{mem};
                     $qos_info->{$chosen_qos}->{used_cpu} = $qos_info->{$chosen_qos}->{used_cpu} + $wanted_spec->{cpu};
                     $qos_info->{$chosen_qos}->{used_gpu} = $qos_info->{$chosen_qos}->{used_gpu} + $wanted_spec->{gpu};
@@ -628,7 +628,7 @@ sub Choose_QOS {
         chosen_account => $chosen_account,
         chosen_cluster => $chosen_cluster,
     };
-    print "TESTME: QOS: $chosen_qos, PART: $chosen_partition ACCT: $chosen_account, CLUS: $chosen_cluster\n";
+    ## print "TESTME: QOS: $chosen_qos, PART: $chosen_partition ACCT: $chosen_account, CLUS: $chosen_cluster\n";
     return($ret);
 }
 
@@ -1674,7 +1674,7 @@ fi
     my @jobid_list = split(/\./, $job_id);
     my $short_jobid = shift(@jobid_list);
 
-    my $new_job_string = qq"Starting a new job: ${short_jobid} $options->{jname}\n";
+    my $new_job_string = qq"Starting a slurm job: ${short_jobid} $options->{jname}\n";
     if ($cluster_string) {
         $new_job_string .= " cluster: ${cluster_string} ";
     }

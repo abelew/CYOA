@@ -817,8 +817,9 @@ sub Unicycler {
         jprefix => '13',
         jwalltime => '72:00:00',);
     my $job_name = $class->Get_Job_Name();
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $outname = basename(cwd());
-    my $output_dir = qq"outputs/$options->{jprefix}unicycler";
+    my $output_dir = $paths->{output_dir};
     my $input_string = '';
     my $shovill_input = '';
     my $ln_string = '';
@@ -894,7 +895,7 @@ ln -sf ${output_dir}/${outname}_final_assembly.fasta unicycler_assembly.fasta
         output_gfa => qq"${output_dir}/assembly.gfa",
         output_log => qq"${output_dir}/unicycler.log",
         stdout => $stdout,
-        stderr => $stderr);
+        stderr => $stderr,);
     return($unicycler);
 }
 

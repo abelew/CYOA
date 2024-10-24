@@ -447,14 +447,14 @@ sub Prodigal {
         jprefix => '17',);
     my $edge_string = ' -c ';
     $edge_string = '' if ($options->{edge});
-
     my $inputs = $class->Get_Path_Info($options->{input});
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $job_name = $class->Get_Job_Name();
     $job_name = basename($job_name, ('.fsa'));
     my $train_string = '';
     my $library_file;
     if ($options->{species}) {
-        $library_file = qq"$options->{libpath}/hmm/$options->{species}_gc$options->{gcode}.training";
+        $library_file = qq"$paths->{hmm_dir}/$options->{species}_gc$options->{gcode}.training";
         if (!-r $library_file) {
             print "Could not find the training file for this species.\n";
             print "Sleeping for a moment so that you can do something.\n";
@@ -465,16 +465,7 @@ sub Prodigal {
     }
 
     my $in_name = basename($options->{input}, ('.fasta'));
-    my $output_dir;
-    if (defined($options->{output_dir})) {
-        if ($options->{output_dir}) {
-            $output_dir = $options->{output_dir};
-        }
-    } else {
-        $output_dir = qq"outputs/$options->{jprefix}prodigal_${in_name}";
-    }
-    my $stdout = qq"${output_dir}/prodigal.stdout";
-    my $stderr = qq"${output_dir}/prodigal.stderr";
+    my $output_dir = $paths->{output_dir};
     my ($cds_file, $translated_file, $scores_file, $gff_file, $gbk_file);
     if ($options->{prodigal_outname}) {
         $cds_file = qq"${output_dir}/$options->{prodigal_outname}_cds.fasta";
@@ -498,13 +489,13 @@ if prodigal ${train_string} ${edge_string} \\
   -d ${cds_file} \\
   -s ${scores_file} \\
   -f gff -o ${gff_file} \\
-  2>${stderr} \\
-  1>${stdout} ; then
+  2>$paths->{stderr} \\
+  1>$paths->{stdout} ; then
   prodigal ${edge_string} ${train_string} \\
     -i $options->{input} \\
     -f gbk -o ${gbk_file} \\
-    2>${stderr} \\
-    1>${stdout}
+    2>>$paths->{stderr} \\
+    1>>$paths->{stdout}
 else
   echo "Prodigal failed, perhaps the contig was too short?"
 fi
@@ -518,8 +509,8 @@ sleep 3
         jname => qq"prodigal_${job_name}",
         jprefix => $options->{jprefix},
         jstring => $jstring,
-        stderr => $stderr,
-        stdout => $stdout,
+        stderr => $paths->{stderr},
+        stdout => $paths->{stdout},
         output => $gbk_file,
         output_cds => $cds_file,
         output_gff => $gff_file,

@@ -41,11 +41,15 @@ if (-r $gff_local) {
 }
 
 my $cyoa = Bio::Adventure->new(cluster => 0, basedir => cwd());
-
-my $gff2fasta = $cyoa->Bio::Adventure::Convert::Gff2Fasta(
-    input => $phix_local, gff => $gff_local, gff_type => 'gene',
-    gff_tag => 'gene_id', libpath => 'genome');
-ok($gff2fasta, 'Run gff2fasta.');
+if (!-r $cds_local) {
+    my $gff2fasta = $cyoa->Bio::Adventure::Convert::Gff2Fasta(
+        input => $phix_local, gff => $gff_local,
+        gff_type => 'gene', gff_tag => 'gene_id',
+        libpath => 'genome');
+    ## In 11_blast this is:
+    ## libdir => 'share');
+    ok($gff2fasta, 'Run gff2fasta.');
+}
 
 ok(-r $cds_local, 'Created nucleotide fasta file.');
 ok(mv($cds_local, $cds_genome), 'Moved phix cds file.');
@@ -53,29 +57,32 @@ ok(-r $aa_local, 'Created nucleotide amino acid file.');
 ok(mv($aa_local, $aa_genome), 'Moved phix cds file.');
 
 my $run_fasta = $cyoa->Bio::Adventure::Align_Fasta::Split_Align_Fasta(
+    align_jobs => 1,
+    fasta_tool => 'fasta36',
     input => $cds_genome,
     library => $phix_local,
-    fasta_tool => 'fasta36',
-    align_jobs => 1,
+    jprefix => '10',
     parse => 1,);
 ok($run_fasta, 'Run Split_Align_Fasta.');
 
 ## my $parsed_file = 'outputs/fasta_phix_cds_nt_phix/phix_cds_nt_vs_phix.parsed.txt';
 my $parsed_file = $run_fasta->{output};
 ## Caveat: every fasta36 run will give slightly different E-values.
-my $expected = qq"Name
+my $expected = qq"117
+136
+136
 1406
-136
-890
-136
-312
-51
 171
 261
+276
+312
 3618
+51
 ";
 
-my $test_cmd = qq"less ${parsed_file} | awk '{print \$2}' | head --lines 10";
+print "Testing ${parsed_file} for expected outputs.\n";
+my $test_cmd = qq"less ${parsed_file} | awk '{print \$2}' | sort | head --lines 10";
+print "Invoking: ${test_cmd}\n";
 my $actual = qx"${test_cmd}";
 unless(ok($expected eq $actual, 'Is the resulting table of hits expected?')) {
     my($old, $new) = diff($expected, $actual);

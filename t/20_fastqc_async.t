@@ -24,14 +24,14 @@ if (!-r $input_local) {
 }
 
 my $cyoa = Bio::Adventure->new(basedir => cwd());
-
-my $fastqc = $cyoa->Bio::Adventure::QA::Fastqc(input => $input_local);
+my $fastqc = $cyoa->Bio::Adventure::QA::Fastqc(
+    input => $input_local,
+    jprefix => '20',);
 ok($fastqc, 'Run Fastqc');
 my $status = $cyoa->Wait(job => $fastqc);
 ok($status->{State} eq 'COMPLETED', 'Fastqc completed.');
-ok(-r 'scripts/01fqc_test_forward.sh',
-   'Fastqc script exists?');
-ok(my $actual = $cyoa->Last_Stat(input => 'outputs/fastqc_stats.csv'),
+my $stats_file = $fastqc->{stats}->{output};
+ok(my $actual = $cyoa->Last_Stat(input => $stats_file),
    'Collect Fastqc Statistics');
 my $expected = 'fqcst,10000,0,pass,warn,pass,pass,pass,warn,fail,0';
 unless(ok($expected eq $actual,
@@ -39,6 +39,5 @@ unless(ok($expected eq $actual,
     my($old, $new) = diff($expected, $actual);
     diag("$old\n$new\n");
 }
-
 ## Go back to the top level.
 chdir($start);

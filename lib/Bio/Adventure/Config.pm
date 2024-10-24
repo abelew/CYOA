@@ -583,6 +583,7 @@ sub Get_Modules {
         'Kraken' => { modules => 'kraken', exe => 'kraken2', },
         'Kraken_Best_Hit' => { modules => ['cyoa', 'kraken'] },
         'Make_Blast_Job' => { modules => ['cyoa', 'blastdb', 'blast'], exe => 'tblastx' },
+        'Make_Fasta_Job' => { modules => ['cyoa', 'fasta'] },
         'Make_Codon_Table' => { modules => ['cyoa'] },
         'Mash' => { modules => 'mash', exe => 'mash' },
         'Merge_Annotations' => { modules => ['cyoa', 'ncbi_tools/6.1'], exe => 'tbl2asn' },
@@ -717,71 +718,144 @@ sub Get_Paths {
     my $libdir_prefix = qq"$options->{libdir}/$options->{libtype}";
     my $output_prefix = qq"$options->{output_base}/$options->{jprefix}";
     my $paths = {};
-    if (defined($options->{species})) {
-        $paths->{fasta} = qq"${libpath_prefix}/fasta/$options->{species}.fasta";
-        $paths->{fasta_shell} = qq"${libdir_prefix}/fasta/$options->{species}.fasta";
-        $paths->{gff} = qq"${libpath_prefix}/gff/$options->{species}.gff";
-        $paths->{gff_shell} = qq"${libdir_prefix}/gff/$options->{species}.gff";
-        $paths->{gtf} = qq"${libpath_prefix}/gtf/$options->{species}.gtf";
-        $paths->{gtf_shell} = qq"${libdir_prefix}/gtf/$options->{species}.gtf";
-        $paths->{gbk} = qq"${libpath_prefix}/genbank/$options->{species}.gbk";
-        $paths->{gbk_shell} = qq"${libdir_prefix}/genbank/$options->{species}.gbk";
-        my $fasta_check = dirname($paths->{fasta});
-        make_path($fasta_check) unless (-d $fasta_check);
-        my $gff_check = dirname($paths->{gff});
-        make_path($gff_check) unless (-d $gff_check);
-        my $gtf_check = dirname($paths->{gtf});
-        make_path($gtf_check) unless (-d $gtf_check);
-        my $gbk_check = dirname($paths->{gbk});
-        make_path($gbk_check) unless (-d $gbk_check);
+    $paths->{output_base} = basename($options->{input}, ('.gz', '.xz', '.bam')) if (defined($options->{input}));
+    $paths->{blast_dir} = qq"${libpath_prefix}/blast";
+    $paths->{codon_dir} = qq"${libpath_prefix}/codon_tables";
+    $paths->{fasta_dir} = qq"${libpath_prefix}/fasta";
+    $paths->{gbk_dir} = qq"${libpath_prefix}/genbank";
+    $paths->{gff_dir} = qq"${libpath_prefix}/gff";
+    $paths->{gtf_dir} = qq"${libpath_prefix}/gtf";
+    $paths->{hmm_dir} = qq"${libpath_prefix}/hmm";
+    $paths->{index_prefix} = qq"${libpath_prefix}/indexes";
+    $paths->{index_prefix_shell} = qq"${libdir_prefix}/indexes";
+    make_path($paths->{blast_dir}) unless (-d $paths->{blast_dir});
+    make_path($paths->{codon_dir}) unless (-d $paths->{codon_dir});
+    make_path($paths->{fasta_dir}) unless (-d $paths->{fasta_dir});
+    make_path($paths->{gff_dir}) unless (-d $paths->{gff_dir});
+    make_path($paths->{gtf_dir}) unless (-d $paths->{gtf_dir});
+    make_path($paths->{gbk_dir}) unless (-d $paths->{gbk_dir});
+    make_path($paths->{hmm_dir}) unless (-d $paths->{hmm_dir});
+    make_path($paths->{index_prefix}) unless (-d $paths->{index_prefix});
+    if (defined($ENV{BLAST_DB})) {
+        if ($ENV{BLAST_DB} =~ /:/) {
+            my @blast = split(/:/, $ENV{BLAST_DB});
+            unless (grep(/$paths->{blast_dir}/, @blast)) {
+                $ENV{BLAST_DB} = qq"$ENV{BLAST_DB}:$paths->{blast_dir}";
+            }
+        } else {
+            unless ($paths->{blast_dir} eq $ENV{BLAST_DB}) {
+                $ENV{BLAST_DB} = qq"$ENV{BLAST_DB}:$paths->{blast_dir}";
+            }
+        }
+    } else {
+        $ENV{BLAST_DB} = $paths->{blast_dir};
     }
-    my $index_prefix = qq"${libpath_prefix}/indexes";
-    my $index_prefix_shell = qq"${libdir_prefix}/indexes";
+    if (defined($options->{species})) {
+        $paths->{fasta} = qq"$paths->{fasta_dir}/$options->{species}.fasta";
+        $paths->{fasta_shell} = qq"${libdir_prefix}/fasta/$options->{species}.fasta";
+        $paths->{gff} = qq"$paths->{gff_dir}/$options->{species}.gff";
+        $paths->{gff_shell} = qq"${libdir_prefix}/gff/$options->{species}.gff";
+        $paths->{gtf} = qq"$paths->{gtf_dir}/$options->{species}.gtf";
+        $paths->{gtf_shell} = qq"${libdir_prefix}/gtf/$options->{species}.gtf";
+        $paths->{gbk} = qq"$paths->{gbk_dir}/$options->{species}.gbk";
+        $paths->{gbk_shell} = qq"${libdir_prefix}/genbank/$options->{species}.gbk";
+    }
+
     if ($subroutine eq 'Bowtie') {
-        $paths->{index} = qq"${index_prefix}/bt1/$options->{species}";
-        $paths->{index_shell} = qq"${index_prefix_shell}/bt1/$options->{species}";
+        $paths->{index} = qq"$paths->{index_prefix}/bt1/$options->{species}";
+        $paths->{index_shell} = qq"$paths->{index_prefix_shell}/bt1/$options->{species}";
         $paths->{index_file} = qq"$paths->{index}.1.ebwt";
         $paths->{index_file_shell} = qq"$paths->{index_shell}.1.ebwt";
         $paths->{output_dir} = qq"${output_prefix}bowtie_$options->{species}";
     }
-    elsif ($subroutine eq 'Bowtie2') {
-        $paths->{index} = qq"${index_prefix}/bt2/$options->{species}";
-        $paths->{index_shell} = qq"${index_prefix_shell}/bt2/$options->{species}";
+    elsif ($subroutine eq 'Bowtie2' || $subroutine eq 'BT2_Index') {
+        $paths->{index} = qq"$paths->{index_prefix}/bt2/$options->{species}";
+        $paths->{index_dir} = qq"$paths->{index_prefix}/bt2";
         $paths->{index_file} = qq"$paths->{index}.1.bt2";
-        $paths->{index_file_shell} = qq"$paths->{index_shell}.1.bt2";
         $paths->{index_file2} = qq"$paths->{index}.1.bt2l";
+        $paths->{index_shell} = qq"$paths->{index_prefix_shell}/bt2/$options->{species}";
+        $paths->{index_file_shell} = qq"$paths->{index_shell}.1.bt2";
         $paths->{index_file2_shell} = qq"$paths->{index_shell}.1.bt2l";
         $paths->{output_dir} = qq"${output_prefix}bowtie2_$options->{species}";
     }
     elsif ($subroutine eq 'BWA') {
-        $paths->{index} = qq"${index_prefix}/bwa/$options->{species}";
-        $paths->{index_shell} = qq"${index_prefix_shell}/bwa/$options->{species}";
+        $paths->{index} = qq"$paths->{index_prefix}/bwa/$options->{species}";
+        $paths->{index_dir} = qq"$paths->{index_prefix}/bwa";
+        $paths->{index_shell} = qq"$paths->{index_prefix_shell}/bwa/$options->{species}";
         $paths->{index_file} = qq"$paths->{index}.sa";
         $paths->{index_file_shell} = qq"$paths->{index_shell}.sa";
         $paths->{output_dir} = qq"${output_prefix}bwa_$options->{species}";
     }
+    elsif ($subroutine eq 'Classify_Phage') {
+        $paths->{output_dir} = qq"${output_prefix}classify_phage";
+    }
     elsif ($subroutine eq 'Downsample_Guess_Strand') {
-        $paths->{index} = qq"${index_prefix}/salmon/$options->{species}";
-        $paths->{index_shell} = qq"${index_prefix_shell}/salmon/$options->{species}";
+        $paths->{index} = qq"$paths->{index_prefix}/salmon/$options->{species}";
+        $paths->{index_dir} = qq"$paths->{index_prefix}/salmon";
+        $paths->{index_shell} = qq"$paths->{index_prefix_shell}/salmon/$options->{species}";
         $paths->{output_dir} = qq"${output_prefix}salmon_downsample_$options->{species}";
+    }
+    elsif ($subroutine eq 'Filter_Host_Kraken' || $subroutine eq 'Filter_Kraken_Worker') {
+        $paths->{output_dir} = qq"${output_prefix}filter_kraken";
+        $paths->{index_dir} = qq"$paths->{index_prefix}/hisat";
+        $paths->{stderr} = qq"$paths->{output_dir}/filter_host.stderr";
+        $paths->{stdout} = qq"$paths->{output_dir}/filter_host.stdout";
+        $paths->{log} = qq"$paths->{output_dir}/filter_kraken.log";
+    }
+    elsif ($subroutine eq 'Freebayes_SNP_Search' ||
+           $subroutine eq 'SNP_Ratio' || $subroutine eq 'SNP_Ratio_Worker' ||
+           $subroutine eq 'SNP_Ratio_Intron' || $subroutine eq 'SNP_Ratio_Intron_Worker') {
+        $paths->{output_dir} = qq"${output_prefix}freebayes_$options->{species}";
     }
     elsif ($subroutine eq 'GATK_Dedup') {
         $paths->{output_dir} = qq"${output_prefix}gatk_dedup";
     }
-    elsif ($subroutine eq 'Hisat2' or $subroutine eq 'Hisat2_Index') {
-        $paths->{index_dir} = qq"${index_prefix}/hisat";
+    elsif ($subroutine eq 'Gb2Gff' or $subroutine eq 'Gb2Gff_Worker') {
+        $paths->{output_dir} = qq"${output_prefix}gb2gff";
+        $paths->{stdout} = qq"$paths->{output_dir}/gb2gff.stdout";
+        $paths->{stderr} = qq"$paths->{output_dir}/gb2gff.stderr";
+    }
+    elsif ($subroutine eq 'Hisat2') {
+        $paths->{index_dir} = qq"$paths->{index_prefix}/hisat";
         $paths->{index} = qq"$paths->{index_dir}/$options->{species}";
-        $paths->{index_shell} = qq"${index_prefix_shell}/hisat/$options->{species}";
+        $paths->{index_shell} = qq"$paths->{index_prefix_shell}/hisat/$options->{species}";
         $paths->{index_file} = qq"$paths->{index}.1.ht2";
         $paths->{index_file_shell} = qq"$paths->{index_shell}.1.ht2";
         $paths->{index_file2} = qq"$paths->{index}.1.ht2l";
         $paths->{index_file2_shell} = qq"$paths->{index_shell}.1.ht2l";
         $paths->{output_dir} = qq"${output_prefix}hisat_$options->{species}";
     }
+    elsif ($subroutine eq 'Hisat2_Index') {
+        if (!defined($options->{species})) {
+            $options->{species} = basename($options->{input}, ('.fsa', '.fasta', '.fa'));
+            $paths->{fasta} = qq"$paths->{fasta_dir}/$options->{species}.fasta";
+            $paths->{fasta_shell} = qq"${libdir_prefix}/fasta/$options->{species}.fasta";
+            $paths->{gff} = qq"$paths->{gff_dir}/$options->{species}.gff";
+            $paths->{gff_shell} = qq"${libdir_prefix}/gff/$options->{species}.gff";
+        }
+        $paths->{index_dir} = qq"$paths->{index_prefix}/hisat";
+        $paths->{index} = qq"$paths->{index_dir}/$options->{species}";
+        $paths->{index_shell} = qq"$paths->{index_prefix_shell}/hisat/$options->{species}";
+        $paths->{index_file} = qq"$paths->{index}.1.ht2";
+        $paths->{index_file_shell} = qq"$paths->{index_shell}.1.ht2";
+        $paths->{index_file2} = qq"$paths->{index}.1.ht2l";
+        $paths->{index_file2_shell} = qq"$paths->{index_shell}.1.ht2l";
+        $paths->{output_dir} = qq"${output_prefix}index_hisat2_$options->{species}";
+        make_path($paths->{output_dir}, {verbose => 0}) unless (-r $paths->{output_dir});
+    }
+    elsif ($subroutine eq 'Insert_Size') {
+        $paths->{output_dir} = qq"${output_prefix}insert_size";
+        $paths->{stderr} = qq"$paths->{output_dir}/$paths->{output_base}_insert_size.stderr";
+        $paths->{stdout} = qq"$paths->{output_dir}/$paths->{output_base}_insert_size.stdout";
+    }
     elsif ($subroutine eq 'Kallisto') {
-        $paths->{index_file} = qq"${index_prefix}/kallisto/$options->{species}.idx";
-        $paths->{index_file_shell} = qq"${index_prefix_shell}/kallisto/$options->{species}.idx";
+        $paths->{index_dir} = qq"$paths->{index_prefix}/kallisto";
+        $paths->{index_file} = qq"$paths->{index_prefix}/kallisto/$options->{species}.idx";
+        $paths->{index_file_shell} = qq"$paths->{index_prefix_shell}/kallisto/$options->{species}.idx";
         $paths->{output_dir} = qq"${output_prefix}kallisto_$options->{species}";
+    }
+    elsif ($subroutine eq 'Make_Codon_Table') {
+        $paths->{codon_table} = qq"$paths->{codon_dir}/$options->{species}.txt";
     }
     elsif ($subroutine eq 'OrthoFinder') {
         $paths->{output_dir} = qq"${output_prefix}orthofinder";
@@ -789,12 +863,19 @@ sub Get_Paths {
     elsif ($subroutine eq 'Pairwise_Similarity_Matrix') {
         $paths->{output_dir} = qq"${output_prefix}pairwise_blast";
     }
+    elsif ($subroutine eq 'Prodigal') {
+        my $input_name = basename($options->{input}, ('.fasta', '.fsa', '.ffn'));
+        $paths->{output_dir} = qq"${output_prefix}prodigal_${input_name}";
+        $paths->{stdout} = qq"$paths->{output_dir}/prodigal.stdout";
+        $paths->{stderr} = qq"$paths->{output_dir}/prodigal.stderr";
+    }
     elsif ($subroutine eq 'ProgressiveMauve') {
         $paths->{output_dir} = qq"${output_prefix}/pmauve";
     }
     elsif ($subroutine eq 'RSEM') {
-        $paths->{index} = qq"${index_prefix}/rsem/$options->{species}";
-        $paths->{index_shell} = qq"${index_prefix_shell}/rsem/$options->{species}";
+        $paths->{index} = qq"$paths->{index_prefix}/rsem/$options->{species}";
+        $paths->{index_dir} = qq"$paths->{index_prefix}/rsem";
+        $paths->{index_shell} = qq"$paths->{index_prefix_shell}/rsem/$options->{species}";
         $paths->{index_file} = qq"$paths->{index}.transcripts.fa";
         $paths->{index_file_shell} = qq"$paths->{index_shell}.transcripts.fa";
         $paths->{output_dir} = qq"${output_prefix}rsem_$options->{species}";
@@ -804,8 +885,9 @@ sub Get_Paths {
         $paths->{output_dir} = qq"${output_prefix}blast_$options->{input}_vs_${libname}";
     }
     elsif ($subroutine eq 'Salmon') {
-        $paths->{index} = qq"${index_prefix}/salmon/$options->{species}";
-        $paths->{index_shell} = qq"${index_prefix_shell}/salmon/$options->{species}";
+        $paths->{index} = qq"$paths->{index_prefix}/salmon/$options->{species}";
+        $paths->{index_dir} = qq"$paths->{index_prefix}/salmon";
+        $paths->{index_shell} = qq"$paths->{index_prefix_shell}/salmon/$options->{species}";
         $paths->{output_dir} = qq"${output_prefix}salmon_$options->{species}";
     }
     elsif ($subroutine eq 'SLSearch') {
@@ -819,18 +901,30 @@ sub Get_Paths {
         $paths->{output_dir} = qq"${output_prefix}blastsplit_$options->{input}_vs_${libname}";
     }
     elsif ($subroutine eq 'STAR') {
-        $paths->{index} = qq"${index_prefix}/star/$options->{species}";
-        $paths->{index_shell} = qq"${index_prefix_shell}/star/$options->{species}";
+        $paths->{index} = qq"$paths->{index_prefix}/star/$options->{species}";
+        $paths->{index_dir} = qq"$paths->{index_prefix}/star";
         $paths->{index_file} = qq"$paths->{index}/SAindex";
         $paths->{index_file_shell} = qq"$paths->{index_shell}/SAindex";
+        $paths->{index_shell} = qq"$paths->{index_prefix_shell}/star/$options->{species}";
         $paths->{output_dir} = qq"${output_prefix}star_$options->{species}";
     }
+    elsif ($subroutine eq 'Terminase_ORF_Reorder' or $subroutine eq 'Terminase_ORF_Reorder_Worker') {
+        $paths->{output_dir} = qq"${output_prefix}terminase_reorder";
+        $paths->{stderr} = qq"$paths->{output_dir}/termreorder.stderr";
+        $paths->{stdout} = qq"$paths->{output_dir}/termreorder.stdout";
+        $paths->{output} = qq"$paths->{output_dir}/final_assembly.fasta";
+        $paths->{prodigal_output} = qq"$paths->{output_dir}/prodigal_cds.fasta";
+    }
     elsif ($subroutine eq 'Tophat') {
-        $paths->{index} = qq"${index_prefix}/tophat/$options->{species}";
-        $paths->{index_shell} = qq"${index_prefix_shell}/tophat/$options->{species}";
+        $paths->{index} = qq"$paths->{index_prefix}/tophat/$options->{species}";
+        $paths->{index_dir} = qq"$paths->{index_prefix}/tophat";
         $paths->{index_file} = qq"$paths->{index}.1.bt2";
         $paths->{index_file_shell} = qq"$paths->{index_shell}.1.bt2";
+        $paths->{index_shell} = qq"$paths->{index_prefix_shell}/tophat/$options->{species}";
         $paths->{output_dir} = qq"${output_prefix}tophat_$options->{species}";
+    }
+    elsif ($subroutine eq 'Transit_TPP') {
+        $paths->{output_dir} = qq"${output_prefix}transit_$options->{species}";
     }
     elsif ($subroutine eq 'Umi_Tools_Extract') {
         $paths->{output_dir} = qq"${output_prefix}umi_tools";
@@ -838,12 +932,20 @@ sub Get_Paths {
     elsif ($subroutine eq 'Umi_Tools_Dedup') {
         $paths->{output_dir} = qq"${output_prefix}umi_dedup";
     }
+    elsif ($subroutine eq 'Unicycler') {
+        $paths->{output_dir} = qq"${output_prefix}unicycler";
+    }
+
     if ($paths->{index_file}) {
         my $index_directory = dirname($paths->{index_file});
         make_path($index_directory) unless (-d $index_directory);
     }
+    ## Create the output directory and set a default stdout/stderr file.
     if ($paths->{output_dir}) {
-        make_path($paths->{output_dir});
+        make_path($paths->{output_dir}) unless (-d $paths->{output_dir});
+        $paths->{stdout} = qq"$paths->{output_dir}/stdout" unless ($paths->{stdout});
+        $paths->{stderr} = qq"$paths->{output_dir}/stderr" unless ($paths->{stderr});
+        $paths->{log} = qq"$paths->{output_dir}/log.txt" unless ($paths->{log});
     }
     return($paths);
 }
