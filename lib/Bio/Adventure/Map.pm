@@ -1051,12 +1051,15 @@ sub Hisat2 {
 
     my $stderr = qq"$paths->{output_dir}/hisat_$options->{species}_$options->{libtype}";
     my $stdout = $stderr;
+    my $metrics = $stderr;
     if (defined($options->{jbasename})) {
         $stderr .= "_$options->{jbasename}.stderr";
         $stdout .= "_$options->{jbasename}.stdout";
+        $metrics .= "_$options->{jbasename}.metrics";
     } else {
         $stderr .= ".stderr";
         $stdout .= ".stdout";
+        $metrics .= ".metrics";
     }
     my $comment = qq!## This is a hisat2 alignment of ${hisat_input} against $paths->{index_shell}
 !;
@@ -1104,6 +1107,7 @@ hisat2 -x $paths->{index_shell} ${hisat_args} \\
     }
     my $all_filenames = qq"${aligned_filenames}:${unaligned_filenames}";
     $jstring .= qq!  -S ${sam_filename} \\
+  --met-file ${metrics} \\
   2>${stderr} \\
   1>${stdout}
 !;
@@ -1117,6 +1121,7 @@ hisat2 -x $paths->{index_shell} ${hisat_args} \\
         jmem => $options->{jmem},
         paired => $paired,
         output => $sam_filename,
+        output_metrics => $metrics,
         prescript => $options->{prescript},
         postscript => $options->{postscript},
         aligned => $aligned_filenames,

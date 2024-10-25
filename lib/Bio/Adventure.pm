@@ -684,7 +684,6 @@ sub Get_FH {
     elsif ($args{input} =~ /\.gz$/) {
         $opener = 'gunzip -c';
     }
-    print "TESTME Get_FH: $opener\n";
     my $fh;
     my $cmd;
     if (defined($opener)) {

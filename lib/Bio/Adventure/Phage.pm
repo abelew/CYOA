@@ -148,7 +148,6 @@ sub Caical {
     my $stderr = qq"${output_dir}/${out_base}.stderr";
     my $stdout = qq"${output_dir}/${out_base}.stdout";
     my $comment = qq'## Running caical against ${species}.';
-
     my $jstring = qq!use Bio::Adventure::Phage;
 my \$result = \$h->Bio::Adventure::Phage::Caical_Worker(
   input => '$options->{input}',
@@ -191,6 +190,7 @@ sub Caical_Worker {
         expected_cai => '',
         output => '',
         jprefix => '80',);
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $species = $options->{species};
     ## Then the species argument is a filename, so pull the species from it.
     if (-r $species) {
@@ -203,7 +203,7 @@ sub Caical_Worker {
         $in->close();
     }
 
-    my $index = qq"$options->{libpath}/codon_tables/${species}.txt";
+    my $index = qq"$paths->{codon_dir}/${species}.txt";
     print "Checking for ${index}\n";
     if (!-r $index) {
         print "Making a codon table for ${species}.\n";
@@ -1980,15 +1980,21 @@ sub Terminase_ORF_Reorder_Worker {
     ## Now perform the search for potential terminases.
     my $library_file = qq"$paths->{blast_dir}/$options->{library}.fasta";
     if (!-r $library_file) {
-        dir("The library file: ${library_file} does not exist.");
+        die("The library file: ${library_file} does not exist.");
     }
     my $fasta_output = Bio::SearchIO->new(-format => 'fasta', );
     my $number_hits = 0;
-    print $log "Starting fasta search of $options->{input}
+    print $log "Starting fasta search of $options->{query}
   against ${library_file} using tool: $options->{fasta_tool}.\n";
-    my $query = Bio::SeqIO->new(-file => $options->{input}, -format => 'Fasta');
-    print $log "Opening: $options->{input} as a fasta file.\n";
-    my $fasta_outfile = qq"${output_dir}/$options->{library}_vs_$options->{query}.txt";
+    unless (-r $library_file) {
+        die ("Unable to open the library file: ${library_file}.")
+    }
+    unless (-r $options->{query}) {
+        die("Unable to open the query: $options->{query}.")
+    }
+    my $query = Bio::SeqIO->new(-file => $options->{query}, -format => 'Fasta');
+    my $query_name = basename($options->{query}, ('.fasta', '.fsa'));
+    my $fasta_outfile = qq"${output_dir}/${query_name}_vs_$options->{library}.txt";
     my @params = (
         b => 1,
         O => $fasta_outfile,
@@ -2011,16 +2017,15 @@ sub Terminase_ORF_Reorder_Worker {
         }
     };
     if (-r $fasta_outfile) {
-        print "The fasta36 output file exists: $fasta_outfile\n";
+        print $log "The fasta36 output file exists: ${fasta_outfile}\n";
     } else {
-        die("The fasta36 output file does not exist: $fasta_outfile");
+        die("The fasta36 output file does not exist: ${fasta_outfile}");
     }
 
     ## Collect the results from the fasta search and write them out.
     my $hit_fh = FileHandle->new(">${output_dir}/$options->{library}_summary.tsv");
     print $hit_fh "Name\tLength\tAccession\tDescription\tScore\tSignificance\tBit\tHitStrand\tQueryStrand\n";
     my $full_outfile = abs_path($fasta_outfile);
-    print "TESTME: $full_outfile\n";
     my $result_data = {};
     my $search_output = Bio::SearchIO->new(-file => $fasta_outfile, -format => 'fasta');
     my $element_count = 0;

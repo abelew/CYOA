@@ -236,7 +236,8 @@ cd \${start}
     my $l2w_output = qq"${output_dir}/${l2w_output_base}_wide.tsv";
     my $l2w_stderr = qq"${output_dir}/${l2w_output_base}_wide.stderr";
     my $l2w_stdout = qq"${output_dir}/${l2w_output_base}_wide.stdout";
-    print "Submitting L2W with input $output and output $l2w_output\n";
+    print "Submitting L2W with input: $output
+and output: $l2w_output\n";
     my $long_to_wide = $class->Bio::Adventure::Annotation::Interpro_Long2Wide(
         input => $output,
         jdepends => $interproscan->{job_id},

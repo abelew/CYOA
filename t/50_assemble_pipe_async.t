@@ -13,6 +13,7 @@ my $input_r1 = qq"${start_dir}/r1.fastq.xz";
 my $input_r2 = qq"${start_dir}/r2.fastq.xz";
 my $phix_fasta = qq"${start_dir}/genome/phix.fastq";
 my $phix_gff = qq"${start_dir}/genome/phix.gff";
+my $terminase_db = qq"${start_dir}/genome/phage_terminases.fasta";
 
 my $start = getcwd();
 my $a = 'test_output_async';
@@ -22,20 +23,22 @@ my $test_file = '';
 mkdir($a);
 chdir($a);
 
+my $cyoa = Bio::Adventure->new(basedir => cwd());
+my $paths = $cyoa->Bio::Adventure::Config::Get_Paths();
 ## Copy the reads for running the tests.
 ok(cp($input_r1, 'r1.fastq.xz'), 'Copying r1.') if (!-r 'r1.fastq.xz');
 ok(cp($input_r2, 'r2.fastq.xz'), 'Copying r2.') if (!-r 'r2.fastq.xz');
-
+ok(cp($terminase_db, "$paths->{blast_dir}/terminase.fasta"), 'Copying terminase db.') if (!-r "$paths->{blast_dir}/terminase.fasta");
 ## Invoke the pipeline, keep it within our test directory with basedir.
-my $cyoa = Bio::Adventure->new(basedir => cwd());
+
 my $assemble = $cyoa->Bio::Adventure::Pipeline::Phage_Assemble(
     input => 'r1.fastq.xz:r2.fastq.xz', jprefix => '50');
-
 my $job_id;
 my $status;
-
+use Data::Dumper;
+print Dumper $assemble;
 ## Check the trimomatic output.
-my $id = '51trim';
+my $id = '01trim';
 $test_file = $assemble->{$id}->{stderr};
 $job_id = $assemble->{$id}->{job_id};
 $status = $cyoa->Wait(job => $job_id);
@@ -53,13 +56,13 @@ Input Read Pairs: 108212 Both Surviving: 95613 (88.36%) Forward Only Surviving: 
 TrimmomaticPE: Completed successfully
 ";
 $actual = qx"tail ${test_file}";
-#$comparison = ok($expected eq $actual, 'Checking trimomatic result:');
-#if ($comparison) {
-#    print "Passed.\n";
-#} else {
-#    my ($e, $a) = diff($expected, $actual);
-#    diag("-- expected\n${e}\n-- actual\n${a}\n");
-#}
+$comparison = ok($expected eq $actual, 'Checking trimomatic result:');
+if ($comparison) {
+    print "Passed.\n";
+} else {
+    my ($e, $a) = diff($expected, $actual);
+    diag("-- expected\n${e}\n-- actual\n${a}\n");
+}
 
 ## Look at the fastqc outputs
 

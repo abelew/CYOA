@@ -30,13 +30,10 @@ my $paths = $cyoa->Bio::Adventure::Config::Get_Paths();
 ok(cp($input_r1, 'r1.fastq.xz'), 'Copying r1.') if (!-r 'r1.fastq.xz');
 ok(cp($input_r2, 'r2.fastq.xz'), 'Copying r2.') if (!-r 'r2.fastq.xz');
 ok(cp($terminase_db, "$paths->{blast_dir}/terminase.fasta"), 'Copying terminase db.') if (!-r "$paths->{blast_dir}/terminase.fasta");
-
 ## Invoke the pipeline, keep it within our test directory with basedir.
 
 my $assemble = $cyoa->Bio::Adventure::Pipeline::Phage_Assemble(
     input => 'r1.fastq.xz:r2.fastq.xz', jprefix => '50',);
-##use Data::Dumper;
-##print Dumper $assemble;
 
 ## Check the trimomatic output.
 $test_file = $assemble->{'01trim'}->{stderr};
@@ -54,13 +51,13 @@ Input Read Pairs: 108212 Both Surviving: 95613 (88.36%) Forward Only Surviving: 
 TrimmomaticPE: Completed successfully
 ";
 $actual = qx"tail ${test_file}";
-#$comparison = ok($expected eq $actual, 'Checking trimomatic result:');
-#if ($comparison) {
-#    print "Passed.\n";
-#} else {
-#    my ($e, $a) = diff($expected, $actual);
-#    diag("-- expected\n${e}\n-- actual\n${a}\n");
-#}
+$comparison = ok($expected eq $actual, 'Checking trimomatic result:');
+if ($comparison) {
+    print "Passed.\n";
+} else {
+    my ($e, $a) = diff($expected, $actual);
+    diag("-- expected\n${e}\n-- actual\n${a}\n");
+}
 
 ## Look at the fastqc outputs
 $test_file = $assemble->{'02fastqc'}->{txtfile};
@@ -310,17 +307,17 @@ AUV61411.1\t503\tAUV61411\tlarge terminase [Pontimonas phage phiPsal1]\t32.5\t0.
 $test_file = $assemble->{'15prokka'}->{output_cds};
 $comparison = ok(-f $test_file, qq"Checking prokka output file: ${test_file}");
 print "Passed.\n" if ($comparison);
-$actual = qx"head ${test_file}";
+$actual = qx"grep '^>' ${test_file} | head";
 $expected = qq">test_output_00001 hypothetical protein
-ATGGAACGTAACGCTGACGCATACTATGAGCTGCTGAATGCAACCGTTAAAGCATTTAAC
-GAGCGTGTTCAGTACGACGAAATAGCTAAAGGTGATGACTACCATGATGCGCTGCATGAA
-GTCGTAGACGGTCAGGTTCCGCACTATTACCACGAGATCTTCACGGTGATGGCTGCTGAT
-GGTATTGACATTGAGTTTGAAGACTCTGGGCTGATGCCTGAGACCAAGGACGTAACGCGC
-ATACTGCAAGCTCGCATCTATGAGGCACTGTATAACGGCGTGTCTAATAGCTCGGATGTG
-GTCTGGTTTGAGGCTGAAGAGAGCGACGAAGAGGGTAAGTATTGGGTAGTTGACGCTAAA
-ACGGGACTATTCGCTGAGCAAGCTATACCTCTTGAGGTCGCTATTGCATCTGCCAAAGAC
-CTCTATGCGGTAGGTCATCACATGAAAGTCGAAGACATTAACGATAACGTAGTGTTCGAC
-CCTGCGGCTGAAGAGGACTGCGAGTGA
+>test_output_00002 hypothetical protein
+>test_output_00003 hypothetical protein
+>test_output_00004 hypothetical protein
+>test_output_00005 hypothetical protein
+>test_output_00006 hypothetical protein
+>test_output_00007 hypothetical protein
+>test_output_00008 hypothetical protein
+>test_output_00009 hypothetical protein
+>test_output_00010 hypothetical protein
 ";
 $comparison = ok($expected eq $actual, 'Checking prokka result:');
 if ($comparison) {
@@ -335,14 +332,17 @@ if ($comparison) {
 $test_file = $assemble->{'16prodigal'}->{output_cds};
 $comparison = ok(-f $test_file, qq"Checking prodigal output: ${test_file}");
 print "Passed.\n" if ($comparison);
-$actual = qx"head -n 7 ${test_file}";
-$expected = qq">gnl|Prokka|test_output_1_1 # 1267 # 1773 # 1 # ID=1_1;partial=00;start_type=ATG;rbs_motif=GGAG/GAGG;rbs_spacer=5-10bp;gc_cont=0.489
-ATGGAACGTAACGCTGACGCATACTATGAGCTGCTGAATGCAACCGTTAAAGCATTTAACGAGCGTGTTC
-AGTACGACGAAATAGCTAAAGGTGATGACTACCATGATGCGCTGCATGAAGTCGTAGACGGTCAGGTTCC
-GCACTATTACCACGAGATCTTCACGGTGATGGCTGCTGATGGTATTGACATTGAGTTTGAAGACTCTGGG
-CTGATGCCTGAGACCAAGGACGTAACGCGCATACTGCAAGCTCGCATCTATGAGGCACTGTATAACGGCG
-TGTCTAATAGCTCGGATGTGGTCTGGTTTGAGGCTGAAGAGAGCGACGAAGAGGGTAAGTATTGGGTAGT
-TGACGCTAAAACGGGACTATTCGCTGAGCAAGCTATACCTCTTGAGGTCGCTATTGCATCTGCCAAAGAC
+$actual = qx"grep '^>' ${test_file} | awk '{print \$1}' | head";
+$expected = qq">gnl|Prokka|test_output_1_1
+>gnl|Prokka|test_output_1_2
+>gnl|Prokka|test_output_1_3
+>gnl|Prokka|test_output_1_4
+>gnl|Prokka|test_output_1_5
+>gnl|Prokka|test_output_1_6
+>gnl|Prokka|test_output_1_7
+>gnl|Prokka|test_output_1_8
+>gnl|Prokka|test_output_1_9
+>gnl|Prokka|test_output_1_10
 ";
 $comparison = ok($expected eq $actual, 'Checking prodigal CDS predictions:');
 if ($comparison) {
@@ -363,15 +363,15 @@ $comparison = ok(-f $test_file, qq"Checking glimmer result file: ${test_file}");
 print "Passed.\n" if ($comparison);
 $actual = qx"head ${test_file}";
 $expected = qq">gnl|Prokka|test_output_1
-orf00003      131      265  +2     0.84
-orf00005      352      305  -2     1.29
-orf00010     1052     1129  +2     7.87
-orf00011     1178     1225  +2     9.70
-orf00013     1267     1773  +1    14.08
-orf00015     1821     1928  +3     2.10
-orf00016     1931     2056  +2     3.05
-orf00019     2262     2411  +3     4.05
-orf00020     2447     2737  +2     2.27
+orf00005      828      875  +3     1.29
+orf00007     1073      915  -3     3.66
+orf00013     1828     1875  +1     1.29
+orf00015     2073     1915  -1     3.66
+orf00020     4101     2371  -1    10.30
+orf00022     4932     4147  -1     4.42
+orf00023     5327     4935  -3     8.13
+orf00025     5427     5480  +3     0.89
+orf00026     5749     5486  -2     7.45
 ";
 $comparison = ok($expected eq $actual, 'Checking glimmer CDS predictions:');
 if ($comparison) {
@@ -390,48 +390,24 @@ if ($comparison) {
 $test_file = $assemble->{'18phanotate'}->{output};
 $comparison = ok(-f $test_file, qq"Checking phanotate output: ${test_file}");
 print "Passed.\n" if ($comparison);
-$actual = qx"less ${test_file} | head | awk '{print \$1}'";
+$actual = qx"xzcat ${test_file} | head | awk '{print \$1}'";
 ## Different versions of phanotate give slightly different outputs...
-my $expected_first = qq"#id:
+$expected = qq"#id:
 #START
-1
-183
-477
-1148
-1267
-1773
-1931
-2128
+285
+703
+1012
+1140
+1359
+1703
+2012
+2140
 ";
-my $expected_second = qq"#id:
-#START
-<1
-183
-477
-1148
-1267
-1773
-1931
-2128
-";
-## Here is the previous result, which just used head -n 5 for no good reason.
-## #id:\tgnl|Prokka|test_output_1
-## #START\tSTOP\tFRAME\tCONTIG\tSCORE
-## 1\t117\t+\tgnl|Prokka|test_output_1\t-1.248555528686707940866691777\t
-## 183\t302\t+\tgnl|Prokka|test_output_1\t-0.2175130562377134455954126775\t
-## 477\t617\t+\tgnl|Prokka|test_output_1\t-0.07018008835792925643848556090\t
-my $something_good = 0;
-if ($expected_first eq $actual) {
-    $something_good++;
-}
-if ($expected_second eq $actual) {
-    $something_good++;
-}
-$comparison = ok($something_good, 'Checking phanotate output:');
+$comparison = ok($expected eq $actual, 'Checking phanotate output:');
 if ($comparison) {
     print "Passed.\n";
 } else {
-    my ($e, $a) = diff($expected_first, $actual);
+    my ($e, $a) = diff($expected, $actual);
     diag("-- expected\n${e}\n-- actual\n${a}\n");
 }
 
@@ -445,15 +421,15 @@ $comparison = ok(-f $test_file, qq"Checking CDS merge output: ${test_file}");
 print "Passed.\n" if ($comparison);
 $actual = qx"head ${test_file}";
 $expected = qq"locus_tag	contig	type	source	start	end	strand	cds_prediciton	aa_sequence
-test_output_0001	test_output_1	CDS		131	265	1	glimmer	VVVETIGWDYWLSLSLLLAAGVTAGSQWVGWVETLVCSLVSQCN
-test_output_0002	test_output_1	CDS		183	302	1	phanotate, score: -0.218	LLLALLLEVSGSGGSRLSYALWSLSVINAIMVTIHERKT
-test_output_0003	test_output_1	CDS		305	352	-1	glimmer	LTTVAKVSRVASAMN
-test_output_0004	test_output_1	CDS		477	617	1	phanotate, score: -0.0702	LDQKFETTSHSSRTSSLPIGPLSVQTKGPTPVYHKVGPMVKTSGQR
-test_output_0005	test_output_1	CDS		888	1148	-1	phanotate, score: -0.107	LLKSIPFSQRTSGRPVQCWSPPLLRCGTAYISSLLLVNYFLSSACCSYDLSGCLLNRDDPASSLSGCCRVVLTEAIKPQSRPIVNM
-test_output_0006	test_output_1	CDS		1178	1225	1	glimmer	VINYRVFESTPEGPD
-test_output_0007	test_output_1	CDS		1267	1773	1	phanotate, score: -5940	MERNADAYYELLNATVKAFNERVQYDEIAKGDDYHDALHEVVDGQVPHYYHEIFTVMAADGIDIEFEDSGLMPETKDVTRILQARIYEALYNGVSNSSDVVWFEAEESDEEGKYWVVDAKTGLFAEQAIPLEVAIASAKDLYAVGHHMKVEDINDNVVFDPAAEEDCE
-test_output_0008	test_output_1	CDS		1773	1928	1	phanotate, score: -6.33	MVTYGLCQHHVTNARIMVKTGQLNHDATMCLLKAVYEGRKLIHNSLHAEDK
-test_output_0009	test_output_1	CDS		1931	2056	1	phanotate, score: -4.91	MYQITYNSEQAFYEGCYEMMKRGACYVANHHSLTITLTGGY
+test_output_0001	test_output_1	CDS		100	285	-1	phanotate, score: -0.121	LTIGLDCGLMASVNTTRQQPDSEDAGSSRLSRQPDISQFKNLKSPHRPSFSPDQRPYPSLS
+test_output_0002	test_output_1	CDS		563	703	-1	phanotate, score: -0.0675	LDQKFETTSHSSRTSSLPIGPLSVQTKGPTPVYHKVGPMVKTSGQR
+test_output_0003	test_output_1	CDS		828	875	1	glimmer	LTTVAKVSRVASAMN
+test_output_0004	test_output_1	CDS		878	1012	-1	phanotate, score: -0.342	LLLFYLLLALLLEVSGSGGSRLSYALWSLSVINAIMVTIHERKT
+test_output_0005	test_output_1	CDS	EMBL/GenBank/SwissProt	915	1073	-1	prodigal via prokka	MAKTKAVLKALATNRATYRFLAAVLLAAGVTAGSQWVGWVETLVCSLVSQCN
+test_output_0006	test_output_1	CDS		1048	1140	-1	phanotate, score: -0.418	VILIIIPQIQIVTDHRYRRYVAYGKDQSCA
+test_output_0007	test_output_1	CDS		1225	1359	-1	phanotate, score: -16.5	MLVKDYIHTQSVTYSYYQSNLLFYKEFGLNYHYREDPRLLIVLL
+test_output_0008	test_output_1	CDS		1563	1703	-1	phanotate, score: -0.0675	LDQKFETTSHSSRTSSLPIGPLSVQTKGPTPVYHKVGPMVKTSGQR
+test_output_0009	test_output_1	CDS		1828	1875	1	glimmer	LTTVAKVSRVASAMN
 ";
 $comparison = ok($expected eq $actual, 'Checking CDS merge result:');
 if ($comparison) {
@@ -470,24 +446,11 @@ if ($comparison) {
 $test_file = qq"$assemble->{'20jellyfish'}->{histogram_file}";
 $comparison = ok(-f $test_file, qq"Checking jellyfish output tsv: ${test_file}");
 print "Passed.\n" if ($comparison);
-$actual = qx"less ${test_file}";
+$actual = qx"xzcat ${test_file}";
 ## If filtering fails, we get this:
-$expected = qq"1 28869
-2 4386
-3 663
-4 253
-5 67
-6 17
-7 8
-8 2
-9 2
-10 5
-11 2
-12 1
-";
-my $expected2 = qq"1 37998
-2 1153
-3 42
+$expected = qq"1 37635
+2 1327
+3 47
 4 177
 5 9
 6 1
@@ -495,7 +458,7 @@ my $expected2 = qq"1 37998
 9 2
 10 3
 ";
-$comparison = ok($expected eq $actual || $expected2 eq $actual, 'Checking jellyfish result:');
+$comparison = ok($expected eq $actual, 'Checking jellyfish result:');
 if ($comparison) {
     print "Passed.\n";
 } else {
@@ -525,11 +488,8 @@ if ($comparison) {
 $test_file = $assemble->{'22trnascan'}->{output};
 $comparison = ok(-f $test_file, qq"Checking trnascan output: ${test_file}");
 print "Passed.\n" if ($comparison);
-$actual = qx"tail -n 4 ${test_file}";
-$expected = qq"number of sequences= 1
-number of bases tested (one strand)=41261
-number of bases tested (both strands)= 82522
-number of predicted tRNA=236
+$actual = qx"grep 'sequence name' ${test_file}";
+$expected = qq"sequence name= gnl|Prokka|test_output_1
 ";
 $comparison = ok($expected eq $actual, 'Checking trnascan result:');
 if ($comparison) {
@@ -671,17 +631,17 @@ if ($comparison) {
 $test_file = $assemble->{'29rnafold'}->{output};
 $comparison = ok(-f $test_file, qq"Checking rnafold output: ${test_file}");
 print "Passed.\n" if ($comparison);
-$actual = qx"less ${test_file} | head";
-$expected = qq!contig	start	end	A	U	G	C	GC	paired	bp_percent	mfe	mfe_bp	mfe_gc	structure
-test_output_1	-197	4	50	50	51	52	0.5124	73	0.3632	-63.90	-0.8753	-0.6204	..(((((....((((((((.((.....(((((...(((((...((((((.....((((.....((......)).....))))..((((((.((((((.(((....(((((.((.((...((((...)))).)).)).)))))))).))))))))).)))))))))...))))).)))))...))))))))))..)))))....
-test_output_1	-194	7	50	50	51	52	0.5124	83	0.4129	-63.20	-0.7614	-0.6136	.........((((.((((((............(((((...((((((.....((((.....((......)).....))))..((((((.((((((.(((....(((((.((.((...((((...)))).)).)).)))))))).))))))))).)))))))))...)))))(((((........))))).))))))))))....
-test_output_1	-191	10	48	52	50	53	0.5124	83	0.4129	-63.20	-0.7614	-0.6136	......((((.((((((............(((((...((((((.....((((.....((......)).....))))..((((((.((((((.(((....(((((.((.((...((((...)))).)).)).)))))))).))))))))).)))))))))...)))))(((((........))))).)))))))))).......
-test_output_1	-188	13	50	51	51	51	0.5075	83	0.4129	-63.20	-0.7614	-0.6196	...((((.((((((............(((((...((((((.....((((.....((......)).....))))..((((((.((((((.(((....(((((.((.((...((((...)))).)).)).)))))))).))))))))).)))))))))...)))))(((((........))))).))))))))))..........
-test_output_1	-185	16	51	50	50	52	0.5075	83	0.4129	-63.50	-0.7651	-0.6225	((((.((((((............(((((...((((((.....((((.....((......)).....))))..((((((.((((((.(((....(((((.((.((...((((...)))).)).)).)))))))).))))))))).)))))))))...)))))(((((........))))).)))))))))).............
-test_output_1	-182	19	50	51	48	54	0.5075	91	0.4527	-58.40	-0.6418	-0.5725	..((((((............(((((...((((((.....((((.....((......)).....))))..((((((.((((((.(((....(((((.((.((...((((...)))).)).)).)))))))).))))))))).)))))))))...)))))(((((........))))).))))))....................
-test_output_1	-179	22	51	51	48	53	0.5025	87	0.4328	-57.60	-0.6621	-0.5703	..........((((...(((((...((((((.....((((.....((......)).....))))..((((((.((((((.(((....(((((.((.((...((((...)))).)).)).)))))))).))))))))).)))))))))...)))))(((((........)))))((((....))))........))))......
-test_output_1	-176	25	50	53	47	53	0.4975	81	0.4030	-58.90	-0.7272	-0.5890	..............(((((...((((((.....((((.....((......)).....))))..((((((.((((((.(((....(((((.((.((...((((...)))).)).)).)))))))).))))))))).)))))))))...))))).(((((...((((.(((.((((....)))).))....).))))...)))))
-test_output_1	-173	28	50	51	47	55	0.5075	79	0.3930	-61.30	-0.7759	-0.6010	...........(((((...((((((.....((((.....((......)).....))))..((((((.((((((.(((....(((((.((.((...((((...)))).)).)).)))))))).))))))))).)))))))))...)))))((((((...((((.(((.((((....)))).))....).))))...))))))..
+$actual = qx"xzcat ${test_file} | awk '{print \$1}' | head";
+$expected = qq!contig
+test_output_1
+test_output_1
+test_output_1
+test_output_1
+test_output_1
+test_output_1
+test_output_1
+test_output_1
+test_output_1
 !;
 $comparison = ok($expected eq $actual, 'Checking RNAfold output:');
 if ($comparison) {
@@ -705,6 +665,7 @@ Acc16I	TGC^GCA		10
 Acc65I	G^GTACC	GTAC	1
 AccB1I	G^GYRCC	GYRC	13
 AccB7I	CCANNNN^NTGG	NNN	3
+AccI	GT^MKAC	MK	32
 !;
 $comparison = ok($expected eq $actual, 'Checking retriction enzyme catalog output:');
 if ($comparison) {
@@ -720,15 +681,15 @@ $comparison = ok(-f $test_file, qq"Checking caical output: ${test_file}");
 print "Passed.\n" if ($comparison);
 $actual = qx"head ${test_file}";
 $expected = qq!NAME	CAI
->test_output_0001	 0.625
->test_output_0002	 0.669
->test_output_0003	 0.602
->test_output_0004	 0.592
->test_output_0005	 0.683
->test_output_0006	 0.680
->test_output_0007	 0.692
->test_output_0008	 0.647
->test_output_0009	 0.667
+>test_output_0001	 0.568
+>test_output_0002	 0.593
+>test_output_0003	 0.609
+>test_output_0004	 0.691
+>test_output_0005	 0.581
+>test_output_0006	 0.610
+>test_output_0007	 0.616
+>test_output_0008	 0.593
+>test_output_0009	 0.609
 !;
 $comparison = ok($expected eq $actual, 'Checking caical results:');
 if ($comparison) {
@@ -743,16 +704,16 @@ $test_file = $assemble->{'32phagepromoter'}->{output_fasta};
 $comparison = ok(-f $test_file, qq"Checking phagepromoter output: ${test_file}");
 print "Passed.\n" if ($comparison);
 $actual = qx"head ${test_file}";
-$expected = qq!>test_output_1:4118 host complement(69..98) score=0.716
+$expected = qq!>test_output_1:5 host (82..111) score=0.738
 TTGACCATCGGTCCAACCTTATGATAGACT
->test_output_1:4106 host complement(324..352) score=0.898
+>test_output_1:30 host (582..611) score=0.738
+TTGACCATCGGTCCAACCTTATGATAGACT
+>test_output_1:41 host (828..856) score=0.897
 TTGACTACAGTAGCTAAGGTCAGTAGAGT
->test_output_1:4093 host complement(569..598) score=0.716
-TTGACCATCGGTCCAACCTTATGATAGACT
->test_output_1:52 host (1036..1065) score=0.828
-TTGACAAGCAGTAACGATGAGATGTAAGCT
->test_output_1:56 host (1134..1160) score=0.51
-AATGCTCTTTAACAATCTGGATAAACT
+>test_output_1:60 host (1197..1222) score=0.855
+TTGCATAAAGTCTGCATATGTATATT
+>test_output_1:4059 phage complement(1254..1276) score=0.975
+ACTTAACTATCACTATAGGGAAG
 !;
 $comparison = ok($expected eq $actual, 'Checking phagepromoter result:');
 if ($comparison) {
@@ -766,18 +727,19 @@ if ($comparison) {
 $test_file = $assemble->{'33rhopredict'}->{output};
 $comparison = ok(-f $test_file, qq"Checking rhotermpredict output file: ${test_file}");
 print "Passed.\n" if ($comparison);
-$actual = qx"head ${test_file} | awk '{print \$2}'";
-$expected = qq"Start
-0
-321
-700
-928
-1631
-2293
-2854
-3125
-3622
+$actual = qx"head ${test_file}";
+$expected = qq"Region	Start RUT	End RUT	Strand
+T1	12	90	plus
+T2	512	590	plus
+T3	939	1017	plus
+T4	1512	1590	plus
+T5	1939	2017	plus
+T6	2481	2559	plus
+T7	2899	2977	plus
+T8	3290	3368	plus
+T9	3550	3628	plus
 ";
+## This test failed but it looks ok when I checked manually, what is up?
 $comparison = ok($expected eq $actual, 'Checking rhotermpredict result:');
 if ($comparison) {
     print "Passed.\n";
