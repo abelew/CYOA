@@ -38,10 +38,7 @@ sub RNAFold_Windows {
         required => ['input'],
         step => 3,);
     my $output_name = basename($options->{input}, ('.gbk', '.fsa', '.fasta',));
-    my $output_dir = qq"outputs/$options->{jprefix}rnafold";
-    my $output = qq"${output_dir}/${output_name}.tsv.xz";
-    my $stdout = qq"${output_dir}/${output_name}_rnafold.stdout";
-    my $stderr = qq"${output_dir}/${output_name}_rnafold.stderr";
+    my $paths = $class->Bio::Adventure::Config::Get_Paths(output_name => $output_name);
     my $comment = '## Iterate over a sequence with RNAfold.';
     my $jstring = qq?
 use Bio::Adventure::Structure;
@@ -49,25 +46,25 @@ use Bio::Adventure::Structure;
   input => '$options->{input}',
   length => '$options->{length}',
   step => '$options->{step}',
-  output => '${output}',
-  output_dir => '${output_dir}',
+  output => '$paths->{output}',
+  output_dir => '$paths->{output_dir}',
   jprefix => '$options->{jprefix}',
-  stdout => '$stdout',
-  stderr => '$stderr',);
+  stdout => '$paths->{stdout}',
+  stderr => '$paths->{stderr}',);
 ?;
     my $folder = $class->Submit(
         input => $options->{input},
-        output => $output,
+        output => $paths->{output},
         jname => 'vienna',
         jprefix => $options->{jprefix},
         length => $options->{length},
         step => $options->{step},
         jstring => $jstring,
         comment => $comment,
-        output_dir => $output_dir,
+        output_dir => $paths->{output_dir},
         language => 'perl',
-        stdout => $stdout,
-        stderr => $stderr,);
+        stdout => $paths->{stdout},
+        stderr => $paths->{stderr},);
     return($folder);
 }
 

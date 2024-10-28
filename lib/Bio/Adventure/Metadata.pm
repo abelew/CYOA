@@ -510,12 +510,13 @@ sub Merge_Annotations {
         suffix => '',
         jmem => 12,
         jprefix => '15',);
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $output_name = basename($options->{input_fsa}, ('.fsa'));
     if ($options->{suffix}) {
         $output_name .= qq"_$options->{suffix}";
     }
     my $comment = qq"## Writing genbank files.\n";
-    my $output_dir =  qq"outputs/$options->{jprefix}mergeannot";
+    my $output_dir = $paths->{output_dir};
     my $output_fsa = qq"${output_dir}/${output_name}.fsa";
     my $output_xlsx = qq"${output_dir}/${output_name}.xlsx";
     my $output_gbf = qq"${output_dir}/${output_name}.gbf";
@@ -606,7 +607,8 @@ sub Merge_Annotations_Worker {
         suffix => '',
         template_sbt => '',
         jprefix => '15',);
-
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $output_dir = $paths->{output_dir};
     my $high_confidence = undef;
     my $likely_maximum = undef;
     my $possible_maximum = undef;
@@ -616,8 +618,6 @@ sub Merge_Annotations_Worker {
         $possible_maximum = $options->{evalue} * 100;
     }
     my $primary_key = $options->{primary_key};
-    my $output_dir = qq"outputs/$options->{jprefix}mergeannot";
-    make_path($output_dir);
     my $output_name = basename($options->{input_fsa}, ('.fsa'));
     if ($options->{suffix}) {
         $output_name .= qq"_$options->{suffix}";
@@ -858,7 +858,6 @@ gbf: ${output_gbf}, tbl: ${output_tbl}, xlsx: ${output_xlsx}.\n";
 
             ## FIXME: Set display name
             my $set_name = $feat->display_name($locus);
-            print "FIXME: in contig: $contig Set display name to $locus\n";
             ## Pull out some sequence information to send back to $merged_data
             $merged_data->{$locus}->{start} = $feat->start;
             $merged_data->{$locus}->{end} = $feat->end;

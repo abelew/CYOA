@@ -6,9 +6,9 @@ use warnings qw"all";
 use Moo;
 extends 'Bio::Adventure';
 
+use File::Basename qw"basename dirname";
+use File::Path qw"make_path";
 use File::Which qw"which";
-
-use File::Basename;
 
 =head1 NAME
 
@@ -38,6 +38,12 @@ sub Compress {
         jprefix => '',
         jwalltime => '24:00:00',
         modules => undef,);
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $output_prefix = $paths->{output_prefix};
+    my $output_dir = qq"${output_prefix}$options->{jname}";
+    make_path($output_dir);
+    my $stderr = qq"${output_dir}/xz.stderr";
+    my $stdout = qq"${output_dir}/xz.stdout";
     my $input_paths = $class->Get_Path_Info($options->{input});
     my $check = which('xz');
     die('Could not find xz in your PATH.') unless($check);
@@ -51,14 +57,14 @@ sub Compress {
         $output_string .= qq"${output_file}:";
         $jstring .= qq!
 ## Compressing ${in_full}
-echo "Compressing ${in_full}"
+echo "Compressing ${in_full}" 1>${stdout}
 if [ -f "${in_full}" ]; then
   xz -9e -f ${in_full}
   if [ "\$?" -ne "0" ]; then
-    echo "The compression of ${in_full} failed."
+    echo "The compression of ${in_full} failed." 1>${stderr}
   fi
 else
-  echo "The input: ${in_full} does not exist."
+  echo "The input: ${in_full} does not exist." 1>>${stderr}
 fi
 !;
     }

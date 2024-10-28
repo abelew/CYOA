@@ -236,61 +236,62 @@ sub Extract_Features {
     my $seqio = Bio::SeqIO->new(-format => 'genbank', -fh => $in);
     my $num_hits = 0;
   SEQUENCES: while (my $seq = $seqio->next_seq) {
-      my $seqid = $seq->id;
-      my @feature_list = $seq->get_SeqFeatures();
-    FEATURES: for my $feat (@feature_list) {
-        my $primary = $feat->primary_tag(); ## E.g. the type gene/cds/misc/etc
-        next FEATURES unless ($primary eq $options->{type});
-        my $contig = $feat->seq_id(); ## The contig ID
-        my $annot = $feat->annotation();
-        my $type = $feat->primary_tag;
-        my @names = $feat->get_tag_values($options->{id_tag});
-        my $name = $names[0];
-        my @tags = $feat->get_all_tags();
-        my $chosen_tag = undef;
-        if (defined($options->{id_tag}) && $options->{id_tag} ne '') {
-            if (grep /^$options->{search_tag}$/, @tags) {
-                $chosen_tag = $options->{search_tag};
-            }
-        }
-        my @loci;
-        if ($chosen_tag) {
-            @loci = $feat->get_tag_values($chosen_tag);
-            for my $l (@loci) {
-                $l = lc($l);
-                my $found = $l =~ m/${search}/;
-                if ($found) {
-                    $num_hits++;
-                    print "Observed a potential hit, gene: ${l}\n";
-                    my $cds_obj = Bio::Seq->new(-display_id => $name,
-                                                -seq => $feat->seq->seq);
-                    my $aa_obj = Bio::Seq->new(-display_id => $name,
-                                               -seq => $feat->seq->translate->seq);
-
-                    $output->write_seq($cds_obj);
-                    $output_pep->write_seq($aa_obj);
+        my $seqid = $seq->id;
+        my @feature_list = $seq->get_SeqFeatures();
+      FEATURES: for my $feat (@feature_list) {
+            my $primary = $feat->primary_tag(); ## E.g. the type gene/cds/misc/etc
+            next FEATURES unless ($primary eq $options->{type});
+            my $contig = $feat->seq_id(); ## The contig ID
+            my $annot = $feat->annotation();
+            my $type = $feat->primary_tag;
+            my @names = $feat->get_tag_values($options->{id_tag});
+            my $name = $names[0];
+            my @tags = $feat->get_all_tags();
+            my $chosen_tag = undef;
+            if (defined($options->{id_tag}) && $options->{id_tag} ne '') {
+                if (grep /^$options->{search_tag}$/, @tags) {
+                    $chosen_tag = $options->{search_tag};
                 }
             }
-        } else {
-            for my $t (@tags) {
-                @loci = $feat->get_tag_values($t);
+            my @loci;
+            if ($chosen_tag) {
+                @loci = $feat->get_tag_values($chosen_tag);
                 for my $l (@loci) {
                     $l = lc($l);
                     my $found = $l =~ m/${search}/;
                     if ($found) {
                         $num_hits++;
+                        print "Observed a potential hit, gene: ${l}\n";
                         my $cds_obj = Bio::Seq->new(-display_id => $name,
                                                     -seq => $feat->seq->seq);
                         my $aa_obj = Bio::Seq->new(-display_id => $name,
                                                    -seq => $feat->seq->translate->seq);
+
                         $output->write_seq($cds_obj);
                         $output_pep->write_seq($aa_obj);
                     }
                 }
             }
-        }
-    } ## End looking at features on this sequence
-  } ## End looking at this sequence
+            else {
+                for my $t (@tags) {
+                    @loci = $feat->get_tag_values($t);
+                    for my $l (@loci) {
+                        $l = lc($l);
+                        my $found = $l =~ m/${search}/;
+                        if ($found) {
+                            $num_hits++;
+                            my $cds_obj = Bio::Seq->new(-display_id => $name,
+                                                        -seq => $feat->seq->seq);
+                            my $aa_obj = Bio::Seq->new(-display_id => $name,
+                                                       -seq => $feat->seq->translate->seq);
+                            $output->write_seq($cds_obj);
+                            $output_pep->write_seq($aa_obj);
+                        }
+                    }
+                }
+            }
+        }                  ## End looking at features on this sequence
+    }                      ## End looking at this sequence
     return($num_hits);
 }
 
@@ -315,28 +316,29 @@ sub Extract_Notes {
     my $seqio = Bio::SeqIO->new(-format => 'genbank', -fh => $in);
 
   SEQUENCES: while (my $seq = $seqio->next_seq) {
-      my $seqid = $seq->id;
-      my @feature_list = $seq->get_SeqFeatures();
-    FEATURES: for my $feat (@feature_list) {
-        my $noted = $feat->has_tag($options->{note_tag});
-        my $locus = $feat->has_tag($options->{gff_tag});
-        next FEATURES unless (defined($locus));
-        my @name_array = $feat->get_tag_values($options->{gff_tag});
-        my @notes;
-        if (!defined($noted)) {
-            @notes = @name_array;
-        } else {
-            my @notes = $feat->get_tag_values($options->{note_tag});
+        my $seqid = $seq->id;
+        my @feature_list = $seq->get_SeqFeatures();
+      FEATURES: for my $feat (@feature_list) {
+            my $noted = $feat->has_tag($options->{note_tag});
+            my $locus = $feat->has_tag($options->{gff_tag});
+            next FEATURES unless (defined($locus));
+            my @name_array = $feat->get_tag_values($options->{gff_tag});
+            my @notes;
+            if (!defined($noted)) {
+                @notes = @name_array;
+            }
+            else {
+                my @notes = $feat->get_tag_values($options->{note_tag});
+            }
+            my $name = $name_array[0];
+            my $uc_string = ucfirst($options->{tag_string});
+            my $found = grep(/$options->{tag_string}|$uc_string/, @notes);
+            if ($found) {
+                print $filtered_out qq"${name}\t@notes\n";
+            }
+            print $all_out qq"${name}\t@notes\n";
         }
-        my $name = $name_array[0];
-        my $uc_string = ucfirst($options->{tag_string});
-        my $found = grep(/$options->{tag_string}|$uc_string/, @notes);
-        if ($found) {
-            print $filtered_out qq"${name}\t@notes\n";
-        }
-        print $all_out qq"${name}\t@notes\n";
     }
-  }
     $filtered_out->close();
     $all_out->close();
     $in->close();
@@ -356,7 +358,8 @@ sub Filter_Edge_Features {
         if ($good_feature) {
             ## print "Keeping this feature!\n";
             push(@new_features, $f);
-        } else {
+        }
+        else {
             print "Filter_Edge_Feature() Dropping bad feature, number ${count}.\n";
         }
     }
@@ -668,51 +671,53 @@ sub Predict_to_Features {
     my $fixed_id;
     my @glimmer_features = ();
   ENTRIES: while (my $line = <$glimmer_in>) {
-      chomp $line;
-      if ($line =~ /^>/) {
-          ## Then this tells us the contig
-          $contig_id = $line;
-          $fixed_id = Remove_Contig_Cruft($contig_id);
-          next ENTRIES;
-      }
-      ## Example prediction
-      ## orf00001   109351       25  +2    12.06
-      my ($orf_id, $start, $end, $strand_frame, $score) = split(/\s+/, $line);
-      my ($str, $frame) = split(//, $strand_frame);
-      my $strand;
-      if ($str eq '+') {
-          $strand = '1';
-      } elsif ($str eq '-') {
-          $strand = '-1';
-      } else {
-          $strand = '0';
-      }
+        chomp $line;
+        if ($line =~ /^>/) {
+            ## Then this tells us the contig
+            $contig_id = $line;
+            $fixed_id = Remove_Contig_Cruft($contig_id);
+            next ENTRIES;
+        }
+        ## Example prediction
+        ## orf00001   109351       25  +2    12.06
+        my ($orf_id, $start, $end, $strand_frame, $score) = split(/\s+/, $line);
+        my ($str, $frame) = split(//, $strand_frame);
+        my $strand;
+        if ($str eq '+') {
+            $strand = '1';
+        }
+        elsif ($str eq '-') {
+            $strand = '-1';
+        }
+        else {
+            $strand = '0';
+        }
 
-      my $start_phase = $frame;
-      $start_phase =~ s/^.{1}(\d)$/$1/g;
-      my $phase = $start_phase - 1;
-      my $fivep = $start;
-      my $threep = $end;
-      if ($strand eq '-1') {
-          $fivep = $end;
-          $threep = $start;
-      }
-      my $feature = Bio::SeqFeature::Generic->new(
-          -primary_tag => 'CDS',
-          -display_name => $orf_id,
-          -seq_id => $fixed_id,
-          -start => $fivep,
-          -end => $threep,
-          -strand => $strand,
-          -score => $score,
-          -frame => $phase,
-          -tag => {
-              note => 'cds_prediction: glimmer',
-              locus_tag => $orf_id,
-              transl_table => 11, });
-      $feature->strand($strand);
-      push(@glimmer_features, $feature);
-  } ## End iterating over every line of the glimmer3 output.
+        my $start_phase = $frame;
+        $start_phase =~ s/^.{1}(\d)$/$1/g;
+        my $phase = $start_phase - 1;
+        my $fivep = $start;
+        my $threep = $end;
+        if ($strand eq '-1') {
+            $fivep = $end;
+            $threep = $start;
+        }
+        my $feature = Bio::SeqFeature::Generic->new(
+            -primary_tag => 'CDS',
+            -display_name => $orf_id,
+            -seq_id => $fixed_id,
+            -start => $fivep,
+            -end => $threep,
+            -strand => $strand,
+            -score => $score,
+            -frame => $phase,
+            -tag => {
+                note => 'cds_prediction: glimmer',
+                locus_tag => $orf_id,
+                transl_table => 11, });
+        $feature->strand($strand);
+        push(@glimmer_features, $feature);
+    }         ## End iterating over every line of the glimmer3 output.
     $glimmer_in->close();
     return(\@glimmer_features);
 }
@@ -782,48 +787,50 @@ sub Read_Phanotate_to_SeqFeatures {
     my @phanotate_features = ();
     my $count = 0;
   ENTRIES: while (my $line = <$phanotate_in>) {
-      chomp $line;
-      next ENTRIES if ($line =~ /^#/);
-      $count++;
-      my $orf_number = sprintf("%04d", $count);
-      my ($start, $end, $frame, $contig, $score) = split(/\t/, $line);
-      if ($start eq '<1') {
-          ## Catch the phanotate special case again.
-          $start = 1;
-      }
-      my $fixed_id = Remove_Contig_Cruft($contig);
-      my $orf_id = qq"${fixed_id}_${orf_number}";
-      my $strand = '+';
-      if ($frame eq '+') {
-          $strand = '1';
-      } elsif ($frame eq '-') {
-          $strand = '-1';
-      } else {
-          $strand = '0';
-      }
-      my $fivep = $start;
-      my $threep = $end;
-      if ($end < $start) {
-          $fivep = $end;
-          $threep = $start;
-      }
-      $score = FormatSigFigs($score, 3);
+        chomp $line;
+        next ENTRIES if ($line =~ /^#/);
+        $count++;
+        my $orf_number = sprintf("%04d", $count);
+        my ($start, $end, $frame, $contig, $score) = split(/\t/, $line);
+        if ($start eq '<1') {
+            ## Catch the phanotate special case again.
+            $start = 1;
+        }
+        my $fixed_id = Remove_Contig_Cruft($contig);
+        my $orf_id = qq"${fixed_id}_${orf_number}";
+        my $strand = '+';
+        if ($frame eq '+') {
+            $strand = '1';
+        }
+        elsif ($frame eq '-') {
+            $strand = '-1';
+        }
+        else {
+            $strand = '0';
+        }
+        my $fivep = $start;
+        my $threep = $end;
+        if ($end < $start) {
+            $fivep = $end;
+            $threep = $start;
+        }
+        $score = FormatSigFigs($score, 3);
 
-      my $feature = Bio::SeqFeature::Generic->new(
-          -primary_tag => 'CDS',
-          -display_name => $orf_id,
-          -seq_id => $fixed_id,
-          -start => $fivep,
-          -end => $threep,
-          -strand => $strand,
-          -score => $score,
-          -tag => {
-              note => qq"cds_prediction: phanotate, score: ${score}",
-              locus_tag => $orf_id,
-              transl_table => 11, });
-      $feature->strand($strand);
-      push(@phanotate_features, $feature);
-  } ## End iterating over every line of the glimmer3 output.
+        my $feature = Bio::SeqFeature::Generic->new(
+            -primary_tag => 'CDS',
+            -display_name => $orf_id,
+            -seq_id => $fixed_id,
+            -start => $fivep,
+            -end => $threep,
+            -strand => $strand,
+            -score => $score,
+            -tag => {
+                note => qq"cds_prediction: phanotate, score: ${score}",
+                locus_tag => $orf_id,
+                transl_table => 11, });
+        $feature->strand($strand);
+        push(@phanotate_features, $feature);
+    }         ## End iterating over every line of the glimmer3 output.
     $phanotate_in->close();
     return(\@phanotate_features);
 }
@@ -850,7 +857,7 @@ sub Read_Prokka_Gbk_to_SeqFeatures {
         for my $f (@feature_list) {
             push(@prokka_features, $f);
         }
-    } ## End grabbing prokka sequences
+    }                           ## End grabbing prokka sequences
     $prokka_in->close();
     return(\@prokka_features, \@prokka_sequences, \@sequence_ids);
 }
@@ -934,15 +941,17 @@ sub Remove_Contig_Cruft {
     ## >EPr2_1
     ## Get rid of the ^>
     $contig_id =~ s/^>//g;
-    if ($contig_id =~ /\[/) {  ## Then it is the long annoying one.
+    if ($contig_id =~ /\[/) {   ## Then it is the long annoying one.
         ## And the stuff after the whitespace
         $contig_id =~ s/^(\S+)?\s+.*$/$1/g;
         ## Then pull out anything left after the last |
         $contig_id =~ s/^(.*\|)(\w+)\s*$/$2/g;
-    } elsif ($contig_id =~ /\|/) {
+    }
+    elsif ($contig_id =~ /\|/) {
         ## grab anything after the last |
         $contig_id =~ s/^(.*\|)?(\S+)\s*$/$2/g;
-    } else {
+    }
+    else {
         ## Just drop the >
         $contig_id =~ s/^>//g;
     }
@@ -982,51 +991,52 @@ sub Rename_Features {
     my %orfs_by_contig = ();
     my @renamed = ();
   RENAME: for my $n (@features) {
-      $count++;
-      if ($n->primary_tag eq 'source') {
-          next RENAME;
-      }
-      my $display_number = sprintf("%04d", $count);
-      $contig_id = $n->seq_id();
-      my $display_name = qq"${prefix}_${display_number}";
-      my $protein_name = qq"Phokka:${display_name}";
-      my $start = $n->start;
-      my $end = $n->end;
-      my $strand = $n->strand;
-      $orfs_by_contig{$display_name} = $contig_id;
-      ## Handle the weird corner case of features which bridge the origin here:
-      ## I think these are happening only when phageterm reorients the genome to a
-      ## DTR and prodigal/glimmer picks up an ORF which ends at the beginning of
-      ## the DTR.
-      ## With that in mind, I am going to copy the logic (maybe move it) from
-      ## Write_CDS_from_SeqFeatures() which handles this case, but end the feature
-      ## at the origin.
-      if ($end < $start) {
-          ## I think any features which fall in this category should end very close to position 1.
-          ## In theory, probably significantly less than 100.
-          $count--; ## Reset the ORF counter.
-          if ($end < 1000) {
-              my $source_feature = $keyed_assembly{$n->seq_id};
-              ## Assume this is caused by phageterm-reorganization.
-              my $moved_end = $n->end($source_feature->end);
-              my $note = qq"This CDS is actually ${start} nt. longer, but was truncated because it crossed the origin.  The primary hypothesis for this is due to phageterm-reorganization of the genome, resulting in a DTR which begins at the end of this CDS.";
-              $n->add_tag_value('note', $note);
-              $terminal_feature = $n;
-          } else {
-              print "I am not sure how to handle this feature, start:${start} end:${end}\n";
-          }
-          next RENAME;
-      }
+        $count++;
+        if ($n->primary_tag eq 'source') {
+            next RENAME;
+        }
+        my $display_number = sprintf("%04d", $count);
+        $contig_id = $n->seq_id();
+        my $display_name = qq"${prefix}_${display_number}";
+        my $protein_name = qq"Phokka:${display_name}";
+        my $start = $n->start;
+        my $end = $n->end;
+        my $strand = $n->strand;
+        $orfs_by_contig{$display_name} = $contig_id;
+        ## Handle the weird corner case of features which bridge the origin here:
+        ## I think these are happening only when phageterm reorients the genome to a
+        ## DTR and prodigal/glimmer picks up an ORF which ends at the beginning of
+        ## the DTR.
+        ## With that in mind, I am going to copy the logic (maybe move it) from
+        ## Write_CDS_from_SeqFeatures() which handles this case, but end the feature
+        ## at the origin.
+        if ($end < $start) {
+            ## I think any features which fall in this category should end very close to position 1.
+            ## In theory, probably significantly less than 100.
+            $count--;           ## Reset the ORF counter.
+            if ($end < 1000) {
+                my $source_feature = $keyed_assembly{$n->seq_id};
+                ## Assume this is caused by phageterm-reorganization.
+                my $moved_end = $n->end($source_feature->end);
+                my $note = qq"This CDS is actually ${start} nt. longer, but was truncated because it crossed the origin.  The primary hypothesis for this is due to phageterm-reorganization of the genome, resulting in a DTR which begins at the end of this CDS.";
+                $n->add_tag_value('note', $note);
+                $terminal_feature = $n;
+            }
+            else {
+                print "I am not sure how to handle this feature, start:${start} end:${end}\n";
+            }
+            next RENAME;
+        }
 
-      my $id = $n->display_name($display_name);
-      $n->remove_tag('locus_tag');
-      $n->add_tag_value('locus_tag', $display_name);
-      if ($n->has_tag('protein_id')) {
-          $n->remove_tag('protein_id');
-      }
-      $n->add_tag_value('protein_id', $protein_name);
-      push(@renamed, $n);
-  } ## End of the rename loop.
+        my $id = $n->display_name($display_name);
+        $n->remove_tag('locus_tag');
+        $n->add_tag_value('locus_tag', $display_name);
+        if ($n->has_tag('protein_id')) {
+            $n->remove_tag('protein_id');
+        }
+        $n->add_tag_value('protein_id', $protein_name);
+        push(@renamed, $n);
+    }                           ## End of the rename loop.
 
     $count++;
     ## Final step in addressing phageterm-annoying features,
@@ -1053,24 +1063,24 @@ sub Rename_Features {
     my @final_features = ();
     if ($args{add_genes}) {
       FEATLOOP: for my $f (@renamed) {
-          if ($f->primary_tag() eq 'source') {
-              push(@final_features, $f);
-              next FEATLOOP;
-          }
+            if ($f->primary_tag() eq 'source') {
+                push(@final_features, $f);
+                next FEATLOOP;
+            }
 
-          my $this_id = $f->display_name;
-          my $this_contig_id = $orfs_by_contig{$this_id};
-          my $gene = Bio::SeqFeature::Generic->new(
-              -primary_tag => 'gene',
-              -seq_id => $this_contig_id,
-              -display_name => $f->display_name,
-              -start => $f->start,
-              -strand => $f->strand,
-              -end => $f->end,
-              -tag => { locus_tag => $f->display_name },);
-          push(@final_features, $gene);
-          push(@final_features, $f);
-      } ## Finished iterating over the features and adding genes.
+            my $this_id = $f->display_name;
+            my $this_contig_id = $orfs_by_contig{$this_id};
+            my $gene = Bio::SeqFeature::Generic->new(
+                -primary_tag => 'gene',
+                -seq_id => $this_contig_id,
+                -display_name => $f->display_name,
+                -start => $f->start,
+                -strand => $f->strand,
+                -end => $f->end,
+                -tag => { locus_tag => $f->display_name },);
+            push(@final_features, $gene);
+            push(@final_features, $f);
+        }    ## Finished iterating over the features and adding genes.
     }
 
     my $len = scalar(@final_features);
@@ -1098,23 +1108,26 @@ sub Separate_Prokka_Features {
     my %other_features = ();
     my @cds_features = ();
   PROKKA: for my $prokka_f (@prokka) {
-      my $prokka_tag = $prokka_f->primary_tag();
-      my $prokka_name = $prokka_f->display_name();
-      my $new_name = $prokka_name;
-      $new_name =~ s/$source_remove//g;
-      my $display_renamed = $prokka_f->display_name($new_name);
-      my $prokka_source_id = $prokka_f->seq_id;
-      if ($prokka_tag eq 'source') {
-          $source_features{$prokka_source_id} = $prokka_f;
-      } elsif ($prokka_tag eq 'gene') {
-          $gene_features{$prokka_name} = $prokka_f;
-      } elsif ($prokka_tag eq 'CDS') {
-          $prokka_f->add_tag_value('note', 'cds_prediction: prodigal via prokka');
-          push(@cds_features, $prokka_f);
-      } else {
-          $other_features{$prokka_name} = $prokka_f;
-      }
-  }  ## End initial iteration over prokka features.
+        my $prokka_tag = $prokka_f->primary_tag();
+        my $prokka_name = $prokka_f->display_name();
+        my $new_name = $prokka_name;
+        $new_name =~ s/$source_remove//g;
+        my $display_renamed = $prokka_f->display_name($new_name);
+        my $prokka_source_id = $prokka_f->seq_id;
+        if ($prokka_tag eq 'source') {
+            $source_features{$prokka_source_id} = $prokka_f;
+        }
+        elsif ($prokka_tag eq 'gene') {
+            $gene_features{$prokka_name} = $prokka_f;
+        }
+        elsif ($prokka_tag eq 'CDS') {
+            $prokka_f->add_tag_value('note', 'cds_prediction: prodigal via prokka');
+            push(@cds_features, $prokka_f);
+        }
+        else {
+            $other_features{$prokka_name} = $prokka_f;
+        }
+    }                   ## End initial iteration over prokka features.
 
     my %ret = (
         source => \%source_features,
@@ -1151,79 +1164,81 @@ sub Write_CDS_from_SeqFeatures {
 
     ## Make a hash of the contigs by name
   CONTIGS: for my $s (@sequences) {
-      my $id = $s->display_name;
-      $named_seq{$id} = $s;
-  }
+        my $id = $s->display_name;
+        $named_seq{$id} = $s;
+    }
 
     my $written = 0;
     my $count = 0;
     my $full_sequence;
     my $maximum_length = 0;
   FEATURES: for my $in (@features) {
-      $count++;
-      my $type = $in->primary_tag;
-      next FEATURES if ($type eq 'gene');
-      my $source = $in->source_tag;
-      my $contig = $in->seq_id;
-      my $name = $in->display_name;
-      my $start = $in->start;
-      my $end = $in->end;
-      my $strand = $in->strand;
-      my $full_sequence = $named_seq{$contig};
-      ## This is hopefully only happening when a phageterm-reorganized
-      ## genome is putting an ORF at the 'top of the clock'
-      ## My solution therefore will be to check that it is bound at the
-      ## new beginning.
-      my $cds_obj = '';
-      if ($end < $start) {
-          ## I am going to assume that any real orf in this context must
-          ## be no more than 5000 before and/or 5000 after the 0 point, thus
-          ## a 6k ORF ending at position 100 will fail this test.
-          my $post_dist = $end;
-          my $pre_dist = $full_sequence->length - $start;
-          if ($pre_dist < 5000 && $post_dist < 5000) {
-              print "Found an overlap with 12 on the clock.\n";
-              my $pre_sequence = $full_sequence->trunc($end, $pre_dist);
-              my $post_sequence = $full_sequence->trunc(1, $start);
-              if ($strand < 0) {
-                  $pre_sequence = $pre_sequence->revcom;
-                  $post_sequence = $post_sequence->revcom;
-              }
-              my $tmp_sequence_string = $pre_sequence->seq . $post_sequence->seq;
-              $cds_obj = Bio::Seq->new(-display_id => $name, -seq => $tmp_sequence_string);
-          } else {
-              print "Cannot deal with this sequence right now, start:${start}, end:${end}\n";
-              next FEATURES;
-          }
-      } else { ## Normal sequence where start < end
-          $cds_obj = $full_sequence->trunc($start, $end);
-          if ($strand < 0) {
-              $cds_obj = $cds_obj->revcom;
-          }
-      }
-      my $aa_obj = $cds_obj->translate;
-      my $cds_sequence_string = $cds_obj->seq;
-      my $aa_sequence_string = $aa_obj->seq;
-      $aa_sequence_string =~ s/\*$//g;
+        $count++;
+        my $type = $in->primary_tag;
+        next FEATURES if ($type eq 'gene');
+        my $source = $in->source_tag;
+        my $contig = $in->seq_id;
+        my $name = $in->display_name;
+        my $start = $in->start;
+        my $end = $in->end;
+        my $strand = $in->strand;
+        my $full_sequence = $named_seq{$contig};
+        ## This is hopefully only happening when a phageterm-reorganized
+        ## genome is putting an ORF at the 'top of the clock'
+        ## My solution therefore will be to check that it is bound at the
+        ## new beginning.
+        my $cds_obj = '';
+        if ($end < $start) {
+            ## I am going to assume that any real orf in this context must
+            ## be no more than 5000 before and/or 5000 after the 0 point, thus
+            ## a 6k ORF ending at position 100 will fail this test.
+            my $post_dist = $end;
+            my $pre_dist = $full_sequence->length - $start;
+            if ($pre_dist < 5000 && $post_dist < 5000) {
+                print "Found an overlap with 12 on the clock.\n";
+                my $pre_sequence = $full_sequence->trunc($end, $pre_dist);
+                my $post_sequence = $full_sequence->trunc(1, $start);
+                if ($strand < 0) {
+                    $pre_sequence = $pre_sequence->revcom;
+                    $post_sequence = $post_sequence->revcom;
+                }
+                my $tmp_sequence_string = $pre_sequence->seq . $post_sequence->seq;
+                $cds_obj = Bio::Seq->new(-display_id => $name, -seq => $tmp_sequence_string);
+            }
+            else {
+                print "Cannot deal with this sequence right now, start:${start}, end:${end}\n";
+                next FEATURES;
+            }
+        }
+        else {                  ## Normal sequence where start < end
+            $cds_obj = $full_sequence->trunc($start, $end);
+            if ($strand < 0) {
+                $cds_obj = $cds_obj->revcom;
+            }
+        }
+        my $aa_obj = $cds_obj->translate;
+        my $cds_sequence_string = $cds_obj->seq;
+        my $aa_sequence_string = $aa_obj->seq;
+        $aa_sequence_string =~ s/\*$//g;
 
-      my $cds_seq_obj = Bio::Seq->new(-display_id => $name, -seq => $cds_sequence_string);
-      $out_cds->write_seq($cds_seq_obj);
-      my $aa_seq_obj = Bio::Seq->new(-display_id => $name, -seq => $aa_sequence_string);
-      $out_faa->write_seq($aa_seq_obj);
-      $written++;
+        my $cds_seq_obj = Bio::Seq->new(-display_id => $name, -seq => $cds_sequence_string);
+        $out_cds->write_seq($cds_seq_obj);
+        my $aa_seq_obj = Bio::Seq->new(-display_id => $name, -seq => $aa_sequence_string);
+        $out_faa->write_seq($aa_seq_obj);
+        $written++;
 
-      ## Now figure out what information to write to the tsv file.
-      my @notes;
-      my $note;
-      if ($in->has_tag('note')) {
-          @notes = $in->get_tag_values('note');
-          $note = $notes[0];
-          $note =~ s/^cds_prediction:\s+//g;
-      }
+        ## Now figure out what information to write to the tsv file.
+        my @notes;
+        my $note;
+        if ($in->has_tag('note')) {
+            @notes = $in->get_tag_values('note');
+            $note = $notes[0];
+            $note =~ s/^cds_prediction:\s+//g;
+        }
 
-      my $tsv_line = qq"${name}\t${contig}\t${type}\t${source}\t${start}\t${end}\t${strand}\t${note}\t${aa_sequence_string}\n";
-      print $out_tsv $tsv_line;
-  }
+        my $tsv_line = qq"${name}\t${contig}\t${type}\t${source}\t${start}\t${end}\t${strand}\t${note}\t${aa_sequence_string}\n";
+        print $out_tsv $tsv_line;
+    }
     $out_tsv->close();
     return($written);
 }
@@ -1292,7 +1307,8 @@ sub Write_Gbk {
     if (defined($args{sbt})) {
         print $log_fh " $args{sbt}\n";
         $sbt_arg = qq"-t $args{sbt} ";
-    } else {
+    }
+    else {
         print $log_fh "\n";
     }
     print $log_fh qq"Outputs from tbl2asn: $args{output_gbk}.\n";
@@ -1324,7 +1340,8 @@ sub Write_Gbk {
   sed 's/product=\"_/product=\"/g' > $args{output_gbk}";
         print $log_fh qq"Running ${sed_command}\n";
         $sed_result = qx"${sed_command}";
-    } else {
+    }
+    else {
         print $log_fh qq"Not running sed, copying file.\n";
         $sed_result = cp(qq"${out_basedir}/${out_basefile}.gbf", $args{output_gbk});
     }
@@ -1407,61 +1424,69 @@ sub Write_Tbl_from_SeqFeatures {
 
     my %contig_to_orf = ();
   FEATUREIDS: for my $j (@features) {
-      my $orf_id = $j->display_name;
-      my $contig_id = $j->seq_id;
-      next FEATUREIDS if (!defined($orf_id));
-      next FEATUREIDS if ($orf_id eq '');
-      $contig_to_orf{$orf_id} = $contig_id;
-  }
+        my $orf_id = $j->display_name;
+        my $contig_id = $j->seq_id;
+        next FEATUREIDS if (!defined($orf_id));
+        next FEATUREIDS if ($orf_id eq '');
+        $contig_to_orf{$orf_id} = $contig_id;
+    }
 
   OUTERSEQ: for my $sid (@seq) {
-      print STDOUT "Working on feature: ${sid}\n";
-      print $tbl_fh ">Feature ${sid}\n";
-    INNERFEATURE: for my $f (@features) {
-        my $feature_name = $f->display_name;
-        next INNERFEATURE unless ($contig_to_orf{$feature_name} eq $sid);
-        print "In ${sid} working on $feature_name\n";
-        if ($f->primary_tag eq 'source') {
-            $f->strand(1);
-            if (defined($taxonomy_information)) {
-                my $org_set = $f->add_tag_value('organism', "Phage similar to $taxonomy_information->{taxon}.");
-                my $strain_set = $f->add_tag_value('strain', "Similar accession: $taxonomy_information->{hit_accession}.");
-                my $id_set = $f->seq_id("Phage species similar to $taxonomy_information->{taxon}.");
+        print STDOUT "Working on feature: ${sid}\n";
+        print $tbl_fh ">Feature ${sid}\n";
+      INNERFEATURE: for my $f (@features) {
+            my $feature_name = $f->display_name;
+            if (!defined($feature_name)) {
+                print "Working on ${sid}/${f}, feature name not defined.\n";
+                next INNERFEATURE;
             }
-        }
-        if ($f->primary_tag eq 'CDS' and not $f->has_tag('product')) {
-            my $product_set = $f->add_tag_value('product', $hypothetical_string);
-        }
-        if (my $name = TAG($f, 'gene')) {
-            my $name_set = $f->add_tag_value('Name', $name);
-        }
-        # Make sure we have valid frames/phases (GFF column 8)
-        $f->frame($f->primary_tag eq 'CDS' ? 0 : '.');
-        if (!defined($f->strand) || !defined($f->start) || !defined($f->end)) {
-            my $name = $f->display_name;
-            my $strand = $f->strand;
-            my $start = $f->start;
-            my $end = $f->end;
-            print "THERE IS A PROBLEM WITH: ${name}\n";
-            print "ONE OF STRAND:${strand} START:${start} OR END:${end} IS UNDEFINED.\n";
-        }
-        my ($L, $R) = ($f->strand >= 0) ? ($f->start, $f->end) : ($f->end, $f->start);
-        print $tbl_fh "${L}\t${R}\t", $f->primary_tag, "\n";
-      WRITE_TAGS: for my $tag ($f->get_all_tags) {
-          # remove GFF specific tags (start with uppercase letter)
-          next WRITE_TAGS if $tag =~ m/^[A-Z]/ and $tag !~ m/EC_number/i;
-          my @unwanted = ('gc_cont', 'sscore', 'phase', 'conf', 'tscore', 'partial', 'rbs_spacer', 'rbs_motif', 'cscore', 'start_type', 'uscore', 'seq_id', 'rscore', 'source', 'frame', 'score', 'type');
-          next WRITE_TAGS if (grep $_ eq $tag, @unwanted);
-          for my $value ($f->get_tag_values($tag)) {
-              if (!defined($value)) {
-                  print $tbl_fh "\t\t\t${tag}\t\n";
-              } else {
-                  print $tbl_fh "\t\t\t${tag}\t${value}\n";
-              }
-          } ## End iterating over the tag values.
-      } ## End getting all tags
-    } ## End iterating over features
-    } ## End iterating over sequence objects.
+            if (!defined($contig_to_orf{$feature_name})) {
+                next INNERFEATURE;
+            }
+            next INNERFEATURE unless ($contig_to_orf{$feature_name} eq $sid);
+            ##print "In ${sid} working on $feature_name\n";
+            if ($f->primary_tag eq 'source') {
+                $f->strand(1);
+                if (defined($taxonomy_information)) {
+                    my $org_set = $f->add_tag_value('organism', "Phage similar to $taxonomy_information->{taxon}.");
+                    my $strain_set = $f->add_tag_value('strain', "Similar accession: $taxonomy_information->{hit_accession}.");
+                    my $id_set = $f->seq_id("Phage species similar to $taxonomy_information->{taxon}.");
+                }
+            }
+            if ($f->primary_tag eq 'CDS' and not $f->has_tag('product')) {
+                my $product_set = $f->add_tag_value('product', $hypothetical_string);
+            }
+            if (my $name = TAG($f, 'gene')) {
+                my $name_set = $f->add_tag_value('Name', $name);
+            }
+            # Make sure we have valid frames/phases (GFF column 8)
+            $f->frame($f->primary_tag eq 'CDS' ? 0 : '.');
+            if (!defined($f->strand) || !defined($f->start) || !defined($f->end)) {
+                my $name = $f->display_name;
+                my $strand = $f->strand;
+                my $start = $f->start;
+                my $end = $f->end;
+                print "THERE IS A PROBLEM WITH: ${name}\n";
+                print "ONE OF STRAND:${strand} START:${start} OR END:${end} IS UNDEFINED.\n";
+            }
+            my ($L, $R) = ($f->strand >= 0) ? ($f->start, $f->end) : ($f->end, $f->start);
+            print $tbl_fh "${L}\t${R}\t", $f->primary_tag, "\n";
+          WRITE_TAGS: for my $tag ($f->get_all_tags) {
+                # remove GFF specific tags (start with uppercase letter)
+                next WRITE_TAGS if $tag =~ m/^[A-Z]/ and $tag !~ m/EC_number/i;
+                my @unwanted = ('gc_cont', 'sscore', 'phase', 'conf', 'tscore', 'partial', 'rbs_spacer', 'rbs_motif', 'cscore', 'start_type', 'uscore', 'seq_id', 'rscore', 'source', 'frame', 'score', 'type');
+                next WRITE_TAGS if (grep $_ eq $tag, @unwanted);
+                for my $value ($f->get_tag_values($tag)) {
+                    if (!defined($value)) {
+                        print $tbl_fh "\t\t\t${tag}\t\n";
+                    }
+                    else {
+                        print $tbl_fh "\t\t\t${tag}\t${value}\n";
+                    }
+                }              ## End iterating over the tag values.
+            }                  ## End getting all tags
+        }                      ## End iterating over features
+    }                          ## End iterating over sequence objects.
     return(%contig_to_orf);
 }
 

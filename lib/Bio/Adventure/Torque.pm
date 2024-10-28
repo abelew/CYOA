@@ -299,6 +299,10 @@ $args{jstring}" if ($class->{verbose});
     return($shell_job);
 }
 
+sub Wait {
+    return(undef);
+}
+
 =head1 AUTHOR - atb
 
 Email  <abelew@gmail.com>

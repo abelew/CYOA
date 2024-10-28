@@ -206,6 +206,7 @@ has introns => (is => 'rw', default => 1); ## Is this method intron aware? (vari
 has iterate => (is => 'rw', default => undef);
 has jobs => (is => 'rw', default => undef); ## List of currently active jobs, possibly not used right now.
 has jobids => (is => 'rw', default => ''); ## A place to put running jobids, resurrected!
+has jobnames => (is => 'rw', default => ''); ## A place to put running jobids, resurrected!
 has jbasename => (is => 'rw', default => basename(cwd())); ## Job basename
 has jcpu => (is => 'rw', default => 2); ## Number of processors to request in jobs
 has jgpu => (is => 'rw', default => 0);
@@ -215,8 +216,8 @@ has jname => (is => 'rw', default => undef); ## Job name on the cluster
 has jnice => (is => 'rw', default => 0); ## Set the niceness of a job, if it starts positive, we can set a lower nice to preempt
 has jpartition => (is => 'rw', default => 'dpart');
 has jprefix => (is => 'rw', default => ''); ## Prefix number for the job
-has jqueue => (is => 'rw', default => 'workstation'); ## What queue will jobs default to?
-has jqueues => (is => 'rw', default => 'throughput,workstation,long,large'); ## Other possible queues
+has jqueue => (is => 'rw', default => ''); ## What queue will jobs default to?
+has jqueues => (is => 'rw', default => ''); ## Other possible queues
 has jsleep => (is => 'rw', default => '0.5'); ## Set a sleep between jobs
 has jstring => (is => 'rw', default => undef); ## String of the job
 has jtemplate => (is => 'rw', default => undef);
@@ -580,15 +581,13 @@ sub Check_Libpath {
     my $provided_libdir = 0;
     if (defined($args{libdir})) {
         $provided_libdir = 1;
-    }
-    else {
+    } else {
         $args{libdir} = '\$HOME/libraries';
     }
     my $provided_libpath = 0;
     if (defined($args{libpath})) {
         $provided_libpath = 1;
-    }
-    else {
+    } else {
         $args{libpath} = "$ENV{HOME}/libraries";
     }
     ## Make sure that the libdir and libpath agree with one another.
@@ -1615,10 +1614,14 @@ module add ';
     my $result = $runner->Submit($class, %args);
     my $unloaded = $class->Module_Reset(env => $loaded);
     $class = $class->Reset_Vars();
+    if (!defined($class->{jobnames}) || $class->{jobnames} eq '') {
+        $class->{jobnames} = $result->{jname};
+    } else {
+        $class->{jobnames} = qq"$class->{jobnames}:$result->{jname}";
+    }
     if ($class->{jobids} eq '') {
         $class->{jobids} = $result->{job_id};
-    }
-    else {
+    } else {
         $class->{jobids} = qq"$class->{jobids}:$result->{job_id}";
     }
     $class->{last_job} = $class->{job_id};

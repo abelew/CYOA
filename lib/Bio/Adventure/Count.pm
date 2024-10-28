@@ -174,7 +174,6 @@ sub Guess_Strand_Worker {
     print "Going to stop after $options->{maximum} reads\n";
   BAMLOOP: while (my $align = $bam->read1) {
       $read_num++;
-      print "TESTME: $read_num\n";
       $counters->{counted}++;
       if ($read_num >= $options->{maximum}) {
           last BAMLOOP;
@@ -1047,7 +1046,7 @@ rm -f ${output_dir}/*.fastq.gz
         stderr => $stderr,);
     my $counter = $class->Bio::Adventure::Count::Kraken_to_Matrix(
         input => $output,
-        jprefix => $options->{jprefix} + 1,
+        jprefix => qq"$options->{jprefix}_1",
         jdepends => $kraken->{job_id},);
     $kraken->{kraken2mtrx} = $counter;
     return($kraken);

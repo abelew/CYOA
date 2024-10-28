@@ -149,6 +149,7 @@ sub BUILD {
 sub Check_Job {
     my ($class, %args) = @_;
     my $options = $class->Bio::Adventure::Get_Vars(args => \%args);
+    print "TESTME: $class->{jobnames} and $class->{jobids}\n";
     my $id = $options->{input};
     my $write = $options->{write};
     $write = 0 if (!defined($write));
@@ -161,13 +162,11 @@ sub Check_Job {
             next TMPID unless defined($i);
             if ($i =~ /^\d+$/) {
                 push(@ids, $i);
-            }
-            else {
+            } else {
                 print "This id was inappropriately passed: ${i}\n";
             }
         }
-    }
-    else {
+    } else {
         print "No id provided, reading the jobs.txt file.\n";
         my $job_file = FileHandle->new("<$options->{basedir}/outputs/logs/jobs.txt");
       JOBLOG: while (my $line = <$job_file>) {
@@ -178,8 +177,7 @@ sub Check_Job {
             if ($id =~ /^\d+/) {
                 push(@names, $name);
                 push(@ids, $id);
-            }
-            else {
+            } else {
                 print "This entry is not in the expected format: ${line}\n";
                 next JOBLOG;
             }
@@ -201,8 +199,7 @@ sub Check_Job {
             ## The header
             if ($line_count == 1) {
                 @header_array = @line_array;
-            }
-            elsif ($line_array[0] =~ m/^\d+$/) {
+            } elsif ($line_array[0] =~ m/^\d+$/) {
                 ## Some important elements are in the number-only line
                 my @provided_info = split(/\|/, $line);
                 for my $idx (0 .. $#provided_info) {
@@ -212,8 +209,7 @@ sub Check_Job {
                         $job_info->{$key} = $element;
                     }
                 }
-            }
-            elsif ($line_array[0] =~ m/\.batch/) {
+            } elsif ($line_array[0] =~ m/\.batch/) {
                 ## Some important elements are in the number-only line. skip them here.
                 my @provided_info = split(/\|/, $line);
               IDX: for my $idx (0 .. $#provided_info) {
@@ -254,7 +250,7 @@ sub Check_Job {
         }
         push(@all_info, $job_info);
         $info->close();
-    }                          ## Finished iterating over every job ID
+    } ## Finished iterating over every job ID
 
     ## Here are the various categories returned by sacct, keep in mind
     ## that different ones are given to each class of job (job,
@@ -292,8 +288,7 @@ sub Check_Job {
             ## my $start = Text::CSV::csv(in => $jobs_csv, keep_headers => \@columns);
             my $start = Text::CSV::csv(in => $jobs_csv);
             @data = (@{$start}, @all_info);
-        }
-        else {
+        } else {
             @data = @all_info;
         }
         my $out_csv = FileHandle->new(qq">${jobs_csv}");
@@ -497,7 +492,6 @@ sub Choose_QOS {
                     $potential_qos->{$q} = $potential_metrics;
                 }               ## End iterating over stringent qos.
                 my @potential_qos_names = keys(%{$potential_qos});
-                ## print "TESTME: @potential_qos_names\n";
                 my $num_potential = scalar(@potential_qos_names);
                 $found_qos = $num_potential;
                 ## I think my logic here was a bit faulty.  I have an if statement checking to see
@@ -648,8 +642,7 @@ sub Convert_to_Hours {
     my $hms = '00:00:00';
     if ($string =~ m/\-/) {
         ($days, $hms) = split(/\-/, $string);
-    }
-    else {
+    } else {
         $hms = $string;
     }
 
@@ -658,8 +651,7 @@ sub Convert_to_Hours {
     my $sec = 0;
     if ($hms =~ m/:/) {
         ($hours, $min, $sec) = split(/:/, $hms);
-    }
-    else {
+    } else {
         $hours = $hms;
     }
     my $final_hours = ($days * 24) + $hours;
@@ -870,14 +862,12 @@ sub Get_Partitions {
         if ($line =~ /^PartitionName/) {
             my @name_info = split(/=/, $line);
             $current_partition = $name_info[1];
-        }
-        elsif ($line =~ /^$/) {
+        } elsif ($line =~ /^$/) {
             ## A blank line ends a partition.
             my %current_partition_info = %{$partition_info};
             $partitions->{$current_partition} = \%current_partition_info;
             $partition_info = {};
-        }
-        else {
+        } else {
             $line =~ s/^\s+//g;
             ## Everything else is a set of name:value pairs separated by = and space.
             my @pairs = split(/\s+/, $line);
@@ -889,8 +879,7 @@ sub Get_Partitions {
                     my $value = $name_value[1];
                     $name = lc($name);
                     $partition_info->{$name} = $value;
-                }
-                elsif ($num_elements > 2) {
+                } elsif ($num_elements > 2) {
                     my $name = shift @name_value;
                     my $tmp_line = $line;
                     my $remove_string = qq"${name}=";
@@ -901,8 +890,7 @@ sub Get_Partitions {
                         my $new_key = qq"${name}_${inner_key}";
                         $partition_info->{$new_key} = $inner_value;
                     }
-                }
-                else {
+                } else {
                     print "I do not think we should have other element numbers: ${num_elements}\n";
                     sleep(10);
                 }
@@ -991,15 +979,13 @@ sub Get_QOS {
             $max_job_cpu = $max_resources_per_job;
             if ($max_job_cpu =~ /cpu=/) {
                 $max_job_cpu =~ s/.*cpu=(\d+).*$/$1/g;
-            }
-            else {
+            } else {
                 $max_job_cpu = 0;
             }
             $max_job_gpu = $max_resources_per_job;
             if ($max_job_gpu =~ m/gpu=/) {
                 $max_job_gpu =~ s/.*gpu=(\d+).*$/$1/g;
-            }
-            else {
+            } else {
                 $max_job_gpu = 0;
             }
             $max_job_mem = $max_resources_per_job;
@@ -1013,8 +999,7 @@ sub Get_QOS {
                 $max_job_mem = $max_job_mem * 1000 if ($max_mem_suffix eq 'T');
                 $max_job_mem = $max_job_mem / 1000 if ($max_mem_suffix eq 'M');
                 ## print "Succeded in parsing max_job_mem: $max_job_mem\n";
-            }
-            else {
+            } else {
                 $max_job_mem = 0;
             }
             ## print "Attempted to parse max_job_mem, got: ${max_job_mem}\n";
@@ -1024,23 +1009,20 @@ sub Get_QOS {
             $max_user_cpu = $max_resources_per_user;
             if ($max_user_cpu =~ /cpu=/) {
                 $max_user_cpu =~ s/.*cpu=(\d+).*$/$1/g;
-            }
-            else {
+            } else {
                 $max_user_cpu = $max_job_cpu;
             }
 
             $max_user_gpu = $max_resources_per_user;
             if ($max_user_gpu =~ m/gpu=/) {
                 $max_user_gpu =~ s/.*gpu=(\d+).*$/$1/g;
-            }
-            else {
+            } else {
                 $max_user_gpu = $max_job_cpu;
             }
             $max_user_mem = $max_resources_per_user;
             if ($max_user_mem =~ /mem=/) {
                 $max_user_mem =~ s/.*mem=(\d+)\w{1}.*$/$1/g;
-            }
-            else {
+            } else {
                 $max_user_mem = $max_job_mem;
             }
         }
@@ -1050,8 +1032,7 @@ sub Get_QOS {
             my $hms = '';
             if ($max_wall =~ /\-/) {
                 ($days, $hms) = split(/\-/, $max_wall);
-            }
-            else {
+            } else {
                 $hms = $max_wall;
             }
             my $hours = 0;
@@ -1139,15 +1120,12 @@ sub Get_Spec {
     if (defined($options->{mem}) && defined($options->{jmem})) {
         print "Both mem and jmem are defined, that is confusing, using jmem.\n";
         $wanted->{mem} = $options->{jmem};
-    }
-    elsif (defined($options->{mem})) {
+    } elsif (defined($options->{mem})) {
         print "Mem is defined, ideally this should be jmem.\n";
         $wanted->{mem} = $options->{mem};
-    }
-    elsif (defined($options->{jmem})) {
+    } elsif (defined($options->{jmem})) {
         $wanted->{mem} = $options->{jmem};
-    }
-    else {
+    } else {
         print "Neither mem nor jmem is defined, defaulting to 10G.\n";
         $wanted->{mem} = 10;
     }
@@ -1156,15 +1134,12 @@ sub Get_Spec {
     if (defined($options->{walltime}) && defined($options->{jwalltime})) {
         print "Both walltime and jwalltime are defined, that is confusing, using jwalltime.\n";
         $walltime_string = $options->{jwalltime};
-    }
-    elsif (defined($options->{walltime})) {
+    } elsif (defined($options->{walltime})) {
         print "Walltime is defined, ideally this should be jwalltime.\n";
         $walltime_string = $options->{walltime};
-    }
-    elsif (defined($options->{jwalltime})) {
+    } elsif (defined($options->{jwalltime})) {
         $walltime_string = $options->{jwalltime};
-    }
-    else {
+    } else {
         print "Neither walltime nor jwalltime is defined, defaulting to 40 minutes.\n";
     }
     my $walltime_hours = Convert_to_Hours($walltime_string);
@@ -1174,15 +1149,12 @@ sub Get_Spec {
     if (defined($options->{cpu}) && defined($options->{jcpu})) {
         print "Both cpu and jcpu are defined, that is confusing, using jcpu.\n";
         $wanted->{cpu} = $options->{jcpu};
-    }
-    elsif (defined($options->{cpu})) {
+    } elsif (defined($options->{cpu})) {
         print "Cpu is defined, ideally this should be jcpu.\n";
         $wanted->{cpu} = $options->{cpu};
-    }
-    elsif (defined($options->{jcpu})) {
+    } elsif (defined($options->{jcpu})) {
         $wanted->{cpu} = $options->{jcpu};
-    }
-    else {
+    } else {
         print "Neither cpu nor jcpu is defined, defaulting to 1.\n";
         $wanted->{cpu} = 1;
     }
@@ -1190,15 +1162,12 @@ sub Get_Spec {
     if (defined($options->{gpu}) && defined($options->{jgpu})) {
         print "Both gpu and jgpu are defined, that is confusing, using jgpu.\n";
         $wanted->{gpu} = $options->{jgpu};
-    }
-    elsif (defined($options->{gpu})) {
+    } elsif (defined($options->{gpu})) {
         print "Gpu is defined, ideally this should be jgpu.\n";
         $wanted->{gpu} = $options->{gpu};
-    }
-    elsif (defined($options->{jgpu})) {
+    } elsif (defined($options->{jgpu})) {
         $wanted->{gpu} = $options->{jgpu};
-    }
-    else {
+    } else {
         $wanted->{gpu} = 0;
     }
 
@@ -1313,23 +1282,19 @@ sub Get_Usage {
             $instance->{$partition}->{$account}->{$qos}->{running} = 1;
             $instance->{$partition}->{$account}->{$qos}->{queued} = 0;
             $instance->{$partition}->{$account}->{$qos}->{failed} = 0;
-        }
-        elsif ($state eq 'PENDING') {
+        } elsif ($state eq 'PENDING') {
             $instance->{$partition}->{$account}->{$qos}->{running} = 0;
             $instance->{$partition}->{$account}->{$qos}->{queued} = 1;
             $instance->{$partition}->{$account}->{$qos}->{failed} = 0;
-        }
-        elsif ($state eq 'COMPLETING') {
+        } elsif ($state eq 'COMPLETING') {
             $instance->{$partition}->{$account}->{$qos}->{running} = 1;
             $instance->{$partition}->{$account}->{$qos}->{queued} = 0;
             $instance->{$partition}->{$account}->{$qos}->{failed} = 0;
-        }
-        elsif ($state eq 'FAILED') {
+        } elsif ($state eq 'FAILED') {
             $instance->{$partition}->{$account}->{$qos}->{failed} = 1;
             $instance->{$partition}->{$account}->{$qos}->{running} = 0;
             $instance->{$partition}->{$account}->{$qos}->{queued} = 0;
-        }
-        else {
+        } else {
             ## I think I would like this to print some information about failed jobs perhaps here?
             $instance->{$partition}->{$account}->{$qos}->{running} = 0;
             $instance->{$partition}->{$account}->{$qos}->{queued} = 0;
@@ -1337,8 +1302,7 @@ sub Get_Usage {
         }
         if (!defined($current->{$user}->{$partition}->{$account}->{$qos})) {
             $current->{$user} = $instance;
-        }
-        else {
+        } else {
             $current->{$user}->{$partition}->{$account}->{$qos}->{running} += $instance->{$partition}->{$account}->{$qos}->{running};
             $current->{$user}->{$partition}->{$account}->{$qos}->{queued} += $instance->{$partition}->{$account}->{$qos}->{queued};
             $current->{$user}->{$partition}->{$account}->{$qos}->{failed} += $instance->{$partition}->{$account}->{$qos}->{failed};
@@ -1482,8 +1446,7 @@ sub Submit {
     my $partition_string = '';
     if ($class->{chosen_partition}) {
         $partition_string = $class->{chosen_partition};
-    }
-    else {
+    } else {
         ## Partition is often empty, I don't quite know why yet.
         ## print "partition is not defined, setting it to the empty string\n";
         $partition_string = '';
@@ -1522,8 +1485,7 @@ ${script_file}\n" if ($options->{debug});
         my $perl_file = qq"${perl_base}/$options->{jprefix}$options->{jname}.pl";
         if (defined($options->{output_dir})) {
             $perl_base = $options->{output_dir};
-        }
-        elsif (defined($options->{output})) {
+        } elsif (defined($options->{output})) {
             $perl_base = dirname($options->{output});
         }
         my $perl_stderr = qq"${perl_base}/$options->{jprefix}$options->{jname}.stderr";
@@ -1580,8 +1542,7 @@ ${perl_file} \\
             TRIM => 1,
             INTERPOLATE => 1,});
         $tt->process($options->{jtemplate}, $options) || die $tt->error();
-    }
-    else {
+    } else {
         my $nice_string = '';
         $nice_string = qq"--nice=$options->{jnice}" if (defined($options->{jnice}));
         my $array_string = '';
@@ -1690,9 +1651,11 @@ fi
 
     if ($options->{jdepends}) {
         print "This job depends on $options->{jdepends}.\n";
+        $job->{depends} = $options->{jdepends};
     }
     $job->{log} = $sbatch_log;
     $job->{job_id} = $job_id;
+    $job->{jname} = $jname;
     $job->{pid} = $sbatch_pid;
     $job->{script_file} = $script_file;
 
@@ -1743,12 +1706,10 @@ sub Wait {
     if (ref($job) eq 'HASH') {
         if (defined($job->{jobids})) {
             $id = $job->{jobids};
-        }
-        else {
+        } else {
             $id = $job->{job_id};
         }
-    }
-    else {
+    } else {
         $id = $job;
     }
     if (!defined($id)) {
@@ -1765,7 +1726,7 @@ sub Wait {
         failed => 0,
     };
   WAITLOOP: while ($wait_count->{finished} < 1 && $wait_count->{failed} < 1) {
-        sleep(10);
+        sleep(20);
         my $info = $class->Bio::Adventure::Slurm::Check_Job(input => $id, write => 0);
         $datum = $info->[0];
         if ($datum->{State} eq 'COMPLETED') {

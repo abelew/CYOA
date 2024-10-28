@@ -728,6 +728,7 @@ sub Get_Paths {
     $paths->{hmm_dir} = qq"${libpath_prefix}/hmm";
     $paths->{index_prefix} = qq"${libpath_prefix}/indexes";
     $paths->{index_prefix_shell} = qq"${libdir_prefix}/indexes";
+    $paths->{output_prefix} = $output_prefix;
     make_path($paths->{blast_dir}) unless (-d $paths->{blast_dir});
     make_path($paths->{codon_dir}) unless (-d $paths->{codon_dir});
     make_path($paths->{fasta_dir}) unless (-d $paths->{fasta_dir});
@@ -786,8 +787,12 @@ sub Get_Paths {
         $paths->{index_file_shell} = qq"$paths->{index_shell}.sa";
         $paths->{output_dir} = qq"${output_prefix}bwa_$options->{species}";
     }
-    elsif ($subroutine eq 'Classify_Phage') {
+    elsif ($subroutine eq 'Caical_Worker' || $subroutine eq 'Caical') {
+        $paths->{output_dir} = qq"${output_prefix}caical";
+    }
+    elsif ($subroutine eq 'Classify_Phage' || $subroutine eq 'Classify_Phage_Worker') {
         $paths->{output_dir} = qq"${output_prefix}classify_phage";
+        $paths->{log} = qq"$paths->{output_dir}/classify_phage.log";
     }
     elsif ($subroutine eq 'Downsample_Guess_Strand') {
         $paths->{index} = qq"$paths->{index_prefix}/salmon/$options->{species}";
@@ -857,6 +862,9 @@ sub Get_Paths {
     elsif ($subroutine eq 'Make_Codon_Table') {
         $paths->{codon_table} = qq"$paths->{codon_dir}/$options->{species}.txt";
     }
+    elsif ($subroutine eq 'Merge_Annotations' || $subroutine eq 'Merge_Annotations_Worker') {
+        $paths->{output_dir} = qq"${output_prefix}mergeannot";
+    }
     elsif ($subroutine eq 'OrthoFinder') {
         $paths->{output_dir} = qq"${output_prefix}orthofinder";
     }
@@ -871,6 +879,12 @@ sub Get_Paths {
     }
     elsif ($subroutine eq 'ProgressiveMauve') {
         $paths->{output_dir} = qq"${output_prefix}/pmauve";
+    }
+    elsif ($subroutine eq 'RNAFold_Windows' || $subroutine eq 'RNAFold_Windows_Worker') {
+        $paths->{output_dir} = qq"${output_prefix}rnafold";
+        $paths->{output} = qq"$paths->{output_dir}/$args{output_name}.tsv.xz";
+        $paths->{stdout} = qq"$paths->{output_dir}/$args{output_name}_rnafold.stdout";
+        $paths->{stderr} = qq"$paths->{output_dir}/$args{output_name}_rnafold.stderr";
     }
     elsif ($subroutine eq 'RSEM') {
         $paths->{index} = qq"$paths->{index_prefix}/rsem/$options->{species}";

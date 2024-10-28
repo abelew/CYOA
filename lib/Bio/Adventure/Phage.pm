@@ -286,9 +286,6 @@ sub Classify_Phage {
     my $path_info = $class->Get_Path_Info($options->{input});
     my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $output_dir = $paths->{output_dir};
-    if (-d $output_dir) {
-        my $removed = rmtree($output_dir);
-    }
     my $stderr = qq"${output_dir}/$options->{library}.stderr";
     my $stdout = qq"${output_dir}/$options->{library}.stdout";
     my $output_tsv = qq"${output_dir}/$options->{library}_filtered.tsv";
@@ -375,7 +372,6 @@ sub Classify_Phage_Worker {
         blast_tool => 'tblastx',
         evalue => 0.01,
         jcpu => 4,
-        jprefix => '18',
         library => 'ictv',
         output_log => 'classify.log',
         output_blast => 'ictv_hits.txt',
@@ -388,13 +384,14 @@ sub Classify_Phage_Worker {
     my $loaded = $class->Module_Loader(%modules);
     my $blast_db = $ENV{BLASTDB};
     my $unloaded = $class->Module_Reset(env => $loaded);
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
 
     ## Read the xref file, located in the blast database directory as ${library}.csv
     my $xref_file = qq"${blast_db}/$options->{library}.csv";
     ## Use Text::CSV to create an array of hashes with keynames:
     ## 'taxon', 'virusnames', 'virusgenbankaccession', 'virusrefseqaccession'
     my $xref_aoh = csv(in => $xref_file, headers => 'auto');
-    my $log = FileHandle->new(">$options->{output_log}");
+    my $log = FileHandle->new(">$paths->{log}");
     ## First check for the test file, if it exists, then this should
     ## just symlink the input to the output until I think of a smarter
     ## way of thinking about this.
@@ -658,6 +655,7 @@ sub Filter_Host_Kraken {
     my $jstring = qq!
 use Bio::Adventure;
 use Bio::Adventure::Phage;
+## where is libdir: \$h->{libdir} \$h->{libpath}?
 my \$result = Bio::Adventure::Phage::Filter_Kraken_Worker(\$h,
   input => '$options->{input}',
   input_fastq => '$options->{input_fastq}',
@@ -717,6 +715,9 @@ sub Filter_Kraken_Worker {
         stranded => 'no',
         type => 'species',);
     my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $log = FileHandle->new(">$paths->{log}");
+    my $in = FileHandle->new("<$options->{input}");
+    my $status;
     my $depends = $options->{jdepends};
     my $separator;
     if ($options->{type} eq 'domain') {
@@ -746,7 +747,6 @@ sub Filter_Kraken_Worker {
     else {
         $separator = 's__';
     }
-
     my $output_dir = $paths->{output_dir};
     my $gbk_dir = $paths->{gbk_dir};
     ## The final output filenames, which may be invoked early
@@ -760,8 +760,6 @@ sub Filter_Kraken_Worker {
     $in_r1_fastq = File::Spec->rel2abs($in_r1_fastq);
     $in_r2_fastq = File::Spec->rel2abs($in_r2_fastq);
 
-    my $log = FileHandle->new(">$paths->{log}");
-    my $in = FileHandle->new("<$options->{input}");
     print $log "Starting search for best kraken host strain.\n";
     print $log "Reading kraken report: $options->{input}.\n";
     my %species_observed = ();
@@ -912,18 +910,18 @@ sub Filter_Kraken_Worker {
         if (defined($accession_file) && -r $accession_file) {
             $converted = $accession_file;
         } else {
-            print "TESTME: About to convert: ${downloaded_file} to ${accession_file}.\n";
             my $converter = $class->Bio::Adventure::Convert::Gb2Gff(
                 input => $downloaded_file,
-                jdepends => $depends,
+                jdepends => undef,
                 jprefix => qq"$options->{jprefix}_1",);
-            $depends = $converter->{job_id};
+            $status = $class->Wait(job => $converter->{job_id});
             $converted = $converter->{output};
             move($converted, $accession_file);
+            move($converted->{output_all_gff}, qq"$paths->{gff_dir}/${accession}.gff");
         }
     } ## End checking if the host_species was defined.
-
     my $index_location = qq"$paths->{index_dir}/${host_species_accession}.1.ht2";
+
     if (-r $index_location) {
         print $log "Found indexes at: ${index_location}\n";
         print "Found indexes at: ${index_location}\n";
@@ -932,10 +930,11 @@ sub Filter_Kraken_Worker {
         print "Did not find indexes, running Hisat2_Index() now.\n";
         my $indexed = $class->Bio::Adventure::Index::Hisat2_Index(
             input => $accession_file,
-            jdepends => $depends,
+            jdepends => undef,
             jprefix => qq"$options->{jprefix}_2",
-            output_dir => $options->{output_dir});
-        $depends = $indexed->{job_id};
+            language => 'bash',
+            output_dir => $options->{output_dir},);
+        $status = $class->Wait(job => $indexed->{job_id});
         ## Check to see if there is a text file containing the putative host species
         ## If it does not exist, write it with the species name.
     }
@@ -949,20 +948,23 @@ sub Filter_Kraken_Worker {
         $options->{input_fastq} = qq"$test_fastq[0].xz:$test_fastq[1].xz";
     }
     my $filter = $class->Bio::Adventure::Map::Hisat2(
+        basedir => $options->{basedir},
         compress => 0,
         do_htseq => 0,
         get_insertsize => 0,
         input => $options->{input_fastq},
-        jdepends => $depends,
+        jdepends => undef,
         jprefix => qq"$options->{jprefix}_3",
         language => 'bash',
+        libpath => $options->{libpath},
+        libdir => $options->{libdir},
         output_dir => $options->{output_dir},
         output_unaligned => $options->{output_unaligned},
         species => $host_species_accession,
         stranded => $options->{stranded},);
+    $status = $class->Wait(job => $filter->{job_id});
     my $filtered_reads = $filter->{unaligned};
     my ($in_r1, $in_r2) = split(/$options->{delimiter}/, $filtered_reads);
-    print "TESTME Filtered reads: $filtered_reads\n";
     $in_r1 = File::Spec->rel2abs($in_r1);
     $in_r2 = File::Spec->rel2abs($in_r2);
     unlink $out_r1 if (-l $out_r1);
