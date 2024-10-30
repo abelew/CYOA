@@ -976,6 +976,8 @@ sub Hisat2 {
     }
 
     my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    print "In Map::Hisat2 the output directory is: $paths->{output_dir}\n";
+    print "Hisat output directory does not exist!\n" unless (-d $paths->{output_dir});
     my $ready;
     if (!$options->{jdepends}) {
         $ready = $class->Check_Input(files => $options->{input},);

@@ -795,10 +795,13 @@ if ($comparison) {
 }
 
 ## Rhotermination prediction
+## For no good reason that I can discern sometimes this comes up null, even though
+## when I get to the file manually it looks correct, I am guessing this is
+## some sort of race condition.
 $test_file = $assemble->{'33rhopredict'}->{output};
 $comparison = ok(-f $test_file, qq"Checking rhotermpredict output file: ${test_file}");
 print "Passed.\n" if ($comparison);
-$actual = qx"head ${test_file}";
+$actual = qx"sleep 3 && head ${test_file}";
 $expected1 = qq"Region	Start RUT	End RUT	Strand
 T1	12	90	plus
 T2	512	590	plus

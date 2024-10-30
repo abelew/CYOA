@@ -871,6 +871,36 @@ sub Process_RNAseq {
     }
 
     $prefix = sprintf("%02d", ($prefix + 1));
+    my $do_fastp = 1;
+    print "Just checking, what is fastp: $options->{fastp}\n";
+    if ($options->{fastp} eq 'check') {
+        my $expected_dir = qq"outputs/${prefix}fastp";
+        print "Checking for: ${expected_dir}\n";
+        if (-d $expected_dir) {
+            print "Skipping fastp, the output directory already exists.\n";
+            $do_fastp = 0;
+        }
+    } elsif ($options->{fastp} eq '0') {
+        $do_fastp = 0;
+    }
+
+    if ($do_fastp) {
+        print "\n${prefix}: Starting fastp.\n";
+        my $fastp = $class->Bio::Adventure::Trim::Fastp(
+            input => $options->{input},
+            jdepends => $last_job,
+            jnice => 100,
+            jprefix => $prefix,);
+        $jobid = qq"${prefix}fastp";
+        $ret->{$jobid} = $fastp;
+        $last_job = $fastp->{job_id};
+        sleep($options->{jsleep});
+    } else {
+        $prefix--;
+    }
+
+
+    $prefix = sprintf("%02d", ($prefix + 1));
     my $do_fastqc = 1;
     print "Just checking, what is fastqc: $options->{fastqc}\n";
     if ($options->{fastqc} eq 'check') {
@@ -996,6 +1026,7 @@ sub Process_RNAseq {
             if ($options->{filter}) {
                 print "\n${prefix}: Performing additional mapping against ${nth_species} with filtering.\n";
                 $nth_map = $class->Bio::Adventure::Map::Hisat2(
+                    compress => $options->{compress},
                     jdepends => $last_job,
                     input => $first_map->{unaligned},  ## Not unaligned_comp
                     introns => $nth_intron,
@@ -1108,17 +1139,13 @@ sub Recurse {
     my $found = find(\&wanted, $start);
     my $class_copy = $class;
     for my $path (keys %{$filenames}) {
-        print "TESTME: $path\n";
         my $changed = chdir($path);
         my $testme = cwd();
         $options->{basedir} = $testme;
         $args{basedir} = $testme;
-        print "TESTME: CWD post chdir: $testme\n";
-
         my $input_string = '';
         my $fn = $options->{function};
         my $ref_test = ref($fn);
-        print "TESTME: $fn and ref_test: $ref_test\n";
         my $function = \&${fn};
 
         for my $in (@{$filenames->{$path}}) {

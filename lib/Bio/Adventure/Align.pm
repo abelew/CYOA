@@ -791,7 +791,6 @@ sub Orthofinder_Names_Worker {
       chomp $line;
       $line_count++;
       my @groups = split(/\t/, $line);
-      ## print "TESTME1: Created @groups from $line\n";
       my $group = shift @groups;
       if ($line_count == 1) {
           @group_order = @groups;
@@ -828,7 +827,6 @@ sub Orthofinder_Names_Worker {
                 $group_ids = 'undefined';
             }
             $species_gene_id = $group_ids;
-            ## print "TESTME: I think group_ids is undef: $group_ids\n";
         } else {
             $species_gene_id = 'undefined';
         }
@@ -850,7 +848,6 @@ sub Orthofinder_Names_Worker {
             $first_description = 'no description found';
         }
         $write_string .= qq!\t"${group_string}"\t"${species_gene_id}"\t"${first_description}"!;
-        ## print "TESTME: $write_string\n";
         $ortho_names->{$species}->{$group}->{id} = $species_gene_id;
         $ortho_names->{$species}->{$group}->{descr} = $first_description;
 

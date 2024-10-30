@@ -762,6 +762,18 @@ sub Get_Paths {
         $paths->{gbk_shell} = qq"${libdir_prefix}/genbank/$options->{species}.gbk";
     }
 
+    ## Fill this in instead of this stupid if elsif shenanigans.
+    ##my $subroutine_paths = {
+    ##    'Bowtie' => {
+    ##        index => qq"$paths->{index_prefix}/bt1/$options->{species}",
+    ##        index_shell => qq"$paths->{index_prefix_shell}/bt1/$options->{species}",
+    ##        index_file => qq"$paths->{index}.1.ebwt",
+    ##        index_file_shell =>  qq"$paths->{index_shell}.1.ebwt",
+    ##        output_dir => qq"${output_prefix}bowtie_$options->{species}",
+    ##    },
+    ##    'Bowtie2' => {
+    ##    },
+    ##};
     if ($subroutine eq 'Bowtie') {
         $paths->{index} = qq"$paths->{index_prefix}/bt1/$options->{species}";
         $paths->{index_shell} = qq"$paths->{index_prefix_shell}/bt1/$options->{species}";
@@ -849,7 +861,7 @@ sub Get_Paths {
         make_path($paths->{output_dir}, {verbose => 0}) unless (-r $paths->{output_dir});
     }
     elsif ($subroutine eq 'Insert_Size') {
-        $paths->{output_dir} = qq"${output_prefix}insert_size";
+        $paths->{output_dir} = dirname($options->{input});
         $paths->{stderr} = qq"$paths->{output_dir}/$paths->{output_base}_insert_size.stderr";
         $paths->{stdout} = qq"$paths->{output_dir}/$paths->{output_base}_insert_size.stdout";
     }

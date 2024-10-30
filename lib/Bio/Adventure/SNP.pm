@@ -1686,15 +1686,13 @@ sub Test_Worker {
         my $seq_string = $seq_obj->seq;
         my $seq_id = $seq_obj->id;
         my $seq_name = $seq_obj->display_name;
-        print "TESTME: ID: $seq_id NAME: $seq_name\n";
         ## Take from: https://www.biostars.org/p/70448/
         #foreach my $seq_line (unpack('(a[80])*', $seq_string)) {
         #    print $output_genome "${seq_line}\n";
         #}
         my $contig_sf = $contig_features->{$ch};
-        for my $top_feature ($contig_sf->get_SeqFeatures()) {
-            print "TESTME TOP: Got feature\n";
-        }
+        ##for my $top_feature ($contig_sf->get_SeqFeatures()) {
+        ##}
         my $all_sf = $seqfeatures->{$ch};
         for my $thingie (@{$all_sf}) {
             my @tags = sort $thingie->get_all_tags();
@@ -1716,8 +1714,6 @@ sub Test_Worker {
             ## This sends the gff to my string IO, so I can add the tags to it...
             my $written = $gffout->write_feature($thingie);
             $string =~ s/$/$suffix/;
-            print "TESTME: \n$string\n\n";
-
         }  ## End for every feature
     } ## End for every contig
     print $final_write $string;

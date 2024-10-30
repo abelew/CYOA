@@ -416,7 +416,6 @@ sub PolyA_Extractor {
     my $polyA;
     for my $input_file (@inputs) {
         my $job_name = $class->Get_Job_Name(input => $input_file);
-        print "TESTME: $job_name and $final_output\n";
         my $jname = qq"polyAextract_${job_name}";
         my $jstring = qq!
 use Bio::Adventure;
@@ -673,6 +672,9 @@ sub Trimomatic_Pairwise {
         die('Unable to find the trimomatic executable.');
     }
     my $adapter_file = dist_file('Bio-Adventure', 'genome/adapters.fa');
+    if (defined($options->{adapter_file})) {
+        $adapter_file = $options->{adapter_file};
+    }
     my $input = $options->{input};
     my @input_list = split(/$options->{delimiter}/, $input);
     if (scalar(@input_list) <= 1) {

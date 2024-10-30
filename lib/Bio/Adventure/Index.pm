@@ -373,7 +373,6 @@ sub Hisat2_Index {
     my $species = basename($options->{input}, ('.fasta', '.fa', '.fsa'));
     my $paths = $class->Bio::Adventure::Config::Get_Paths(species => $species);
     my $output_dir = $paths->{output_dir};
-    print "TESTME: Index_Hisat $species with output_dir: $output_dir\n";
     my $stdout = qq"${output_dir}/hisat2_index_${species}.stdout";
     my $stderr = qq"${output_dir}/hisat2_index_${species}.stderr";
     my $copied = undef;

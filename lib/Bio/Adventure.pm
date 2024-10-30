@@ -120,6 +120,7 @@ use Bio::Adventure::Pipeline;
 =cut
 
 ## Lets move all the default values here.
+has adapter_file => (is => 'rw', default => undef);
 has align_blast_format => (is => 'rw', default => 5); ## Which alignment type should we use? (5 is blastxml)
 has align_jobs => (is => 'rw', default => 40); ## How many blast/fasta alignment jobs should we make when splitting alignments across nodes?
 has align_parse => (is => 'rw', default => 1); ## Parse blast searches into a table?
@@ -164,6 +165,7 @@ has email => (is => 'rw', default => 'abelew@umd.edu');
 has evalue => (is => 'rw', default => 0.001); ## Default e-value cutoff
 has fasta_args => (is => 'rw', default => '-b 20 -d 20'); ## Default arguments for the fasta36 suite
 has fasta_tool => (is => 'rw', default => 'ggsearch36'); ## Which fasta36 program to run?
+has fastp => (is => 'rw', default => 'check'); ## Perform fastqc in a pipeline?
 has fastqc => (is => 'rw', default => 'check'); ## Perform fastqc in a pipeline?
 has file_column => (is => 'rw', default => undef);
 has filter => (is => 'rw', default => 1); ## When performing an assembly, do a host filter?
@@ -213,7 +215,7 @@ has jgpu => (is => 'rw', default => 0);
 has jdepends => (is => 'rw', default => ''); ## Flag to start a dependency chain
 has jmem => (is => 'rw', default => 20); ## Number of gigs of ram to request
 has jname => (is => 'rw', default => undef); ## Job name on the cluster
-has jnice => (is => 'rw', default => 0); ## Set the niceness of a job, if it starts positive, we can set a lower nice to preempt
+has jnice => (is => 'rw', default => 10); ## Set the niceness of a job, if it starts positive, we can set a lower nice to preempt
 has jpartition => (is => 'rw', default => 'dpart');
 has jprefix => (is => 'rw', default => ''); ## Prefix number for the job
 has jqueue => (is => 'rw', default => ''); ## What queue will jobs default to?
@@ -1260,7 +1262,7 @@ sub Module_Loader {
             ;
         };
         $count++;
-    }                      ## End iterating over every mod in the list
+    } ## End iterating over every mod in the list
 
     ## If we got a set of test programs, check that they are in the PATH:
     if (scalar(@test_lst) > 0) {
@@ -1589,19 +1591,15 @@ module add ';
     my $runner;
     if ($options->{cluster} eq 'slurm') {
         $runner = Bio::Adventure::Slurm->new();
-    }
-    elsif ($options->{cluster} eq 'torque') {
+    } elsif ($options->{cluster} eq 'torque') {
         $runner = Bio::Adventure::Torque->new();
-    }
-    elsif ($options->{cluster} eq 'bash') {
+    } elsif ($options->{cluster} eq 'bash') {
         ## I should probably have something to handle gracefully bash jobs.
         $runner = Bio::Adventure::Local->new();
-    }
-    elsif ($options->{cluster} eq '0') {
+    } elsif ($options->{cluster} eq '0') {
         ## On occasion I set cluster to 0 which is bash.
         $runner = Bio::Adventure::Local->new();
-    }
-    else {
+    } else {
         carp("Could not find sbatch, qsub, nor bash.");
         print "Assuming this is running on a local shell.\n";
         $runner = Bio::Adventure::Local->new();
@@ -1615,14 +1613,18 @@ module add ';
     my $unloaded = $class->Module_Reset(env => $loaded);
     $class = $class->Reset_Vars();
     if (!defined($class->{jobnames}) || $class->{jobnames} eq '') {
-        $class->{jobnames} = $result->{jname};
+        $class->{jobnames} = [$result->{jname}];
     } else {
-        $class->{jobnames} = qq"$class->{jobnames}:$result->{jname}";
+        my @tmp = @{$class->{jobnames}};
+        push(@tmp, $result->{jname});
+        $class->{jobnames} = \@tmp;
     }
     if ($class->{jobids} eq '') {
-        $class->{jobids} = $result->{job_id};
+        $class->{jobids} = [$result->{job_id}];
     } else {
-        $class->{jobids} = qq"$class->{jobids}:$result->{job_id}";
+        my @tmp = @{$class->{jobids}};
+        push(@tmp, $result->{job_id});
+        $class->{jobids} = \@tmp;
     }
     $class->{last_job} = $class->{job_id};
     return($result);

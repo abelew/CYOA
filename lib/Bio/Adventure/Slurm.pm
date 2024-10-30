@@ -149,7 +149,6 @@ sub BUILD {
 sub Check_Job {
     my ($class, %args) = @_;
     my $options = $class->Bio::Adventure::Get_Vars(args => \%args);
-    print "TESTME: $class->{jobnames} and $class->{jobids}\n";
     my $id = $options->{input};
     my $write = $options->{write};
     $write = 0 if (!defined($write));
@@ -188,7 +187,7 @@ sub Check_Job {
         next IDS if (!defined($id));
         my $job_info = {};
         my $command = qq"sacct -l -j ${id} -p";
-        print "Running: $command\n";
+        print "Running: ${command}\n";
         ## my $info = FileHandle->new("sacct -l -j ${id} --json |");
         my $info = FileHandle->new("${command} |");
         my $line_count = 0;
@@ -514,7 +513,6 @@ sub Choose_QOS {
                 } elsif ($num_potential > 1) {
                     my $chosen_path = $class->Choose_Among_Potential_QOS(potential => $potential_qos);
                     $chosen_qos = $chosen_path->{qos};
-                    ## print "TESTME: Invoked Choose_Among_Potential_QOS: $chosen_qos\n";
                     $qos_info->{$chosen_qos}->{used_mem} = $qos_info->{$chosen_qos}->{used_mem} + $wanted_spec->{mem};
                     $qos_info->{$chosen_qos}->{used_cpu} = $qos_info->{$chosen_qos}->{used_cpu} + $wanted_spec->{cpu};
                     $qos_info->{$chosen_qos}->{used_gpu} = $qos_info->{$chosen_qos}->{used_gpu} + $wanted_spec->{gpu};
@@ -622,7 +620,6 @@ sub Choose_QOS {
         chosen_account => $chosen_account,
         chosen_cluster => $chosen_cluster,
     };
-    ## print "TESTME: QOS: $chosen_qos, PART: $chosen_partition ACCT: $chosen_account, CLUS: $chosen_cluster\n";
     return($ret);
 }
 
@@ -894,9 +891,9 @@ sub Get_Partitions {
                     print "I do not think we should have other element numbers: ${num_elements}\n";
                     sleep(10);
                 }
-            }    ## End looking at the equal sign separated pairs.
-        }        ## End the else{}
-    }            ## End reading scontrol show partitions
+            } ## End looking at the equal sign separated pairs.
+        } ## End the else{}
+    } ## End reading scontrol show partitions
     ## The names I expect to find in each inner hash are:
     ## allowgroups,allowaccounts, allowqos,allocnodes,default,qos,
     ## defaulttime,disablerootjobs,exclusiveuser,gracetime,hidden,
@@ -990,7 +987,6 @@ sub Get_QOS {
             }
             $max_job_mem = $max_resources_per_job;
             if ($max_job_mem =~ /mem=/) {
-                ## print "TESTME: In Get_QOS mem=: <${max_job_mem}>\n";
                 my $max_mem_suffix = $max_job_mem;
                 ## Note the suffix of memory may be M/G/T and perhaps P one day?
                 ## But I am only bothering to count in Gb.
@@ -1534,7 +1530,7 @@ ${perl_file} \\
     } ## End extra processing for submission of a perl script (perhaps not needed for slurm?
 
     if ($options->{jtemplate}) {
-        print "In slurm, processing with dir: $template_dir\n";
+        print "In slurm, processing with dir: ${template_dir}\n";
         print "Template is outputting to: $script_file\n";
         my $tt = Template->new({
             INCLUDE_PATH => $template_dir,

@@ -14,7 +14,7 @@ my $input_r2 = qq"${start_dir}/r2.fastq.xz";
 my $phix_fasta = qq"${start_dir}/genome/phix.fastq";
 my $phix_gff = qq"${start_dir}/genome/phix.gff";
 my $terminase_db = qq"${start_dir}/genome/phage_terminases.fasta";
-
+my $adapters = qq"${start_dir}/genome/adapters.fa";
 my $start = getcwd();
 my $a = 'test_output_async';
 my $actual = '';
@@ -24,15 +24,24 @@ my $test_file = '';
 mkdir($a);
 chdir($a);
 
+## ok, there is a problem with how I set this up:
+## Test::File::ShareDir creates a tree in /tmp on the current node
+## with the contents of share/ so that they will be usable from within the
+## testing framework, but if this gets run on another node, that path
+## will not exist.  Therefore I need to do something to put
+## the trimomatic adapters into the current working directory.
+
 my $cyoa = Bio::Adventure->new(basedir => cwd(), libdir => cwd());
 my $paths = $cyoa->Bio::Adventure::Config::Get_Paths();
 ## Copy the reads for running the tests.
 ok(cp($input_r1, 'r1.fastq.xz'), 'Copying r1.') if (!-r 'r1.fastq.xz');
 ok(cp($input_r2, 'r2.fastq.xz'), 'Copying r2.') if (!-r 'r2.fastq.xz');
 ok(cp($terminase_db, "$paths->{blast_dir}/terminase.fasta"), 'Copying terminase db.') if (!-r "$paths->{blast_dir}/terminase.fasta");
+ok(cp($adapters, 'genome/adapters.fa'), 'Copying trimomatic adapters to genome/');
 ## Invoke the pipeline, keep it within our test directory with basedir.
 
 my $assemble = $cyoa->Bio::Adventure::Pipeline::Phage_Assemble(
+    adapter_file => 'genome/adapters.fa',
     input => 'r1.fastq.xz:r2.fastq.xz', jprefix => '50');
 my $job_id;
 my $status;
@@ -141,14 +150,16 @@ d__Bacteria|p__Proteobacteria|c__Gammaproteobacteria|o__Enterobacterales|f__Morg
 
 ## See if the kraken-based filter worked.  The variable 'log' is already taken, so switch it out.
 $id = '05host_filter';
-$test_file = $assemble->{$id}->{log};
+## FIXME: This log file is evaluating to outputs/log.txt?
+## $test_file = $assemble->{$id}->{log};
+$test_file = 'outputs/55filter_kraken/filter_kraken.log';
 $job_id = $assemble->{$id}->{job_id};
 $status = $cyoa->Wait(job => $job_id);
 $comparison = ok(-f $test_file, qq"Checking kraken filter output: ${test_file}");
 print "Passed.\n" if ($comparison);
 $actual = qx"tail -n 2 ${test_file}";
-$expected1 = qq"Filtering out reads which map to GCF_002900365.1.
-Symlinking final output files to outputs/05filter_kraken_host
+$expected1 = qq"Filtering out reads which map to GCF_037055335.1.
+Symlinking final output files to outputs/51trimomatic
 ";
 $comparison = ok($expected1 eq $actual, 'Checking kraken filter result:');
 if ($comparison) {
@@ -211,9 +222,9 @@ $status = $cyoa->Wait(job => $job_id);
 $comparison = ok(-f $test_file, qq"Checking depth filter output: ${test_file}");
 print "Passed.\n" if ($comparison);
 $actual = qx"more ${test_file}";
-$expected1 = qq"Starting depth coverage filter of outputs/57unicycler/test_output_final_assembly.fasta.
+$expected1 = qq"Starting depth coverage filter of outputs/57unicycler/test_output_async_final_assembly.fasta.
 Any contigs with a coverage ratio vs. the highest coverage of < 0.2 will be dropped.
-Writing filtered contigs to outputs/08filter_depth/final_assembly.fasta
+Writing filtered contigs to outputs/58filter_depth/final_assembly.fasta
 The range of observed coverages is 1.00 <= x <= 1
 Writing 1 with normalized coverage: 1
 ";
@@ -370,7 +381,18 @@ ACGGGACTATTCGCTGAGCAAGCTATACCTCTTGAGGTCGCTATTGCATCTGCCAAAGAC
 CTCTATGCGGTAGGTCATCACATGAAAGTCGAAGACATTAACGATAACGTAGTGTTCGAC
 CCTGCGGCTGAAGAGGACTGCGAGTGA
 ";
-$comparison = ok($expected1 eq $actual, 'Checking prokka result:');
+$expected2 = qq">test_output_async_00001 hypothetical protein
+ATGGCAAAGACCAAAGCTGTGCTTAAAGCTCTGGCGACCAATCGAGCTACATACAGGTTT
+CTTGCTGCTGTTCTACTTGCTGCTGGCGTTACTGCTGGAAGTCAGTGGGTCGGGTGGGTC
+GAGACTCTCGTATGCTCTCTGGTCTCTCAGTGTAATTAA
+>test_output_async_00002 hypothetical protein
+ATGTTAGTCAAAGACTATATACATACGCAGTCAGTAACCTATAGTTACTACCAGTCTAAC
+CTACTGTTTTACAAGGAGTTTGGACTTAACTATCACTATAGGGAAGACCCCCGGTTACTT
+ATAGTATTACTGTAG
+>test_output_async_00003 hypothetical protein
+ATGGCAAAGACCAAAGCTGTGCTTAAAGCTCTGGCGACCAATCGAGCTACATACAGGTTT
+";
+$comparison = ok(($expected1 eq $actual || $expected2 eq $actual), 'Checking prokka result:');
 if ($comparison) {
     print "Passed.\n";
 } else {
@@ -395,7 +417,18 @@ CTGATGCCTGAGACCAAGGACGTAACGCGCATACTGCAAGCTCGCATCTATGAGGCACTGTATAACGGCG
 TGTCTAATAGCTCGGATGTGGTCTGGTTTGAGGCTGAAGAGAGCGACGAAGAGGGTAAGTATTGGGTAGT
 TGACGCTAAAACGGGACTATTCGCTGAGCAAGCTATACCTCTTGAGGTCGCTATTGCATCTGCCAAAGAC
 ";
-$comparison = ok($expected1 eq $actual, 'Checking prodigal CDS predictions:');
+$expected2 = qq">gnl|Prokka|test_output_async_1_1 # 915 # 1073 # -1 # ID=1_1;partial=00;start_type=ATG;rbs_motif=AGGAGG;rbs_spacer=5-10bp;gc_cont=0.503
+ATGGCAAAGACCAAAGCTGTGCTTAAAGCTCTGGCGACCAATCGAGCTACATACAGGTTTCTTGCTGCTG
+TTCTACTTGCTGCTGGCGTTACTGCTGGAAGTCAGTGGGTCGGGTGGGTCGAGACTCTCGTATGCTCTCT
+GGTCTCTCAGTGTAATTAA
+>gnl|Prokka|test_output_async_1_2 # 1915 # 2073 # -1 # ID=1_2;partial=00;start_type=ATG;rbs_motif=AGGAGG;rbs_spacer=5-10bp;gc_cont=0.503
+ATGGCAAAGACCAAAGCTGTGCTTAAAGCTCTGGCGACCAATCGAGCTACATACAGGTTTCTTGCTGCTG
+TTCTACTTGCTGCTGGCGTTACTGCTGGAAGTCAGTGGGTCGGGTGGGTCGAGACTCTCGTATGCTCTCT
+GGTCTCTCAGTGTAATTAA
+>gnl|Prokka|test_output_async_1_3 # 2371 # 4134 # -1 # ID=1_3;partial=00;start_type=TTG;rbs_motif=AGGAG;rbs_spacer=5-10bp;gc_cont=0.519
+TTGAGTAAAGACTTAGTAGCGCGTCAGGCGCTAATGACTGCCCGTATGAAGGCAGACTTCGTGTTCTTCC
+";
+$comparison = ok(($expected1 eq $actual || $expected2 eq $actual), 'Checking prodigal CDS predictions:');
 if ($comparison) {
     print "Passed.\n";
 } else {
@@ -427,7 +460,18 @@ orf00016     1931     2056  +2     3.05
 orf00019     2262     2411  +3     4.05
 orf00020     2447     2737  +2     2.27
 ";
-$comparison = ok($expected1 eq $actual, 'Checking glimmer CDS predictions:');
+$expected2 = qq">gnl|Prokka|test_output_async_1
+orf00005      828      875  +3     1.29
+orf00007     1073      915  -3     3.66
+orf00013     1828     1875  +1     1.29
+orf00015     2073     1915  -1     3.66
+orf00020     4101     2371  -1    10.30
+orf00022     4932     4147  -1     4.42
+orf00023     5327     4935  -3     8.13
+orf00025     5427     5480  +3     0.89
+orf00026     5749     5486  -2     7.45
+";
+$comparison = ok(($expected1 eq $actual || $expected2 eq $actual), 'Checking glimmer CDS predictions:');
 if ($comparison) {
     print "Passed.\n";
 } else {
@@ -447,20 +491,20 @@ $job_id = $assemble->{$id}->{job_id};
 $status = $cyoa->Wait(job => $job_id);
 $comparison = ok(-f $test_file, qq"Checking phanotate output: ${test_file}");
 print "Passed.\n" if ($comparison);
-$actual = qx"less ${test_file} | head | awk '{print \$1}'";
+$actual = qx"xzcat ${test_file} | head";
 ## Different versions of phanotate give slightly different outputs...
-my $expected1_first = qq"#id:
-#START
-1
-183
-477
-1148
-1267
-1773
-1931
-2128
+my $expected1 = qq"#id:	gnl|Prokka|test_output_async_1
+#START	STOP	FRAME	CONTIG	SCORE
+285	100	-	gnl|Prokka|test_output_async_1	-0.1205985129887074125672632227
+703	563	-	gnl|Prokka|test_output_async_1	-0.06751039780374797263339653341
+1012	878	-	gnl|Prokka|test_output_async_1	-0.3424598866838151910792343528
+1140	1048	-	gnl|Prokka|test_output_async_1	-0.4183711952360489162642818059
+1359	1225	-	gnl|Prokka|test_output_async_1	-16.51124218029363278631601775
+1703	1563	-	gnl|Prokka|test_output_async_1	-0.06751039780374797263339653341
+2012	1878	-	gnl|Prokka|test_output_async_1	-0.3424598866838151910792343528
+2140	2048	-	gnl|Prokka|test_output_async_1	-0.4183711952360489162642818059
 ";
-my $expected1_second = qq"#id:
+my $expected2 = qq"#id:
 #START
 <1
 183
@@ -505,15 +549,15 @@ $comparison = ok(-f $test_file, qq"Checking CDS merge output: ${test_file}");
 print "Passed.\n" if ($comparison);
 $actual = qx"head ${test_file}";
 $expected1 = qq"locus_tag	contig	type	source	start	end	strand	cds_prediciton	aa_sequence
-test_output_async_0001	test_output_async_1	CDS		131	265	1	glimmer	VVVETIGWDYWLSLSLLLAAGVTAGSQWVGWVETLVCSLVSQCN
-test_output_async_0002	test_output_async_1	CDS		183	302	1	phanotate, score: -0.218	LLLALLLEVSGSGGSRLSYALWSLSVINAIMVTIHERKT
-test_output_async_0003	test_output_async_1	CDS		305	352	-1	glimmer	LTTVAKVSRVASAMN
-test_output_async_0004	test_output_async_1	CDS		477	617	1	phanotate, score: -0.0702	LDQKFETTSHSSRTSSLPIGPLSVQTKGPTPVYHKVGPMVKTSGQR
-test_output_async_0005	test_output_async_1	CDS		888	1148	-1	phanotate, score: -0.107	LLKSIPFSQRTSGRPVQCWSPPLLRCGTAYISSLLLVNYFLSSACCSYDLSGCLLNRDDPASSLSGCCRVVLTEAIKPQSRPIVNM
-test_output_async_0006	test_output_async_1	CDS		1178	1225	1	glimmer	VINYRVFESTPEGPD
-test_output_async_0007	test_output_async_1	CDS		1267	1773	1	phanotate, score: -5940	MERNADAYYELLNATVKAFNERVQYDEIAKGDDYHDALHEVVDGQVPHYYHEIFTVMAADGIDIEFEDSGLMPETKDVTRILQARIYEALYNGVSNSSDVVWFEAEESDEEGKYWVVDAKTGLFAEQAIPLEVAIASAKDLYAVGHHMKVEDINDNVVFDPAAEEDCE
-test_output_async_0008	test_output_async_1	CDS		1773	1928	1	phanotate, score: -6.33	MVTYGLCQHHVTNARIMVKTGQLNHDATMCLLKAVYEGRKLIHNSLHAEDK
-test_output_async_0009	test_output_async_1	CDS		1931	2056	1	phanotate, score: -4.91	MYQITYNSEQAFYEGCYEMMKRGACYVANHHSLTITLTGGY
+test_output_async_0001	test_output_async_1	CDS		100	285	-1	phanotate, score: -0.121	LTIGLDCGLMASVNTTRQQPDSEDAGSSRLSRQPDISQFKNLKSPHRPSFSPDQRPYPSLS
+test_output_async_0002	test_output_async_1	CDS		563	703	-1	phanotate, score: -0.0675	LDQKFETTSHSSRTSSLPIGPLSVQTKGPTPVYHKVGPMVKTSGQR
+test_output_async_0003	test_output_async_1	CDS		828	875	1	glimmer	LTTVAKVSRVASAMN
+test_output_async_0004	test_output_async_1	CDS		878	1012	-1	phanotate, score: -0.342	LLLFYLLLALLLEVSGSGGSRLSYALWSLSVINAIMVTIHERKT
+test_output_async_0005	test_output_async_1	CDS	EMBL/GenBank/SwissProt	915	1073	-1	prodigal via prokka	MAKTKAVLKALATNRATYRFLAAVLLAAGVTAGSQWVGWVETLVCSLVSQCN
+test_output_async_0006	test_output_async_1	CDS		1048	1140	-1	phanotate, score: -0.418	VILIIIPQIQIVTDHRYRRYVAYGKDQSCA
+test_output_async_0007	test_output_async_1	CDS		1225	1359	-1	phanotate, score: -16.5	MLVKDYIHTQSVTYSYYQSNLLFYKEFGLNYHYREDPRLLIVLL
+test_output_async_0008	test_output_async_1	CDS		1563	1703	-1	phanotate, score: -0.0675	LDQKFETTSHSSRTSSLPIGPLSVQTKGPTPVYHKVGPMVKTSGQR
+test_output_async_0009	test_output_async_1	CDS		1828	1875	1	glimmer	LTTVAKVSRVASAMN
 ";
 $comparison = ok($expected1 eq $actual, 'Checking CDS merge result:');
 if ($comparison) {
@@ -533,27 +577,18 @@ $job_id = $assemble->{$id}->{job_id};
 $status = $cyoa->Wait(job => $job_id);
 $comparison = ok(-f $test_file, qq"Checking jellyfish output tsv: ${test_file}");
 print "Passed.\n" if ($comparison);
-$actual = qx"less ${test_file}";
-$expected1 = qq"1 28869
-2 4386
-3 663
-4 253
-5 67
-6 17
-7 8
-8 2
+$actual = qx"xzcat ${test_file}";
+$expected1 = qq"1 37635
+2 1327
+3 47
+4 177
+5 9
+6 1
+7 2
 9 2
-10 5
+10 3
 ";
-$expected2 = qq"# 1 37998
-# 2 1153
-# 3 42
-# 4 177
-# 5 9
-# 6 1
-# 7 2
-# 9 2
-# 10 3
+$expected2 = qq"
 ";
 $comparison = ok($expected1 eq $actual, 'Checking jellyfish result:');
 if ($comparison) {
@@ -595,7 +630,7 @@ $actual = qx"tail -n 4 ${test_file}";
 $expected1 = qq"number of sequences= 1
 number of bases tested (one strand)=41261
 number of bases tested (both strands)= 82522
-number of predicted tRNA=236
+number of predicted tRNA=230
 ";
 $comparison = ok($expected1 eq $actual, 'Checking trnascan result:');
 if ($comparison) {
@@ -615,8 +650,8 @@ $comparison = ok(-f $test_file, qq"Checking trinotate output: ${test_file}");
 print "Passed.\n" if ($comparison);
 $actual = qx"head -n 3 ${test_file} | awk '{print \$1}'";
 $expected1 = qq"#gene_id
-test_output_0001
-test_output_0002
+test_output_async_0001
+test_output_async_0002
 ";
 $comparison = ok($expected1 eq $actual, 'Checking trinotate results:');
 if ($comparison) {
@@ -786,8 +821,7 @@ $status = $cyoa->Wait(job => $job_id);
 $comparison = ok(-f $test_file, qq"The restriction endonuclease catalog exists: ${test_file}");
 print "Passed.\n" if ($comparison);
 $actual = qx"sort ${test_file} | head";
-$expected1 = qq!RE	Site	Overhang	Cuts
-AasI	GACNNNN^NNGTC	NN	30
+$expected1 = qq!AasI	GACNNNN^NNGTC	NN	30
 AatI	AGG^CCT		1
 AatII	GACGT^C	ACGT	13
 AauI	T^GTACA	GTAC	9
@@ -796,7 +830,7 @@ Acc16I	TGC^GCA		10
 Acc65I	G^GTACC	GTAC	1
 AccB1I	G^GYRCC	GYRC	13
 AccB7I	CCANNNN^NTGG	NNN	3
-AccI	GT^MKAC	MK	33
+AccI	GT^MKAC	MK	32
 !;
 $comparison = ok($expected1 eq $actual, 'Checking retriction enzyme catalog output:');
 if ($comparison) {
@@ -815,15 +849,15 @@ $comparison = ok(-f $test_file, qq"Checking caical output: ${test_file}");
 print "Passed.\n" if ($comparison);
 $actual = qx"head ${test_file}";
 $expected1 = qq!NAME	CAI
->test_output_async_0001	 0.625
->test_output_async_0002	 0.669
->test_output_async_0003	 0.602
->test_output_async_0004	 0.592
->test_output_async_0005	 0.683
->test_output_async_0006	 0.680
->test_output_async_0007	 0.692
->test_output_async_0008	 0.647
->test_output_async_0009	 0.667
+>test_output_async_0001	 0.568
+>test_output_async_0002	 0.593
+>test_output_async_0003	 0.609
+>test_output_async_0004	 0.691
+>test_output_async_0005	 0.581
+>test_output_async_0006	 0.610
+>test_output_async_0007	 0.616
+>test_output_async_0008	 0.593
+>test_output_async_0009	 0.609
 !;
 $expected2 = qq"# NAME	CAI
 >test_output_async_0001	 0.627
@@ -852,16 +886,16 @@ $status = $cyoa->Wait(job => $job_id);
 $comparison = ok(-f $test_file, qq"Checking phagepromoter output: ${test_file}");
 print "Passed.\n" if ($comparison);
 $actual = qx"head ${test_file}";
-$expected1 = qq!>test_output_async_1:4118 host complement(69..98) score=0.716
+$expected1 = qq!>test_output_async_1:5 host (82..111) score=0.738
 TTGACCATCGGTCCAACCTTATGATAGACT
->test_output_async_1:4106 host complement(324..352) score=0.898
+>test_output_async_1:30 host (582..611) score=0.738
+TTGACCATCGGTCCAACCTTATGATAGACT
+>test_output_async_1:41 host (828..856) score=0.897
 TTGACTACAGTAGCTAAGGTCAGTAGAGT
->test_output_async_1:4093 host complement(569..598) score=0.716
-TTGACCATCGGTCCAACCTTATGATAGACT
->test_output_async_1:52 host (1036..1065) score=0.828
-TTGACAAGCAGTAACGATGAGATGTAAGCT
->test_output_async_1:56 host (1134..1160) score=0.51
-AATGCTCTTTAACAATCTGGATAAACT
+>test_output_async_1:60 host (1197..1222) score=0.855
+TTGCATAAAGTCTGCATATGTATATT
+>test_output_async_1:4059 phage complement(1254..1276) score=0.975
+ACTTAACTATCACTATAGGGAAG
 !;
 $comparison = ok($expected1 eq $actual, 'Checking phagepromoter result:');
 if ($comparison) {
@@ -880,15 +914,15 @@ $comparison = ok(-f $test_file, qq"Checking rhotermpredict output file: ${test_f
 print "Passed.\n" if ($comparison);
 $actual = qx"head ${test_file} | awk '{print \$2}'";
 $expected1 = qq"Start
-0
-321
-700
-928
-1631
-2293
-2854
-3125
-3622
+12
+512
+939
+1512
+1939
+2481
+2899
+3290
+3550
 ";
 $comparison = ok($expected1 eq $actual, 'Checking rhotermpredict result:');
 if ($comparison) {

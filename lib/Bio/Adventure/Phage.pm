@@ -722,29 +722,21 @@ sub Filter_Kraken_Worker {
     my $separator;
     if ($options->{type} eq 'domain') {
         $separator = 'd__';
-    }
-    elsif ($options->{type} eq 'phylum') {
+    } elsif ($options->{type} eq 'phylum') {
         $separator = 'p__';
-    }
-    elsif ($options->{type} eq 'class') {
+    } elsif ($options->{type} eq 'class') {
         $separator = 'c__';
-    }
-    elsif ($options->{type} eq 'kingdom') {
+    } elsif ($options->{type} eq 'kingdom') {
         $separator = 'k__';
-    }
-    elsif ($options->{type} eq 'order') {
+    } elsif ($options->{type} eq 'order') {
         $separator = 'o__';
-    }
-    elsif ($options->{type} eq 'family') {
+    } elsif ($options->{type} eq 'family') {
         $separator = 'f__';
-    }
-    elsif ($options->{type} eq 'genus') {
+    } elsif ($options->{type} eq 'genus') {
         $separator = 'g__';
-    }
-    elsif ($options->{type} eq 'species') {
+    } elsif ($options->{type} eq 'species') {
         $separator = 's__';
-    }
-    else {
+    } else {
         $separator = 's__';
     }
     my $output_dir = $paths->{output_dir};
@@ -912,12 +904,12 @@ sub Filter_Kraken_Worker {
         } else {
             my $converter = $class->Bio::Adventure::Convert::Gb2Gff(
                 input => $downloaded_file,
-                jdepends => undef,
+                jdepends => $options->{jdepends},
                 jprefix => qq"$options->{jprefix}_1",);
             $status = $class->Wait(job => $converter->{job_id});
             $converted = $converter->{output};
             move($converted, $accession_file);
-            move($converted->{output_all_gff}, qq"$paths->{gff_dir}/${accession}.gff");
+            move($converter->{output_all_gff}, qq"$paths->{gff_dir}/${accession}.gff");
         }
     } ## End checking if the host_species was defined.
     my $index_location = qq"$paths->{index_dir}/${host_species_accession}.1.ht2";
@@ -930,7 +922,7 @@ sub Filter_Kraken_Worker {
         print "Did not find indexes, running Hisat2_Index() now.\n";
         my $indexed = $class->Bio::Adventure::Index::Hisat2_Index(
             input => $accession_file,
-            jdepends => undef,
+            jdepends => $options->{jdepends},
             jprefix => qq"$options->{jprefix}_2",
             language => 'bash',
             output_dir => $options->{output_dir},);
@@ -953,7 +945,7 @@ sub Filter_Kraken_Worker {
         do_htseq => 0,
         get_insertsize => 0,
         input => $options->{input_fastq},
-        jdepends => undef,
+        jdepends => $options->{jdepends},
         jprefix => qq"$options->{jprefix}_3",
         language => 'bash',
         libpath => $options->{libpath},
@@ -972,14 +964,12 @@ sub Filter_Kraken_Worker {
     print $log "Symlinking final output files to $options->{output_dir}\n";
     if (-e $out_r1) {
         print "The file: $out_r1 already exists.\n";
-    }
-    else {
+    } else {
         my $s1 = symlink($in_r1, $out_r1);
     }
     if (-e $out_r2) {
         print "The file: $out_r2 already exists.\n";
-    }
-    else {
+    } else {
         my $s2 = symlink($in_r2, $out_r2);
     }
     return(%species_observed);

@@ -343,6 +343,7 @@ sub Gb2Gff_Worker {
               $id_string .= "$id_hash->{db_xref}|";
               $id = $id_hash->{db_xref} unless($id);
           }
+          next FEAT unless (defined($id));
           $id =~ s/\|$//g;
           $id_string =~ s/\|$//g;
 
