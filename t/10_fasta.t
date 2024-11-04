@@ -43,8 +43,8 @@ if (-r $gff_local) {
 my $cyoa = Bio::Adventure->new(cluster => 0, basedir => cwd());
 
 my $gff2fasta = $cyoa->Bio::Adventure::Convert::Gff2Fasta(
-    input => $phix_local, gff => $gff_local, gff_type => 'gene',
-    gff_tag => 'gene_id', libpath => 'genome');
+    gff => $gff_local, gff_type => 'gene', gff_tag => 'gene_id',
+    input => $phix_local, jprefix => '10', libpath => 'genome');
 ok($gff2fasta, 'Run gff2fasta.');
 
 ok(-r $cds_local, 'Created nucleotide fasta file.');
@@ -53,11 +53,8 @@ ok(-r $aa_local, 'Created nucleotide amino acid file.');
 ok(mv($aa_local, $aa_genome), 'Moved phix cds file.');
 
 my $run_fasta = $cyoa->Bio::Adventure::Align_Fasta::Split_Align_Fasta(
-    input => $cds_genome,
-    library => $phix_local,
-    fasta_tool => 'fasta36',
-    align_jobs => 1,
-    parse => 1,);
+    align_jobs => 1, fasta_tool => 'fasta36', input => $cds_genome,
+    jprefix => '10', library => $phix_local, parse => 1,);
 ok($run_fasta, 'Run Split_Align_Fasta.');
 
 ## my $parsed_file = 'outputs/fasta_phix_cds_nt_phix/phix_cds_nt_vs_phix.parsed.txt';

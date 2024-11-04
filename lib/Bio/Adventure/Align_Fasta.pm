@@ -56,15 +56,16 @@ sub Make_Fasta_Job {
     my $options = $class->Get_Vars(
         args => \%args,
         align_jobs => 1,
+        cluster => 'slurm',
         fasta_tool => 'ggsearch36',
         fasta_format => '9',
-        split => 0,
-        output_type => undef,
-        cluster => 'slurm',
         jdepends => '',
         jmem => 8,
-        type => 'protein',
-        modules => ['fasta', 'cyoa'],);
+        jprefix => '90',
+        modules => ['fasta', 'cyoa'],
+        output_type => undef,
+        split => 0,
+        type => 'protein',);
     my $dep = $options->{jdepends};
     my $split = $options->{split};
     my $output_type = $options->{output_type};
@@ -100,8 +101,9 @@ sub Make_Fasta_Job {
         $output = qq"$options->{workdir}/split/${array_id_string}.out";
         make_path(qq"$options->{workdir}/split") unless (-d qq"$options->{workdir}/split");
         $jstring = qq!
+input="$options->{workdir}/split/\${array_id_string}/in.fasta"
 cd $options->{basedir}
-if [[ -r $options->{workdir}/split/${array_id_string}/in.fasta ]]; then
+if [[ -r "\${input}" ]]; then
   $options->{fasta_tool} ${query_flag} -m $options->{fasta_format} \\
    $options->{fasta_args} ${type_string} -T $options->{jcpu} \\
    $options->{workdir}/split/${array_id_string}/in.fasta \\
@@ -109,7 +111,7 @@ if [[ -r $options->{workdir}/split/${array_id_string}/in.fasta ]]; then
    1>${output} \\
    2>>${stderr}
 else
-  echo "The input file does not exist."
+  echo "The input file does not exist: \${input}."
   exit 0
 fi
 !;
@@ -135,7 +137,7 @@ $options->{fasta_tool} -m $options->{fasta_format} \\
         jmem => $options->{jmem},
         jname => 'fasta_multi',
         jstring => $jstring,
-        jprefix => "91",
+        jprefix => qq"$options->{jprefix}_1",
         modules => $options->{modules},
         output => $output,
         stdout => $stdout,
@@ -316,8 +318,6 @@ sub Parse_Fasta_Global {
     my $all = FileHandle->new(qq">$options->{output_all}");
 
     my $seq_count = 0;
-    print "TESTME2\n";
-    print "TESTME: $parsed\n";
     print $parsed "Query Name\tQuery length\tHit ID\tHit Length\tScore\tE\tIdentity\tHit length\tHit Matches\n";
     while (my $result = $searchio->next_result()) {
         print "Looking at result!\n";
@@ -648,6 +648,7 @@ sub Split_Align_Fasta {
             align_jobs => $actual,
             cluster => $options->{cluster},
             fasta_tool => $options->{fasta_tool},
+            jdepends => $options->{jdepends},
             split => 1,
             type => $options->{type},
             workdir => $outdir,);
@@ -665,12 +666,13 @@ sub Split_Align_Fasta {
             align_jobs => $options->{align_jobs},
             input => $options->{input},);
         $alignment = $class->Bio::Adventure::Align_Fasta::Make_Fasta_Job(
+            align_jobs => 1,
             cluster => $options->{cluster},
             fasta_tool => $options->{fasta_tool},
+            jdepends => $options->{jdepends},
             num_per_split => $num_per_split->{num_per_split},
             type => $options->{type},
-            workdir => $outdir,
-            align_jobs => 1);
+            workdir => $outdir,);
     }
     my $stdout = qq"${outdir}/align_fasta.stdout";
     my $stderr = qq"${outdir}/align_fasta.stdout";
@@ -708,6 +710,7 @@ my \$result = \$h->Bio::Adventure::Align_Fasta::Parse_Fasta_Global(
         jdepends => $concat_job->{job_id},
         jmem => $options->{jmem},
         jname => 'parse_search',
+        jprefix => qq"$options->{jprefix}_3",
         jstring => $jstring,
         stdout => $stdout,
         stderr => $stderr,

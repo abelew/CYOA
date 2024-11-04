@@ -51,8 +51,9 @@ sub Concatenate_Searches {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
-        workdir => '',
-        jmem => 8,);
+        jmem => 8,
+        jprefix => '90',
+        workdir => '',);
     my $finished = 0;
     my $output = qq"$options->{workdir}/split_search.txt";
     $output = $options->{output} if (defined($options->{output}));
@@ -72,9 +73,9 @@ done
         jname => "concat",
         jmem => $options->{jmem},
         jstring => $jstring,
-        jprefix => $options->{jprefix},
-        stdout => $output,
-        output => $output,);
+        jprefix => qq"$options->{jprefix}_2",
+        output => $output,
+        stdout => $output,);
     return($concatenate);
 }
 
@@ -522,6 +523,8 @@ sub Map_Accession {
   input(required): Directory containing a series of assemblies to compare.
   reference(required): Reference genome to use as the root.
 
+=back
+
 =cut
 sub ProgressiveMauve {
     my ($class, %args) = @_;
@@ -575,6 +578,8 @@ location=\$(dirname Mauve)
 =item C<Arguments>
 
   input(required): Directory name containing input fasta files.
+
+=back
 
 =cut
 sub OrthoFinder {
