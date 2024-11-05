@@ -775,7 +775,6 @@ mv ${r2op} ${r2o}
     if ($options->{compress}) {
         $jstring .= qq"${compress_string}\n";
     }
-
     ## Example output from trimomatic:
     ## Input Read Pairs: 10000 Both Surviving: 9061 (90.61%) Forward Only Surviving: 457 (4.57%) Reverse Only Surviving: 194 (1.94%) Dropped: 288 (2.88%)
     ## Perhaps I can pass this along to Get_Stats()
