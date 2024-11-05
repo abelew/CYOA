@@ -246,6 +246,7 @@ has min_value => (is => 'rw', default => 0.5); ## Also variant searching.
 has minimum => (is => 'rw', default => undef); ## catchall minimum threshold
 has minlength => (is => 'rw', default => 8); ## Minimum length when trimming
 has mirbase_data => (is => 'rw', default => undef); ## miRbase annotation dataset.
+has mode => (is => 'rw', default => 'union');
 has modulecmd => (is => 'rw', default => '');
 has modules => (is => 'rw', default => undef); ## Environment modules to load
 has module_string => (is => 'rw', default => '');
@@ -298,14 +299,17 @@ has sbatch_dependsarray => (is => 'rw', default => 'afterok:'); ## String to pas
 has sbatch_path => (is => 'rw', default => scalar_which('sbatch'));
 has script_dir => (is => 'rw', default => 'scripts');
 has search_string => (is => 'rw', default => 'tail');
+has secondary => (is => 'rw', default => 'score');  ## Or ignore, use by htseq-count.
 has separation => (is => 'rw', default => '10');
 has shell => (is => 'rw', default => '/usr/bin/bash'); ## Default qsub shell
+has sort => (is => 'rw', default => 'pos'); ## Explicitly set the sorting type for htseq
 has species => (is => 'rw', default => undef); ## Primarily for getting libraries to search against
 has sra => (is => 'rw', default => 0);
 has starting_tree => (is => 'rw', default => undef); ## Starting tree for phylogenetic analyses
 ## Note 202212: Now most of the sequencing kits used by our sequencer are reverse.
 has stranded => (is => 'rw', default => 'reverse'); ## Did this data come from a stranded library kit?
 has suffixes => (is => 'rw', default => '.fastq,.gz,.xz,.fasta,.sam,.bam,.count,.csfasta,.qual,.fsa,.faa,.fna,.gbf,.gbk,.tsv,.csv,.gff,.tbl,.ffn,.sf'); ## Suffixes to remove when invoking basename
+has supplementary => (is => 'rw', default => 'score'); ## or ignore, used by htseq-count.
 has ta_offset => (is => 'rw', default => 0); ## When counting TAs, this is either 0 or 2 depending on if the TA was removed.
 has task => (is => 'rw', default => 'tnseq');
 has taxid => (is => 'rw', default => '353153'); ## Default taxonomy ID, unknown for now.

@@ -610,6 +610,25 @@ sub Split_Align_Fasta {
         modules => ['fasta', 'cyoa']);
     my $loaded = $class->Module_Loader(modules => $options->{modules},
                                        exe => ['fasta36']);
+}
+
+sub Split_Align_Fasta_Worker {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        align_jobs => 40,
+        align_parse => 0,
+        best_only => 0,
+        fasta_tool => 'ggsearch36',
+        interactive => 0,
+        jmem => 8,
+        jprefix => 90,
+        num_dirs => 0,
+        required => ['input', 'library'],
+        type => 'dna',
+        modules => ['fasta', 'cyoa']);
+    my $loaded = $class->Module_Loader(modules => $options->{modules},
+                                       exe => ['fasta36']);
     my $search_type = 'local_fasta';
     my $search_function = 'Parse_Fasta';
     if ($options->{fasta_tool} =~ /^gg/) {
