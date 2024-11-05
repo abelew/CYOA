@@ -598,6 +598,9 @@ sub HTSeq {
         $stranded = 'no';
     }
     print "Note, this is running with stranded: $options->{stranded}\n";
+    my $mode = $options->{mode};
+    my $secondary = $options->{secondary};
+    my $supplementary = $options->{supplementary};
 
     my $aqual = $options->{qual};
     if (!defined($aqual)) {
@@ -659,6 +662,10 @@ sub HTSeq {
         $variable_string = qq!gff_type=${gff_type}
 gff_tag=${gff_tag}
 stranded=${stranded}
+mode=${mode}
+secondary=${secondary}
+supplementary=${supplementary}
+sort=pos
 !;
     }
     $output .= qq"_s${stranded}_${gff_type}_${gff_tag}.count";
@@ -672,10 +679,11 @@ stranded=${stranded}
         my $htseq_invocation = qq!${variable_string}
 htseq-count \\
   -q -f bam \\
-  -s \${stranded} -a ${aqual} \\
-  ${gff_type_arg} ${gff_tag_arg} \\!;
-    my $jstring = qq!
-${htseq_invocation}
+  -s \${stranded} -a ${aqual} -r \${sort} \\
+  ${gff_type_arg} ${gff_tag_arg} --mode \${mode} \\
+  --secondary-alignments \${secondary} --supplementary-alignments \${supplementary} \\
+!;
+    my $jstring = qq!${htseq_invocation}
   ${htseq_input} \\
   ${annotation} \\
   2>${error} \\

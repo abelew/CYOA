@@ -1044,6 +1044,7 @@ sub Process_RNAseq {
                 print "\n${prefix}: Performing additional mapping against ${nth_species} without filtering.\n";
                 if ($options->{mapper} eq 'hisat2') {
                     $nth_map = $class->Bio::Adventure::Map::Hisat2(
+                        compress => $options->{compress},
                         jdepends => $last_sam_job,
                         input => $map_input,
                         introns => $nth_intron,
