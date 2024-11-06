@@ -812,6 +812,9 @@ sub Get_Paths {
         $paths->{index_shell} = qq"$paths->{index_prefix_shell}/salmon/$options->{species}";
         $paths->{output_dir} = qq"${output_prefix}salmon_downsample_$options->{species}";
     }
+    elsif ($subroutine eq 'Fastp') {
+        $paths->{output_dir} = qq"${output_prefix}fastp";
+    }
     elsif ($subroutine eq 'Fastqc') {
         $paths->{output_dir} = qq"${output_prefix}fastqc";
     }
