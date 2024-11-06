@@ -572,7 +572,7 @@ sub Get_Modules {
         'Hisat2_Index' => { modules => ['hisat2'], exe => ['hisat2'], },
         'HT_Multi' => { modules => 'htseq' },
         'HTSeq' => { modules => 'htseq', exe => 'htseq-count' },
-        'Insert_Size' => { modules => 'gatk' },
+        'Insert_Size' => { modules => ['gatk', 'R'], },
         'Interpro_Long2Wide' => { modules => 'cyoa' },
         'Interproscan' => {
             modules => ['cyoa', 'interproscan'], exe => 'interproscan.sh' },
