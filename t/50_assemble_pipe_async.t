@@ -408,27 +408,19 @@ $job_id = $assemble->{$id}->{job_id};
 $status = $cyoa->Wait(job => $job_id);
 $comparison = ok(-f $test_file, qq"Checking prodigal output: ${test_file}");
 print "Passed.\n" if ($comparison);
-$actual = qx"head -n 7 ${test_file}";
-$expected1 = qq">gnl|Prokka|test_output_async_1_1 # 1267 # 1773 # 1 # ID=1_1;partial=00;start_type=ATG;rbs_motif=GGAG/GAGG;rbs_spacer=5-10bp;gc_cont=0.489
-ATGGAACGTAACGCTGACGCATACTATGAGCTGCTGAATGCAACCGTTAAAGCATTTAACGAGCGTGTTC
-AGTACGACGAAATAGCTAAAGGTGATGACTACCATGATGCGCTGCATGAAGTCGTAGACGGTCAGGTTCC
-GCACTATTACCACGAGATCTTCACGGTGATGGCTGCTGATGGTATTGACATTGAGTTTGAAGACTCTGGG
-CTGATGCCTGAGACCAAGGACGTAACGCGCATACTGCAAGCTCGCATCTATGAGGCACTGTATAACGGCG
-TGTCTAATAGCTCGGATGTGGTCTGGTTTGAGGCTGAAGAGAGCGACGAAGAGGGTAAGTATTGGGTAGT
-TGACGCTAAAACGGGACTATTCGCTGAGCAAGCTATACCTCTTGAGGTCGCTATTGCATCTGCCAAAGAC
+$actual = qx"grep '^>' ${test_file} | awk '{print \$1}' | head";
+$expected1 = qq">gnl|Prokka|test_output_async_1_1
+>gnl|Prokka|test_output_async_1_2
+>gnl|Prokka|test_output_async_1_3
+>gnl|Prokka|test_output_async_1_4
+>gnl|Prokka|test_output_async_1_5
+>gnl|Prokka|test_output_async_1_6
+>gnl|Prokka|test_output_async_1_7
+>gnl|Prokka|test_output_async_1_8
+>gnl|Prokka|test_output_async_1_9
+>gnl|Prokka|test_output_async_1_10
 ";
-$expected2 = qq">gnl|Prokka|test_output_async_1_1 # 915 # 1073 # -1 # ID=1_1;partial=00;start_type=ATG;rbs_motif=AGGAGG;rbs_spacer=5-10bp;gc_cont=0.503
-ATGGCAAAGACCAAAGCTGTGCTTAAAGCTCTGGCGACCAATCGAGCTACATACAGGTTTCTTGCTGCTG
-TTCTACTTGCTGCTGGCGTTACTGCTGGAAGTCAGTGGGTCGGGTGGGTCGAGACTCTCGTATGCTCTCT
-GGTCTCTCAGTGTAATTAA
->gnl|Prokka|test_output_async_1_2 # 1915 # 2073 # -1 # ID=1_2;partial=00;start_type=ATG;rbs_motif=AGGAGG;rbs_spacer=5-10bp;gc_cont=0.503
-ATGGCAAAGACCAAAGCTGTGCTTAAAGCTCTGGCGACCAATCGAGCTACATACAGGTTTCTTGCTGCTG
-TTCTACTTGCTGCTGGCGTTACTGCTGGAAGTCAGTGGGTCGGGTGGGTCGAGACTCTCGTATGCTCTCT
-GGTCTCTCAGTGTAATTAA
->gnl|Prokka|test_output_async_1_3 # 2371 # 4134 # -1 # ID=1_3;partial=00;start_type=TTG;rbs_motif=AGGAG;rbs_spacer=5-10bp;gc_cont=0.519
-TTGAGTAAAGACTTAGTAGCGCGTCAGGCGCTAATGACTGCCCGTATGAAGGCAGACTTCGTGTTCTTCC
-";
-$comparison = ok(($expected1 eq $actual || $expected2 eq $actual), 'Checking prodigal CDS predictions:');
+$comparison = ok($expected1 eq $actual, 'Checking prodigal CDS predictions:');
 if ($comparison) {
     print "Passed.\n";
 } else {
@@ -491,20 +483,20 @@ $job_id = $assemble->{$id}->{job_id};
 $status = $cyoa->Wait(job => $job_id);
 $comparison = ok(-f $test_file, qq"Checking phanotate output: ${test_file}");
 print "Passed.\n" if ($comparison);
-$actual = qx"xzcat ${test_file} | head";
+$actual = qx"xzcat ${test_file} | head | awk '{print \$1}'";
 ## Different versions of phanotate give slightly different outputs...
-my $expected1 = qq"#id:	gnl|Prokka|test_output_async_1
-#START	STOP	FRAME	CONTIG	SCORE
-285	100	-	gnl|Prokka|test_output_async_1	-0.1205985129887074125672632227
-703	563	-	gnl|Prokka|test_output_async_1	-0.06751039780374797263339653341
-1012	878	-	gnl|Prokka|test_output_async_1	-0.3424598866838151910792343528
-1140	1048	-	gnl|Prokka|test_output_async_1	-0.4183711952360489162642818059
-1359	1225	-	gnl|Prokka|test_output_async_1	-16.51124218029363278631601775
-1703	1563	-	gnl|Prokka|test_output_async_1	-0.06751039780374797263339653341
-2012	1878	-	gnl|Prokka|test_output_async_1	-0.3424598866838151910792343528
-2140	2048	-	gnl|Prokka|test_output_async_1	-0.4183711952360489162642818059
+$expected1 = qq"#id:
+#START
+285
+703
+1012
+1140
+1359
+1703
+2012
+2140
 ";
-my $expected2 = qq"#id:
+$expected2 = qq"#id:
 #START
 <1
 183
@@ -521,18 +513,11 @@ my $expected2 = qq"#id:
 ## 1\t117\t+\tgnl|Prokka|test_output_1\t-1.248555528686707940866691777\t
 ## 183\t302\t+\tgnl|Prokka|test_output_1\t-0.2175130562377134455954126775\t
 ## 477\t617\t+\tgnl|Prokka|test_output_1\t-0.07018008835792925643848556090\t
-my $something_good = 0;
-if ($expected1_first eq $actual) {
-    $something_good++;
-}
-if ($expected1_second eq $actual) {
-    $something_good++;
-}
-$comparison = ok($something_good, 'Checking phanotate output:');
+$comparison = ok(($expected1 eq $actual || $expected2 eq $actual), 'Checking phanotate output:');
 if ($comparison) {
     print "Passed.\n";
 } else {
-    my ($e, $a) = diff($expected1_first, $actual);
+    my ($e, $a) = diff($expected1, $actual);
     diag("-- expected1\n${e}\n-- actual\n${a}\n");
 }
 

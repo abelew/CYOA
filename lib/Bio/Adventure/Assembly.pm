@@ -928,12 +928,14 @@ sub Velvet {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
-        required => ['input'],
-        species => '',
+        jmem => 24,
+        jprefix => '20',
         kmer => 31,
-        jmem => 24,);
+        required => ['input'],
+        species => '',);
     my $job_name = $class->Get_Job_Name();
-    my $output_dir = qq"outputs/velvet_${job_name}";
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $output_dir = $paths->{output_dir};
     my $input_string = "";
     if ($options->{input} =~ /$options->{delimiter}/) {
         my @in = split(/$options->{delimiter}/, $options->{input});
@@ -954,11 +956,11 @@ sub Velvet {
     -exp_cov auto -cov_cutoff auto \\
     2>${output_dir}/velvetg_${job_name}.stderr \\
     1>${output_dir}/velvetg_${job_name}.stdout
-  new_params=\$(velvet-estimate-exp_cov.pl ${output_dir}/stats.txt \|
-    { grep velvetg ${output_dir}/parameters || test \$? = 1; } \|
+  new_params=\$(velvet-estimate-exp_cov.pl ${output_dir}/stats.txt |\\
+    { grep velvetg || test \$? = 1; } |\\
     sed 's/velvetg parameters: //g')
-  ##velvetg ${output_dir} \${new_params} -read_trkg yes -amos_file yes \\
-  ##  2>${output_dir}/second_velvetg.txt 2>&1
+  velvetg ${output_dir} \${new_params} -read_trkg yes -amos_file yes \\
+    2>${output_dir}/second_velvetg.txt 2>&1
 !;
     if ($options->{species}) {
         $jstring .= qq!
@@ -977,7 +979,9 @@ sub Velvet {
         jmem => $options->{jmem},
         output => qq"$output_dir/Sequences",
         prescript => $options->{prescript},
-        postscript => $options->{postscript},);
+        postscript => $options->{postscript},
+        stdout => $paths->{stdout},
+        stderr => $paths->{stderr},);
     return($velvet);
 }
 

@@ -74,6 +74,7 @@ done
         jmem => $options->{jmem},
         jstring => $jstring,
         jprefix => $options->{jprefix},
+        language => 'bash',
         stdout => $output,
         output => $output,);
     return($concatenate);
