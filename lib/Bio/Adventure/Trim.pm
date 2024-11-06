@@ -322,20 +322,19 @@ sub Fastp {
     my $inputs = $class->Get_Path_Info($options->{input});
 
     my $extra_args = $class->Passthrough_Args(arbitrary => $options->{arbitrary});
-    $extra_args .= ' -D ' if ($options->{deduplication});
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    $extra_args .= ' -D ' if ($options->{deduplicate});
     $extra_args .= ' -c ' if ($options->{correction});
     $extra_args .= ' -y ' if ($options->{complexity});
 
     my $comment = qq!## Run fastp on raw data
 !;
-    my $out_dir = qq"outputs/$options->{jprefix}fastp";
-    my $stderr = qq"${out_dir}/fastp.stderr";
-    my $stdout = qq"${out_dir}/fastp.stdout";
+    my $out_dir = $paths->{output_dir};
     my $input_flags = '';
     my $num_inputs = scalar(@{$inputs});
     if ($num_inputs == 2) {
-        my $r1 = $inputs->[0]->{filename};
-        my $r2 = $inputs->[1]->{filename};
+        my $r1 = $inputs->[0]->{fullpath};
+        my $r1 = $inputs->[1]->{fullpath};
         my $r1_base = $inputs->[0]->{filebase_extension};
         my $r2_base = $inputs->[1]->{filebase_extension};
         my $output_dir = $inputs->[0]->{directory};
@@ -355,7 +354,7 @@ sub Fastp {
         die("An unusual number of inputs was provided: ${num_inputs}.");
     }
     my $umi_flags = '';
-    if ($options->{do_umi}) {
+    if ($options->{umi}) {
         $umi_flags = ' -U ';
     }
     my $report_flags = qq"-h ${out_dir}/fastp_report.html -j ${out_dir}/fastp_report.json";
@@ -364,8 +363,8 @@ sub Fastp {
 mkdir -p ${out_dir}
 fastp ${umi_flags} ${input_flags} \\
   ${report_flags} ${extra_args} \\
-  2>${stderr} \\
-  1>${stdout}
+  2>$paths->{stderr} \\
+  1>$paths->{stdout}
 !;
 
     my $fastp = $class->Submit(
@@ -376,8 +375,8 @@ fastp ${umi_flags} ${input_flags} \\
         jprefix => $options->{jprefix},
         jstring => $jstring,
         jwalltime => '8:00:00',
-        stderr => $stderr,
-        stdout => $stdout,
+        stderr => $paths->{stderr},
+        stdout => $paths->{stdout},
         prescript => $options->{prescript},
         postscript => $options->{postscript},);
     return($fastp);

@@ -143,6 +143,7 @@ has chosen_tag => (is => 'rw', default => 'ODDS');
 has clean => (is => 'rw', default => 0); ## Cleanup after yourself?
 has cluster => (is => 'rw', default => undef); ## Are we running on a cluster?
 has comment => (is => 'rw', default => undef); ## Set a comment in running slurm/bash/etc scripts.
+has complexity => (is => 'rw', default => 1);
 has compress => (is => 'rw', default => 1); ## Compress output files?
 has conda_string => (is => 'rw', default => undef);
 has condition_column => (is => 'rw', default => undef);
@@ -159,7 +160,6 @@ has deduplicate => (is => 'rw', default => 1); ## Perform deduplication when usi
 has delimiter => (is => 'rw', default => '[;:,]');
 has denominator => (is => 'rw', default => undef);
 has directories => (is => 'rw', default => undef); ## Apply a command to multiple input directories.
-has do_umi => (is => 'rw', default => 1); ## Extract UMIs when using fastp
 has download => (is => 'rw', default => 1);
 has email => (is => 'rw', default => 'abelew@umd.edu');
 has evalue => (is => 'rw', default => 0.001); ## Default e-value cutoff
@@ -329,6 +329,7 @@ has methods_to_run => (is => 'rw', default => undef); ## Set of jobs to run.
 has menus => (is => 'rw', default => undef); ## The menus when in an interactive session.
 has term => (is => 'rw', default => undef); ## A fun Readline terminal for tab completion.
 has todos => (is => 'rw', default => undef); ## Set of TODOs to perform.
+has umi => (is => 'rw', default => 0);
 ## These last are used by Get_Vars()
 has variable_iterations => (is => 'rw', default => 0); ## After the first iteration of Get_Vars()
 ## We should clear out getopt_overrides so they don't mess things up.
