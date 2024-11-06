@@ -50,6 +50,10 @@ sub Submit {
         $options->{jname} = $class->Get_Job_Name();
     }
     my $jname = qq"$options->{jprefix}$options->{jname}";
+    if (!defined($jname)) {
+        print "In Local::Submit, jname was not defined, this should not happen.\n";
+        $jname = 'undefined';
+    }
     my $finished_file = qq"$options->{basedir}/outputs/logs/${jname}.finished";
     my $job = {};
     foreach my $k (keys %args) {
@@ -210,7 +214,10 @@ failed with error: $!.\n");
         warn "Unabled to close script filehandle return: $? error: $!\n";
     }
     print "Finished running, outputs should be in $options->{output}.\n\n";
-
+    if (!defined($bash_pid)) {
+        print "It should be impossible for bash_pid to be undefined, yet here we are.\n";
+        $bash_pid = 'undefined';
+    }
 
     $job->{log} = $bash_log;
     $job->{job_id} = $bash_pid;

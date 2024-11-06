@@ -812,6 +812,9 @@ sub Get_Paths {
         $paths->{index_shell} = qq"$paths->{index_prefix_shell}/salmon/$options->{species}";
         $paths->{output_dir} = qq"${output_prefix}salmon_downsample_$options->{species}";
     }
+    elsif ($subroutine eq 'Fastqc') {
+        $paths->{output_dir} = qq"${output_prefix}fastqc";
+    }
     elsif ($subroutine eq 'Filter_Host_Kraken' || $subroutine eq 'Filter_Kraken_Worker') {
         $paths->{output_dir} = qq"${output_prefix}filter_kraken";
         $paths->{index_dir} = qq"$paths->{index_prefix}/hisat";
@@ -978,6 +981,9 @@ sub Get_Paths {
     }
     elsif ($subroutine eq 'Unicycler') {
         $paths->{output_dir} = qq"${output_prefix}unicycler";
+    }
+    elsif ($subroutine eq 'Velvet') {
+        $paths->{output_dir} = qq"${output_prefix}velvet";
     }
 
     if ($paths->{index_file}) {

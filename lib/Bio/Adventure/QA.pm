@@ -125,12 +125,13 @@ sub Fastqc {
         required => ['input',],);
     my $job_name = $class->Get_Job_Name();
     my $input_paths = $class->Get_Path_Info($options->{input});
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $outdir = $paths->{output_dir};
     my $dirname = $input_paths->[0]->{dirname};
     my $jname = qq"fqc_${job_name}";
     if (defined($dirname)) {
         $jname .= qq"_${dirname}";
     }
-    my $outdir = qq"outputs/$options->{jprefix}fastqc";
 
     my $fastqc_job;
     my $input_file_string = '';
