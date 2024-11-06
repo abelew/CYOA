@@ -589,6 +589,7 @@ sub HTSeq {
         jname => '',
         jprefix => '',);
     my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $sort = $options->{sort};
     my $stranded = $options->{stranded};
     if ($stranded eq '1') {
         $stranded = 'yes';
@@ -665,10 +666,10 @@ stranded=${stranded}
 mode=${mode}
 secondary=${secondary}
 supplementary=${supplementary}
-sort=pos
+sort=${sort}
 !;
     }
-    $output .= qq"_s${stranded}_${gff_type}_${gff_tag}.count";
+    $output .= qq"_r${sort}_s${stranded}_${gff_type}_${gff_tag}.count";
     if (!-r "${gff}" and !-r "${gtf}") {
         die("Unable to read ${gff} nor ${gtf}, please fix this and try again.\n");
     }
@@ -681,8 +682,7 @@ htseq-count \\
   -q -f bam \\
   -s \${stranded} -a ${aqual} -r \${sort} \\
   ${gff_type_arg} ${gff_tag_arg} --mode \${mode} \\
-  --secondary-alignments \${secondary} --supplementary-alignments \${supplementary} \\
-!;
+  --secondary-alignments \${secondary} --supplementary-alignments \${supplementary} \\!;
     my $jstring = qq!${htseq_invocation}
   ${htseq_input} \\
   ${annotation} \\

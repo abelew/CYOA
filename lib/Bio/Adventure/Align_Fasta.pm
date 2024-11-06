@@ -58,11 +58,9 @@ sub Make_Fasta_Job {
         align_jobs => 1,
         fasta_format => '9',
         output_type => undef,
-        jdepends => '',
         jprefix => '90',
         jmem => 8,
         modules => ['fasta', 'cyoa'],);
-    my $dep = $options->{jdepends};
     my $output_type = $options->{output_type};
     my $fasta_args = $class->Passthrough_Args(arbitrary => $options->{fasta_args});
     my $library;
@@ -98,8 +96,8 @@ sub Make_Fasta_Job {
         $output = qq"$options->{workdir}/split/*/*.out";
         make_path(qq"$options->{workdir}/split") unless (-d qq"$options->{workdir}/split");
         $jstring = qq!
-cd $options->{workdir}
 export IN="$options->{workdir}/split/${array_id_string}/in.fasta"
+echo "This job is: ${array_id_string}"
 if [[ -r "\${IN}" ]]; then
   $options->{fasta_tool} ${query_flag} -m $options->{fasta_format} \\
    $options->{fasta_args} ${type_string} -T $options->{jcpu} \\
@@ -115,7 +113,6 @@ fi
     } else {
         $output = qq"$options->{workdir}/$options->{fasta_tool}.out";
         $jstring = qq!
-cd $options->{workdir}
 $options->{fasta_tool} -m $options->{fasta_format} \\
   ${query_flag} $options->{fasta_args} ${type_string} -T $options->{jcpu} \\
   $options->{input} \\
@@ -130,11 +127,12 @@ $options->{fasta_tool} -m $options->{fasta_format} \\
         array_string => $array_string,
         cluster => $options->{cluster},
         comment => $comment,
-        jdepends => $dep,
+        jdepends => $options->{jdepends},
         jmem => $options->{jmem},
         jname => $job_basename,
         jstring => $jstring,
         jprefix => $options->{jprefix},
+        language => 'bash',
         modules => $options->{modules},
         output => $output,
         stdout => $stdout,
@@ -610,6 +608,57 @@ sub Split_Align_Fasta {
         modules => ['fasta', 'cyoa']);
     my $loaded = $class->Module_Loader(modules => $options->{modules},
                                        exe => ['fasta36']);
+    my $job_basename = $class->Get_Job_Name();
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $jname = qq"${job_basename}_fasta";
+    my $comment = qq'## Running a split alignment with $options->{fasta_tool}.';
+    my $jstring = qq!use Bio::Adventure::Align;
+use Bio::Adventure::Align_Fasta;
+my \$result = \$h->Bio::Adventure::Align_Fasta::Split_Align_Fasta_Worker(
+  align_jobs => '$options->{align_jobs}',
+  align_parse => '$options->{align_parse}',
+  best_only => '$options->{best_only}',
+  fasta_tool => '$options->{fasta_tool}',
+  input => '$options->{input}',
+  interactive => '$options->{interactive}',
+  jname => '${jname}',
+  jprefix => '$options->{jprefix}',
+  library => '$options->{library}',
+  num_dirs => '$options->{num_dirs}',
+  output => '$paths->{output}',
+  output_counts => '$paths->{output_counts}',
+  output_singles => '$paths->{output_singles}',
+  output_doubles => '$paths->{output_doubles}',
+  output_few => '$paths->{output_few}',
+  output_many => '$paths->{output_many}',
+  output_zero => '$paths->{output_zero}',
+  output_all => '$paths->{output_all}',
+  type => '$options->{type}',);
+!;
+    my $align = $class->Submit(
+        align_jobs => $options->{align_jobs},
+        align_parse => $options->{align_parse},
+        best_only => $options->{best_only},
+        comment => $comment,
+        fasta_tool => $options->{fasta_tool},
+        input => $options->{input},
+        interactive => $options->{interactive},
+        jname => $jname,
+        jprefix => $options->{jprefix},
+        jstring => $jstring,
+        language => 'perl',
+        library => $options->{library},
+        num_dirs => $options->{num_first},
+        output => $paths->{output},
+        output_counts => $paths->{output_counts},
+        output_singles => $paths->{output_singles},
+        output_doubles => $paths->{output_doubles},
+        output_few => $paths->{output_few},
+        output_many => $paths->{output_many},
+        output_zero => $paths->{output_zero},
+        output_all => $paths->{output_all},
+        type => $options->{type},);
+    return($align);
 }
 
 sub Split_Align_Fasta_Worker {
@@ -638,22 +687,12 @@ sub Split_Align_Fasta_Worker {
     }
     print "Starting Split_Align_Fasta with tool: $options->{fasta_tool}\n";
     my $job_basename = $class->Get_Job_Name();
-    my $lib = basename($options->{library}, ('.fasta'));
-    my $que = basename($options->{input}, ('.fasta'));
-    my $outdir = qq"$options->{basedir}/outputs/" .
-        qq"$options->{jprefix}fasta_${que}_${lib}";
-    make_path("${outdir}") unless(-d ${outdir});
-    my $output = $options->{input};
-    $output = basename($output, ('.gz', '.xz'));
-    $output = basename($output, ('.txt', '.fasta'));
-    my $output_file = qq"${outdir}/${output}.parsed.txt";
-    my $counts = qq"${outdir}/${output}.count";
-    my $singles = qq"${outdir}/${output}_singles.txt";
-    my $doubles = qq"${outdir}/${output}_doubles.txt";
-    my $few = qq"${outdir}/${output}_few.txt";
-    my $many = qq"${outdir}/${output}_many.txt";
-    my $zero = qq"${outdir}/${output}_zero.txt";
-    my $all = qq"${outdir}/${output}_all.txt";
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $lib = basename($options->{library}, $class->{suffixes});
+    my $que = basename($options->{input}, $class->{suffixes});
+    my $outdir = $paths->{output_dir};
+    my $output = $paths->{output};
+    my $jname = qq"${job_basename}_fasta",
     my $split_info = $class->Bio::Adventure::Align::Get_Split(
         %args, align_jobs => $options->{align_jobs});
     my $actual = $class->Bio::Adventure::Align::Make_Directories(
@@ -664,7 +703,8 @@ sub Split_Align_Fasta_Worker {
         align_jobs => $actual,
         input => abs_path($options->{input}),
         library => abs_path($options->{library}),
-        jname => qq"${job_basename}_makefastajob",
+        jdepends => $options->{jdepends},
+        jname => $jname,
         jprefix => qq"$options->{jprefix}_1",
         type => $options->{type},
         workdir => $outdir,);
@@ -676,8 +716,6 @@ sub Split_Align_Fasta_Worker {
         workdir => $outdir,);
     ## Make sure that the alignment job gets the final output
     $alignment->{output} = $concat_job->{output};
-    my $stdout = qq"${outdir}/align_fasta.stdout";
-    my $stderr = qq"${outdir}/align_fasta.stdout";
     my $parse_input = $alignment->{output};
     my $comment_string = qq!## I don't know if this will work.!;
     my $jstring = qq?
@@ -687,14 +725,14 @@ use Bio::Adventure::Align_Fasta;
 my \$result = \$h->Bio::Adventure::Align_Fasta::${search_function}(
   input => '$parse_input',
   best_only => '$options->{best_only}',
-  output => '$output_file',
-  output_counts => '$counts',
-  output_singles => '$singles',
-  output_doubles => '$doubles',
-  output_few => '$few',
-  output_many => '$many',
-  output_zero => '$zero',
-  output_all => '$all',
+  output => '$paths->{output}',
+  output_counts => '$paths->{output_counts}',
+  output_singles => '$paths->{output_singles}',
+  output_doubles => '$paths->{output_doubles}',
+  output_few => '$paths->{output_few}',
+  output_many => '$paths->{output_many}',
+  output_zero => '$paths->{output_zero}',
+  output_all => '$paths->{output_all}',
   search_type => '${search_type}',);
 ?;
     my $parse_job = $class->Submit(
@@ -706,16 +744,16 @@ my \$result = \$h->Bio::Adventure::Align_Fasta::${search_function}(
         jname => qq"${job_basename}_parsefasta",
         jprefix => qq"$options->{jprefix}_3",
         jstring => $jstring,
-        output => $output_file,
-        output_counts => $counts,
-        output_singles => $singles,
-        output_doubles => $doubles,
-        output_few => $few,
-        output_many => $many,
-        output_zero => $zero,
-        output_all => $all,
-        stdout => $stdout,
-        stderr => $stderr,
+        output => $paths->{output},
+        output_counts => $paths->{output_counts},
+        output_singles => $paths->{output_singles},
+        output_doubles => $paths->{output_doubles},
+        output_few => $paths->{output_few},
+        output_many => $paths->{output_many},
+        output_zero => $paths->{output_zero},
+        output_all => $paths->{output_all},
+        stdout => $paths->{stdout},
+        stderr => $paths->{stderr},
         language => 'perl',);
     $parse_job->{align} = $alignment;
     $parse_job->{concat} = $concat_job;
