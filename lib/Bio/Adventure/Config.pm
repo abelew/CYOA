@@ -926,6 +926,24 @@ sub Get_Paths {
         my $libname = basename($options->{library}, $class->{suffixes});
         $paths->{output_dir} = qq"${output_prefix}blastsplit_$options->{input}_vs_${libname}";
     }
+    elsif ($subroutine eq 'Split_Align_Fasta' || $subroutine eq 'Split_Align_Fasta_Worker') {
+        my $libname = basename($options->{library}, $class->{suffixes});
+        $libname = basename($libname, $class->{suffixes});
+        my $query = basename($options->{input}, $class->{suffixes});
+        $query = basename($query, $class->{suffixes});
+        my $output_dir = qq"${output_prefix}fasta_${query}_${libname}";
+        my $output_base = basename($options->{input}, ('.gz', '.xz', '.bz2'));
+        $output_base = basename($output_base, $options->{suffixes});
+        $paths->{output} = qq"${output_dir}/${output_base}.parsed.txt";
+        $paths->{output_dir} = $output_dir;
+        $paths->{output_counts} = qq"${output_dir}/${output_base}.count";
+        $paths->{output_singles} = qq"${output_dir}/${output_base}_singles.txt";
+        $paths->{output_doubles} = qq"${output_dir}/${output_base}_doubles.txt";
+        $paths->{output_few} = qq"${output_dir}/${output_base}_few.txt";
+        $paths->{output_many} = qq"${output_dir}/${output_base}_many.txt";
+        $paths->{output_zero} = qq"${output_dir}/${output_base}_zero.txt";
+        $paths->{output_all} = qq"${output_dir}/${output_base}_all.txt";
+    }
     elsif ($subroutine eq 'STAR') {
         $paths->{index} = qq"$paths->{index_prefix}/star/$options->{species}";
         $paths->{index_dir} = qq"$paths->{index_prefix}/star";
