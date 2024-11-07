@@ -33,10 +33,10 @@ sub Compress {
         args => \%args,
         required => ['input'],
         comment => '## Compressing files.',
-        jmem => 8,
+        jmem => 12,
         jname => 'xz',
         jprefix => '',
-        jwalltime => '24:00:00',
+        jwalltime => '36:00:00',
         modules => undef,);
     my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $output_prefix = $paths->{output_prefix};

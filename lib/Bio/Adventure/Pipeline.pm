@@ -853,8 +853,8 @@ sub Process_RNAseq {
     my $map_input = $options->{input};
     my $map_prereq = $last_job;
     my $trim;
+    $prefix = sprintf("%02d", ($prefix + 1));
     if ($options->{trim}) {
-        $prefix = sprintf("%02d", ($prefix + 1));
         print "\n${prefix}: Starting trimmer.\n";
         $trim = $class->Bio::Adventure::Trim::Trimomatic(
             compress => $options->{compress},
@@ -895,10 +895,7 @@ sub Process_RNAseq {
         $ret->{$jobid} = $fastp;
         $last_job = $fastp->{job_id};
         sleep($options->{jsleep});
-    } else {
-        $prefix--;
     }
-
 
     $prefix = sprintf("%02d", ($prefix + 1));
     my $do_fastqc = 1;
@@ -925,8 +922,6 @@ sub Process_RNAseq {
         $ret->{$jobid} = $fastqc;
         $last_job = $fastqc->{job_id};
         sleep($options->{jsleep});
-    } else {
-        $prefix--;
     }
 
     ## Have some logic to handle a first species which will be used to filter
@@ -1094,11 +1089,19 @@ sub Process_RNAseq {
 
     unless ($options->{compress}) {
         $prefix = sprintf("%02d", ($prefix + 1));
+        my $compress_files = qq"${map_input}:";
+        if (defined($trim)) {
+            $compress_files .= $trim->{output_unpaired};
+        }
+        my @compress_arr = split(/:/, $compress_files);
+        my $num_files = scalar(@compress_arr);
+        my $hours_guess = 12 * $num_files;
         my $compress_input = $class->Bio::Adventure::Compress::Compress(
-            input => $map_input,
+            input => $compress_files,
             jdepends => $last_job,
             jname => 'comp_trimmed',
-            jprefix => $prefix,);
+            jprefix => $prefix,
+            jwalltime => $hours_guess);
         $last_job = $compress_input->{job_id};
         $prefix = sprintf("%02d", ($prefix + 1));
         $jobid = qq"${prefix}comptrim";
@@ -1109,7 +1112,8 @@ sub Process_RNAseq {
                 input => qq"$first_map->{unaligned}:$first_map->{aligned}",
                 jdepends => $last_job,
                 jname => 'comp_hisat',
-                jprefix => $prefix,);
+                jprefix => $prefix,
+                jwalltime => $hours_guess,);
             $jobid = qq"${prefix}compin";
             $ret->{$jobid} = $compress_input;
             $last_job = $compress_first_map->{job_id};
