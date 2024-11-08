@@ -1138,9 +1138,13 @@ sub Get_Spec {
     } else {
         print "Neither walltime nor jwalltime is defined, defaulting to 40 minutes.\n";
     }
-    my $walltime_hours = Convert_to_Hours($walltime_string);
-    $wanted->{walltime_hours} = $walltime_hours;
-    $wanted->{walltime} = Convert_to_Walltime($walltime_hours);
+    if ($walltime_string =~ /:/) {
+        $wanted->{walltime} = $walltime_string;
+        $wanted->{walltime_hours} = Convert_to_Hours($walltime_string);
+    } else {
+        $wanted->{walltime_hours} = $walltime_hours;
+        $wanted->{walltime} = Convert_to_Walltime($walltime_hours);
+    }
 
     if (defined($options->{cpu}) && defined($options->{jcpu})) {
         print "Both cpu and jcpu are defined, that is confusing, using jcpu.\n";

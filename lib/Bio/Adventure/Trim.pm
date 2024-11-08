@@ -333,6 +333,7 @@ sub Fastp {
     my $out_dir = $paths->{output_dir};
     my $input_flags = '';
     my $num_inputs = scalar(@{$inputs});
+    my $output = '';
     if ($num_inputs == 2) {
         my $r1 = $inputs->[0]->{fullpath};
         my $r2 = $inputs->[1]->{fullpath};
@@ -340,19 +341,19 @@ sub Fastp {
         my $r2_base = $inputs->[1]->{filebase_extension};
         my $output_r1 = qq"${output_dir}/${r1_base}-fastp.fastq";
         my $output_r2 = qq"${output_dir}/${r2_base}-fastp.fastq";
+        $output = qq"${output_r1}:${output_r2}";
         $input_flags = qq" -i ${r1} \\
   -o ${output_r1} \\
   -I ${r2} \\
   -O ${output_r2} ";
-    }
-    elsif ($num_inputs == 1) {
+    } elsif ($num_inputs == 1) {
         my $r1 = $inputs->[0]->{filename};
         my $r1_base = $inputs->[0]->{filebase_extension};
         my $output_r1 = qq"${output_dir}/${r1_base}-fastp.fastq";
+        $output = $output_r1;
         $input_flags = qq" -i ${r1} \\
   -o ${output_r1} ";
-    }
-    else {
+    } else {
         die("An unusual number of inputs was provided: ${num_inputs}.");
     }
     my $umi_flags = '';
@@ -378,6 +379,7 @@ fastp ${umi_flags} ${input_flags} \\
         jprefix => $options->{jprefix},
         jstring => $jstring,
         jwalltime => '8:00:00',
+        output => $output,
         stderr => $paths->{stderr},
         stdout => $paths->{stdout},
         prescript => $options->{prescript},

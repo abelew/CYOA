@@ -214,7 +214,7 @@ done
         jname => $jname,
         jprefix => $options->{jprefix},
         jstring => $jstring,
-        jwalltime => '3',
+        jwalltime => '03:00:00',
         prescript => $options->{prescript},
         postscript => $options->{postscript},
         output => qq"$options->{jprefix}fastqc.html",
