@@ -1112,6 +1112,10 @@ hisat2 -x $paths->{index_shell} ${hisat_args} \\
   --met-file ${metrics} \\
   2>${stderr} \\
   1>${stdout}
+## It seems like small files on NFS can cause a race condition leading to failure to properly
+## read the sam/un(aligned) outputs.
+sync
+sleep 3
 !;
     my $hisat_job = $class->Submit(
         comment => $comment,

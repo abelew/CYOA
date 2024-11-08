@@ -874,7 +874,7 @@ sub Process_RNAseq {
     $prefix = sprintf("%02d", ($prefix + 1));
     my $do_fastp = 1;
     my $fastp;
-    print "Just checking, what is fastp: $options->{fastp}\n";
+    print "\nJust checking, what is fastp: $options->{fastp}\n";
     if ($options->{fastp} eq 'check') {
         my $expected_dir = qq"outputs/${prefix}fastp";
         print "Checking for: ${expected_dir}\n";
@@ -887,7 +887,7 @@ sub Process_RNAseq {
     }
 
     if ($do_fastp) {
-        print "\n${prefix}: Starting fastp.\n";
+        print "${prefix}: Starting fastp.\n";
         $fastp = $class->Bio::Adventure::Trim::Fastp(
             input => $options->{input},
             jdepends => $last_job,
@@ -901,7 +901,7 @@ sub Process_RNAseq {
 
     $prefix = sprintf("%02d", ($prefix + 1));
     my $do_fastqc = 1;
-    print "Just checking, what is fastqc: $options->{fastqc}\n";
+    print "\nJust checking, what is fastqc: $options->{fastqc}\n";
     if ($options->{fastqc} eq 'check') {
         my $expected_dir = qq"outputs/${prefix}fastqc";
         print "Checking for: $expected_dir\n";
@@ -914,7 +914,7 @@ sub Process_RNAseq {
     }
 
     if ($do_fastqc) {
-        print "\n${prefix}: Starting fastqc.\n";
+        print "${prefix}: Starting fastqc.\n";
         my $fastqc = $class->Bio::Adventure::QA::Fastqc(
             input => $options->{input},
             jdepends => $last_job,
