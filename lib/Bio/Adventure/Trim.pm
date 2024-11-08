@@ -704,7 +704,7 @@ sub Trimomatic_Pairwise {
         $reader = qq"${r1_fd} ${r2_fd}";
     }
     my $r1o = qq"${output_dir}/${r1b}-trimmed.fastq";
-    my $r1op = qq"{output_dir}/${r1b}-trimmed_paired.fastq";
+    my $r1op = qq"${output_dir}/${r1b}-trimmed_paired.fastq";
     my $r1ou = qq"${output_dir}/${r1b}-trimmed_unpaired.fastq";
 
     my $r2o = qq"${output_dir}/${r2b}-trimmed.fastq";
