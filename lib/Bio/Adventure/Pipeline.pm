@@ -852,7 +852,7 @@ sub Process_RNAseq {
 
     my $map_input = $options->{input};
     my $map_prereq = $last_job;
-    my $trim;
+    my ($trim, $fastp);
     $prefix = sprintf("%02d", ($prefix + 1));
     if ($options->{trim}) {
         print "\n${prefix}: Starting trimmer.\n";
@@ -886,7 +886,7 @@ sub Process_RNAseq {
 
     if ($do_fastp) {
         print "\n${prefix}: Starting fastp.\n";
-        my $fastp = $class->Bio::Adventure::Trim::Fastp(
+        $fastp = $class->Bio::Adventure::Trim::Fastp(
             input => $options->{input},
             jdepends => $last_job,
             jnice => 100,
