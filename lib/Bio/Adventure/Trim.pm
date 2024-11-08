@@ -655,9 +655,9 @@ sub Trimomatic_Pairwise {
         length => 50,
         quality => '20',
         required => ['input',],);
-    my $output_dir = qq"outputs/$options->{jprefix}trimomatic";
     my $job_name = $class->Get_Job_Name();
     my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $output_dir = $paths->{output_dir};
     my $exe = undef;
     my $found_exe = 0;
     my %modules = Bio::Adventure::Get_Modules(caller => 1);
@@ -703,13 +703,13 @@ sub Trimomatic_Pairwise {
         my $r2_fd = $class->Get_FD(input => $r2);
         $reader = qq"${r1_fd} ${r2_fd}";
     }
-    my $r1o = qq"$paths->{output_dir}/${r1b}-trimmed.fastq";
-    my $r1op = qq"$paths->{output_dir}/${r1b}-trimmed_paired.fastq";
-    my $r1ou = qq"$paths->{output_dir}/${r1b}-trimmed_unpaired.fastq";
+    my $r1o = qq"${output_dir}/${r1b}-trimmed.fastq";
+    my $r1op = qq"{output_dir}/${r1b}-trimmed_paired.fastq";
+    my $r1ou = qq"${output_dir}/${r1b}-trimmed_unpaired.fastq";
 
-    my $r2o = qq"$paths->{output_dir}/${r2b}-trimmed.fastq";
-    my $r2op = qq"$paths->{output_dir}/${r2b}-trimmed_paired.fastq";
-    my $r2ou = qq"$paths->{output_dir}/${r2b}-trimmed_unpaired.fastq";
+    my $r2o = qq"${output_dir}/${r2b}-trimmed.fastq";
+    my $r2op = qq"${output_dir}/${r2b}-trimmed_paired.fastq";
+    my $r2ou = qq"${output_dir}/${r2b}-trimmed_unpaired.fastq";
 
     my $leader_trim = '';
     #if ($options->{task} eq 'dnaseq') {
