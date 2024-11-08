@@ -963,7 +963,7 @@ sub Process_RNAseq {
             jprefix => $prefix,
             jdepends => $map_prereq,
             stranded => $options->{stranded});
-        $hisat_compress_input .= qq"$first_map->{unaligned}:$first_map->{aligned}";
+        $hisat_compress_input .= qq"$first_map->{unaligned}:$first_map->{aligned}:";
         $last_job = $first_map->{job_id};
         $jobid = qq"${prefix}hisat";
         $ret->{$jobid} = $first_map;
@@ -1035,7 +1035,7 @@ sub Process_RNAseq {
                     gff_type => $nth_type,
                     gff_tag => $nth_id,
                     jprefix => $prefix,);
-                $hisat_compress_input .= qq"$nth_map->{unaligned}:$nth_map->{aligned}";
+                $hisat_compress_input .= qq"$first_map->{unaligned}:$first_map->{aligned}:";
                 sleep($options->{jsleep});
                 $jobid = qq"${prefix}hostfilt";
                 $ret->{$jobid} = $nth_map;
@@ -1053,7 +1053,7 @@ sub Process_RNAseq {
                         gff_type => $nth_type,
                         gff_tag => $nth_id,
                         jprefix => $prefix,);
-                    $hisat_compress_input .= qq"$nth_map->{unaligned}:$nth_map->{aligned}";
+                    $hisat_compress_input .= qq"$nth_map->{unaligned}:$nth_map->{aligned}:";
                     $jobid = qq"${prefix}hisat";
                     $ret->{$jobid} = $nth_map;
                     $last_sam_job = $nth_map->{samtools}->{job_id};
