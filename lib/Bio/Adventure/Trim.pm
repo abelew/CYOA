@@ -334,6 +334,7 @@ sub Fastp {
     my $input_flags = '';
     my $num_inputs = scalar(@{$inputs});
     my $output = '';
+    my $compress_string = '';
     if ($num_inputs == 2) {
         my $r1 = $inputs->[0]->{fullpath};
         my $r2 = $inputs->[1]->{fullpath};
@@ -342,6 +343,13 @@ sub Fastp {
         my $output_r1 = qq"${output_dir}/${r1_base}-fastp.fastq";
         my $output_r2 = qq"${output_dir}/${r2_base}-fastp.fastq";
         $output = qq"${output_r1}:${output_r2}";
+        if ($options->{compress}) {
+            $output = qq"${output_r1}.xz:${output_r2}.xz";
+            $compress_string = qq"
+xz -9e -f ${output_r1}
+xz -9e -f ${output_r2}
+";
+        }
         $input_flags = qq" -i ${r1} \\
   -o ${output_r1} \\
   -I ${r2} \\
@@ -351,6 +359,12 @@ sub Fastp {
         my $r1_base = $inputs->[0]->{filebase_extension};
         my $output_r1 = qq"${output_dir}/${r1_base}-fastp.fastq";
         $output = $output_r1;
+        if ($options->{compress}) {
+            $output = qq"${output_r1}.xz";
+            $compress_string = qq"
+xz -9e -f ${output_r1}
+";
+        }
         $input_flags = qq" -i ${r1} \\
   -o ${output_r1} ";
     } else {
@@ -369,6 +383,7 @@ fastp ${umi_flags} ${input_flags} \\
   ${report_flags} ${extra_args} \\
   2>$paths->{stderr} \\
   1>$paths->{stdout}
+${compress_string}
 !;
 
     my $fastp = $class->Submit(

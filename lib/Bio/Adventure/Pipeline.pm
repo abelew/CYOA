@@ -1095,7 +1095,10 @@ sub Process_RNAseq {
     unless ($options->{compress}) {
         my $compress_files = qq"${map_input}:";
         if (defined($trim)) {
-            $compress_files .= $trim->{output_unpaired};
+            $compress_files .= qq"$trim->{output_unpaired}:";
+        }
+        if ($do_fastp) {
+            $compress_files .= qq"$fastp->{output}:";
         }
         my @compress_arr = split(/:/, $compress_files);
         my $num_files = scalar(@compress_arr);
