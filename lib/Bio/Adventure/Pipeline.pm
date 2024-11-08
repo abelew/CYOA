@@ -822,6 +822,7 @@ sub Process_RNAseq {
         args => \%args,
         required => ['input', 'species'],
         compress => 0,
+        fastp => 0,
         filter => 0,
         freebayes => 0,
         input_paired => undef,
@@ -852,7 +853,7 @@ sub Process_RNAseq {
 
     my $map_input = $options->{input};
     my $map_prereq = $last_job;
-    my ($trim, $fastp);
+    my $trim;
     $prefix = sprintf("%02d", ($prefix + 1));
     if ($options->{trim}) {
         print "\n${prefix}: Starting trimmer.\n";
@@ -872,6 +873,7 @@ sub Process_RNAseq {
 
     $prefix = sprintf("%02d", ($prefix + 1));
     my $do_fastp = 1;
+    my $fastp;
     print "Just checking, what is fastp: $options->{fastp}\n";
     if ($options->{fastp} eq 'check') {
         my $expected_dir = qq"outputs/${prefix}fastp";
