@@ -323,6 +323,7 @@ sub Fastp {
 
     my $extra_args = $class->Passthrough_Args(arbitrary => $options->{arbitrary});
     my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $output_dir = $paths->{output_dir};
     $extra_args .= ' -D ' if ($options->{deduplicate});
     $extra_args .= ' -c ' if ($options->{correction});
     $extra_args .= ' -y ' if ($options->{complexity});
@@ -334,21 +335,22 @@ sub Fastp {
     my $num_inputs = scalar(@{$inputs});
     if ($num_inputs == 2) {
         my $r1 = $inputs->[0]->{fullpath};
-        my $r1 = $inputs->[1]->{fullpath};
+        my $r2 = $inputs->[1]->{fullpath};
         my $r1_base = $inputs->[0]->{filebase_extension};
         my $r2_base = $inputs->[1]->{filebase_extension};
-        my $output_dir = $inputs->[0]->{directory};
         my $output_r1 = qq"${output_dir}/${r1_base}-fastp.fastq";
         my $output_r2 = qq"${output_dir}/${r2_base}-fastp.fastq";
-        $input_flags = qq" -i ${r1} -o ${output_r1} \\
-  -I ${r2} -O ${output_r2} ";
+        $input_flags = qq" -i ${r1} \\
+  -o ${output_r1} \\
+  -I ${r2} \\
+  -O ${output_r2} ";
     }
     elsif ($num_inputs == 1) {
         my $r1 = $inputs->[0]->{filename};
         my $r1_base = $inputs->[0]->{filebase_extension};
-        my $output_dir = $inputs->[0]->{directory};
         my $output_r1 = qq"${output_dir}/${r1_base}-fastp.fastq";
-        $input_flags = qq" -i ${r1} -o ${output_r1} ";
+        $input_flags = qq" -i ${r1} \\
+  -o ${output_r1} ";
     }
     else {
         die("An unusual number of inputs was provided: ${num_inputs}.");
@@ -357,7 +359,8 @@ sub Fastp {
     if ($options->{umi}) {
         $umi_flags = ' -U ';
     }
-    my $report_flags = qq"-h ${out_dir}/fastp_report.html -j ${out_dir}/fastp_report.json";
+    my $report_flags = qq"-h ${out_dir}/fastp_report.html \\
+  -j ${out_dir}/fastp_report.json";
 
     my $jstring = qq!
 mkdir -p ${out_dir}
@@ -654,6 +657,7 @@ sub Trimomatic_Pairwise {
         required => ['input',],);
     my $output_dir = qq"outputs/$options->{jprefix}trimomatic";
     my $job_name = $class->Get_Job_Name();
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $exe = undef;
     my $found_exe = 0;
     my %modules = Bio::Adventure::Get_Modules(caller => 1);
@@ -699,13 +703,13 @@ sub Trimomatic_Pairwise {
         my $r2_fd = $class->Get_FD(input => $r2);
         $reader = qq"${r1_fd} ${r2_fd}";
     }
-    my $r1o = qq"${r1b}-trimmed.fastq";
-    my $r1op = qq"${r1b}-trimmed_paired.fastq";
-    my $r1ou = qq"${r1b}-trimmed_unpaired.fastq";
+    my $r1o = qq"$paths->{output_dir}/${r1b}-trimmed.fastq";
+    my $r1op = qq"$paths->{output_dir}/${r1b}-trimmed_paired.fastq";
+    my $r1ou = qq"$paths->{output_dir}/${r1b}-trimmed_unpaired.fastq";
 
-    my $r2o = qq"${r2b}-trimmed.fastq";
-    my $r2op = qq"${r2b}-trimmed_paired.fastq";
-    my $r2ou = qq"${r2b}-trimmed_unpaired.fastq";
+    my $r2o = qq"$paths->{output_dir}/${r2b}-trimmed.fastq";
+    my $r2op = qq"$paths->{output_dir}/${r2b}-trimmed_paired.fastq";
+    my $r2ou = qq"$paths->{output_dir}/${r2b}-trimmed_unpaired.fastq";
 
     my $leader_trim = '';
     #if ($options->{task} eq 'dnaseq') {

@@ -57,11 +57,12 @@ sub Compress {
         $output_string .= qq"${output_file}:";
         $jstring .= qq!
 ## Compressing ${in_full}
-echo "Compressing ${in_full}" 1>${stdout}
+echo "Compressing ${in_full}" 1>>${stdout}
 if [ -f "${in_full}" ]; then
-  xz -9e -f ${in_full}
+  /usr/bin/du -h ${in_full} 1>>${stdout} 2>>${stderr}
+  /usr/bin/time -a -o ${stdout} xz -9e -f ${in_full} 1>>${stdout} 2>>${stderr}
   if [ "\$?" -ne "0" ]; then
-    echo "The compression of ${in_full} failed." 1>${stderr}
+    echo "The compression of ${in_full} failed." 1>>${stderr}
   fi
 else
   echo "The input: ${in_full} does not exist." 1>>${stderr}

@@ -947,6 +947,7 @@ sub Process_RNAseq {
     my $last_sam_job;
     my $nth_map;
     my $nth_species;
+    my $hisat_compress_input = '';
     $prefix = sprintf("%02d", ($prefix + 1));
     if ($options->{mapper} eq 'hisat2') {
         print "\n${prefix}: Starting hisat2 with $map_input.\n";
@@ -960,6 +961,7 @@ sub Process_RNAseq {
             jprefix => $prefix,
             jdepends => $map_prereq,
             stranded => $options->{stranded});
+        $hisat_compress_input .= qq"$first_map->{unaligned}:$first_map->{aligned}";
         $last_job = $first_map->{job_id};
         $jobid = qq"${prefix}hisat";
         $ret->{$jobid} = $first_map;
@@ -1031,6 +1033,7 @@ sub Process_RNAseq {
                     gff_type => $nth_type,
                     gff_tag => $nth_id,
                     jprefix => $prefix,);
+                $hisat_compress_input .= qq"$nth_map->{unaligned}:$nth_map->{aligned}";
                 sleep($options->{jsleep});
                 $jobid = qq"${prefix}hostfilt";
                 $ret->{$jobid} = $nth_map;
@@ -1048,6 +1051,7 @@ sub Process_RNAseq {
                         gff_type => $nth_type,
                         gff_tag => $nth_id,
                         jprefix => $prefix,);
+                    $hisat_compress_input .= qq"$nth_map->{unaligned}:$nth_map->{aligned}";
                     $jobid = qq"${prefix}hisat";
                     $ret->{$jobid} = $nth_map;
                     $last_sam_job = $nth_map->{samtools}->{job_id};
@@ -1109,7 +1113,7 @@ sub Process_RNAseq {
         sleep($options->{jsleep});
         if ($options->{mapper} eq 'hisat2') {
             my $compress_first_map = $class->Bio::Adventure::Compress::Compress(
-                input => qq"$first_map->{unaligned}:$first_map->{aligned}",
+                input => $hisat_compress_input,
                 jdepends => $last_job,
                 jname => 'comp_hisat',
                 jprefix => $prefix,

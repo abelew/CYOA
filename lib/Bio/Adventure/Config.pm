@@ -976,6 +976,11 @@ sub Get_Paths {
     elsif ($subroutine eq 'Transit_TPP') {
         $paths->{output_dir} = qq"${output_prefix}transit_$options->{species}";
     }
+    elsif ($subroutine eq 'Trimomatic_Pairwise' ||
+           $subroutine eq 'Trimomatic_Single' ||
+           $subroutine eq 'Trimomatic') {
+        $paths->{output_dir} = qq"${output_prefix}trimomatic";
+    }
     elsif ($subroutine eq 'Umi_Tools_Extract') {
         $paths->{output_dir} = qq"${output_prefix}umi_tools";
     }
