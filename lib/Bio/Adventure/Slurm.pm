@@ -1142,7 +1142,7 @@ sub Get_Spec {
         $wanted->{walltime} = $walltime_string;
         $wanted->{walltime_hours} = Convert_to_Hours($walltime_string);
     } else {
-        $wanted->{walltime} = Convert_to_Walltime($walltime_hours);
+        $wanted->{walltime} = Convert_to_Walltime($walltime_string);
         $wanted->{walltime_hours} = $walltime_string;
     }
 
