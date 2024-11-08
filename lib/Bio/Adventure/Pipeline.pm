@@ -968,8 +968,8 @@ sub Process_RNAseq {
         sleep($options->{jsleep});
         $last_sam_job = $first_map->{samtools}->{job_id};
 
+        $prefix = sprintf("%02d", ($prefix + 1));
         if ($options->{freebayes}) {
-            $prefix = sprintf("%02d", ($prefix + 1));
             print "\n${prefix}: Performing freebayes search against ${first_species}.\n";
             my $first_snp = $class->Bio::Adventure::SNP::Freebayes_SNP_Search(
                 jdepends => $last_sam_job,
@@ -1056,8 +1056,8 @@ sub Process_RNAseq {
                     $ret->{$jobid} = $nth_map;
                     $last_sam_job = $nth_map->{samtools}->{job_id};
                     sleep($options->{jsleep});
+                    $prefix = sprintf("%02d", ($prefix + 1));
                     if ($options->{freebayes}) {
-                        $prefix = sprintf("%02d", ($prefix + 1));
                         print "\n${prefix}: Performing freebayes search against ${nth_species}.\n";
                         my $nth_snp = $class->Bio::Adventure::SNP::Freebayes_SNP_Search(
                             jdepends => $last_sam_job,
@@ -1091,8 +1091,8 @@ sub Process_RNAseq {
         } ## End iterating over extra species
     } ## End checking for extra species
 
+    $prefix = sprintf("%02d", ($prefix + 1));
     unless ($options->{compress}) {
-        $prefix = sprintf("%02d", ($prefix + 1));
         my $compress_files = qq"${map_input}:";
         if (defined($trim)) {
             $compress_files .= $trim->{output_unpaired};
