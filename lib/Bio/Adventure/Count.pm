@@ -653,6 +653,8 @@ sub HTSeq {
     ## This is imperfect to say the nicest thing possible, I need to consider more appropriate ways of handling this.
     my $gff_type_arg = '';
     my $gff_tag_arg = '';
+    my $stdout = '';
+    my $stderr = '';
     my $annotation = $paths->{gtf};
     if (!-r "${gtf}") {
         $annotation = $gff;
@@ -695,7 +697,7 @@ sort=${sort}
     }
     my $error = basename($output, ('.csv'));
     $stderr = qq"${output_dir}/${error}.stderr";
-    my $stdout = qq"${output_dir}/${error}.stdout";
+    $stdout = qq"${output_dir}/${error}.stdout";
 
     my $htseq_jobname = qq"hts_${top_dir}_$options->{mapper}_$options->{species}_s${stranded}_${gff_type}_${gff_tag}";
     my $htseq_invocation = qq!${variable_string}
