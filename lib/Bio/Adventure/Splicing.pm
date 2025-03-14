@@ -798,8 +798,8 @@ in the file(s): $options->{input}.\n";
         $rev_sl_string .= "${rv} ";
     }
 
-    my $fwd_polya_string = qq"AAAAAAAAAAAA";
-    my $rev_polya_string = qq"TTTTTTTTTTTT";
+    my $fwd_polya_string = qq"AAAAAAAAAAAAAAAAA";
+    my $rev_polya_string = qq"TTTTTTTTTTTTTTTTT";
     my $polya_fivep_stderr = qq"$paths->{output_dir}/slsearch_polya_fivep_cutadapt.stderr";
     my $polya_fivep_stdout = qq"$paths->{output_dir}/slsearch_polya_fivep_cutadapt.stdout";
     my $polya_threep_stderr = qq"$paths->{output_dir}/slsearch_polya_threep_cutadapt.stderr";
@@ -827,19 +827,19 @@ cutadapt -G ${fwd_sl_string} -e $options->{error_rate} -O ${min_overlap} --trimm
    --interleaved ${input_string} \\
    2>>${sl_fivep_stderr} 1>>${sl_fivep_stdout}
 
-cutadapt -a ${fwd_polya_string} -e $options->{error_rate} -O ${min_overlap} --trimmed-only \\
+cutadapt -a ${fwd_polya_string} --no-indels -O ${min_overlap} --trimmed-only \\
    -o $paths->{output_dir}/fwdpolya_fwdorient_threepr1_r1.fastq.gz -p $paths->{output_dir}/fwdpolya_fwdorient_threepr1_r2.fastq.gz \\
    --interleaved ${input_string} \\
    2>${polya_threep_stderr} 1>${polya_threep_stdout}
-cutadapt -g ${fwd_polya_string} -e $options->{error_rate} -O ${min_overlap} --trimmed-only \\
+cutadapt -g ${fwd_polya_string} --no-indels -O ${min_overlap} --trimmed-only \\
    -o $paths->{output_dir}/fwdpolya_revorient_fivepr1_r1.fastq.gz -p $paths->{output_dir}/fwdpolya_revorient_fivepr1_r2.fastq.gz \\
    --interleaved ${input_string} \\
    2>${polya_fivep_stderr} 1>${polya_fivep_stdout}
-cutadapt -A ${fwd_polya_string} -e $options->{error_rate} -O ${min_overlap} --trimmed-only \\
+cutadapt -A ${fwd_polya_string} --no-indels -O ${min_overlap} --trimmed-only \\
    -o $paths->{output_dir}/fwdpolya_fwdorient_threepr2_r1.fastq.gz -p $paths->{output_dir}/fwdpolya_fwdorient_threepr2_r2.fastq.gz \\
    --interleaved ${input_string} \\
    2>>${polya_threep_stderr} 1>>${polya_threep_stdout}
-cutadapt -G ${fwd_polya_string} -e $options->{error_rate} -O ${min_overlap} --trimmed-only \\
+cutadapt -G ${fwd_polya_string} --no-indels -O ${min_overlap} --trimmed-only \\
    -o $paths->{output_dir}/fwdpolya_revorient_fivepr2_r1.fastq.gz -p $paths->{output_dir}/fwdpolya_revorient_fivepr2_r2.fastq.gz \\
    --interleaved ${input_string} \\
    2>>${polya_fivep_stderr} 1>>${polya_fivep_stdout}
@@ -863,19 +863,19 @@ cutadapt -G ${rev_sl_string} -e $options->{error_rate} -O ${min_overlap} --trimm
    --interleaved ${input_string} \\
    2>>${sl_fivep_stderr} 1>>${sl_fivep_stdout}
 
-cutadapt -a ${rev_polya_string} -e $options->{error_rate} -O ${min_overlap} --trimmed-only \\
+cutadapt -a ${rev_polya_string} --no-indels -O ${min_overlap} --trimmed-only \\
    -o $paths->{output_dir}/revpolya_fwdorient_threepr1_r1.fastq.gz -p $paths->{output_dir}/revpolya_fwdorient_threepr1_r2.fastq.gz \\
    --interleaved ${input_string} \\
    2>>${polya_threep_stderr} 1>>${polya_threep_stdout}
-cutadapt -g ${rev_polya_string} -e $options->{error_rate} -O ${min_overlap} --trimmed-only \\
+cutadapt -g ${rev_polya_string} --no-indels -O ${min_overlap} --trimmed-only \\
    -o $paths->{output_dir}/revpolya_revorient_fivepr1_r1.fastq.gz -p $paths->{output_dir}/revpolya_revorient_fivepr1_r2.fastq.gz \\
    --interleaved ${input_string} \\
    2>>${polya_fivep_stderr} 1>>${polya_fivep_stdout}
-cutadapt -A ${rev_polya_string} -e $options->{error_rate} -O ${min_overlap} --trimmed-only \\
+cutadapt -A ${rev_polya_string} --no-indels -O ${min_overlap} --trimmed-only \\
    -o $paths->{output_dir}/revpolya_fwdorient_threepr2_r1.fastq.gz -p $paths->{output_dir}/revpolya_fwdorient_threepr2_r2.fastq.gz \\
    --interleaved ${input_string} \\
    2>>${polya_threep_stderr} 1>>${polya_threep_stdout}
-cutadapt -G ${rev_polya_string} -e $options->{error_rate} -O ${min_overlap} --trimmed-only \\
+cutadapt -G ${rev_polya_string} --no-indels -O ${min_overlap} --trimmed-only \\
    -o $paths->{output_dir}/revpolya_revorient_fivepr2_r1.fastq.gz -p $paths->{output_dir}/revpolya_revorient_fivepr2_r2.fastq.gz \\
    --interleaved ${input_string} \\
    2>>${polya_fivep_stderr} 1>>${polya_fivep_stdout}
@@ -891,11 +891,11 @@ cutadapt -B ${fwd_sl_string} -e $options->{error_rate} -O ${min_overlap} --trimm
    ${input_string} \\
    2>>${sl_threep_stderr} 1>>${sl_threep_stdout}
 
-cutadapt -b ${fwd_polya_string} -e $options->{error_rate} -O ${min_overlap} --trimmed-only \\
+cutadapt -b ${fwd_polya_string} --no-indels -O ${min_overlap} --trimmed-only \\
    -o $paths->{output_dir}/fwdpolya_fwdorient_r1.fastq.gz \\
    ${input_string} \\
    2>>${polya_fivep_stderr} 1>>${polya_fivep_stdout}
-cutadapt -B ${fwd_polya_string} -e $options->{error_rate} -O ${min_overlap} --trimmed-only \\
+cutadapt -B ${fwd_polya_string} --no-indels -O ${min_overlap} --trimmed-only \\
    -o $paths->{output_dir}/fwdpolya_revorient_r1.fastq.gz \\
    ${input_string} \\
    2>>${polya_threep_stderr} 1>>${polya_threep_stdout}
@@ -910,11 +910,11 @@ cutadapt -B ${rev_sl_string} -e $options->{error_rate} -O ${min_overlap} --trimm
    ${input_string} \\
    2>>${sl_threep_stderr} 1>>${sl_threep_stdout}
 
-cutadapt -b ${rev_polya_string} -e $options->{error_rate} -O ${min_overlap} --trimmed-only \\
+cutadapt -b ${rev_polya_string} --no-indels -O ${min_overlap} --trimmed-only \\
    -o $paths->{output_dir}/revpolya_fwdorient_r1.fastq.gz \\
    ${input_string} \\
    2>>${polya_fivep_stderr} 1>>${polya_fivep_stdout}
-cutadapt -B ${rev_polya_string} -b ${rev_polya_string} -e $options->{error_rate} -O ${min_overlap} --trimmed-only \\
+cutadapt -B ${rev_polya_string} -b ${rev_polya_string} --no-indels -O ${min_overlap} --trimmed-only \\
    -o $paths->{output_dir}/revpolya_revorient_r1.fastq.gz \\
    ${input_string} \\
    2>>${polya_threep_stderr} 1>>${polya_threep_stdout}
