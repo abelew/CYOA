@@ -721,7 +721,7 @@ sub SLSearch {
         species => 'lmajor',
         jmem => 24,
         jprefix => '50',
-        seed => 15,);
+        seed => 25,);
 
     my $paths = $class->Bio::Adventure::Config::Get_Paths();
 
