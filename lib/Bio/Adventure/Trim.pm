@@ -751,8 +751,8 @@ xz -9e -f ${r2ou}
 ## Recompress the paired reads.
 xz -9e -f ${r1o}
 xz -9e -f ${r2o}
-ln -sf ${r1o}.xz r1_trimmed.fastq.xz
-ln -sf ${r2o}.xz r2_trimmed.fastq.xz
+ln=\$(cd ${output_dir} && ln -sf ${r1b}-trimmed.fastq.xz r1_trimmed.fastq.xz)
+ln=\$(cd ${output_dir} && ln -sf ${r2b}-trimmed.fastq.xz r2_trimmed.fastq.xz)
 ";
     }
 
@@ -852,6 +852,8 @@ sub Trimomatic_Single {
     my $exe = undef;
     my $found_exe = 0;
     my %modules = Bio::Adventure::Get_Modules(caller => 1);
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $output_dir = $paths->{output_dir};
     my $loaded = $class->Module_Loader(%modules);
     my %exe_list = (trimomatic => 'trimomatic SE',
                     TrimmomaticSE => 'TrimmomaticSE',
@@ -862,7 +864,6 @@ sub Trimomatic_Single {
             $exe = $exe_list{$test_exe};
         }
     }
-    my $output_dir = qq"outputs/$options->{jprefix}trimomatic";
     if (!defined($exe)) {
         die('Unable to find the trimomatic executable.');
     }
@@ -877,7 +878,7 @@ sub Trimomatic_Single {
     $basename = basename($basename, ('.gz', '.xz', '.bz2'));
     $basename = basename($basename, ('.fastq'));
     my $job_name = $class->Get_Job_Name();
-    my $output = qq"${basename}-trimmed.fastq";
+    my $output = qq"${output_dir}/${basename}-trimmed.fastq";
     my $comment = qq!## This call to trimomatic removes illumina and epicentre adapters from ${input}.
 ## It also performs a sliding window removal of anything with quality <25;
 ## cutadapt provides an alternative to this tool.
@@ -900,7 +901,7 @@ ${exe} \\
         $compress_string = qq"
 ## Compress the trimmed reads.
 xz -9e -f ${output}
-ln -sf ${output}.xz r1_trimmed.fastq.xz
+ln=\$(cd ${output_dir} &&ln -sf ${basename}-trimmed.fastq.xz r1_trimmed.fastq.xz)
 ";
     }
     $jstring .= $compress_string;
@@ -915,10 +916,11 @@ ln -sf ${output}.xz r1_trimmed.fastq.xz
         jwalltime => $options->{jwalltime},
         length => $options->{length},
         output => $output,
-        stderr => $stderr,
-        stdout => $stdout,
+        output_unpaired => '',
         prescript => $options->{prescript},
-        postscript => $options->{postscript},);
+        postscript => $options->{postscript},
+        stderr => $stderr,
+        stdout => $stdout,);
     my $trim_stats = $class->Bio::Adventure::Metadata::Trimomatic_Stats(
         basename => $basename,
         input => $stderr,

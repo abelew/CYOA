@@ -7,6 +7,7 @@ use Moo;
 extends 'Bio::Adventure';
 use Bio::Adventure::Config;
 use Bio::DB::Sam;
+use Bio::FeatureIO;
 use Bio::Tools::GFF;
 use Cwd;
 use File::Basename;
@@ -14,6 +15,9 @@ use File::Path qw"make_path";
 use File::Which qw"which";
 use List::Util qw"sum";
 use String::Approx qw"amatch";
+use Tree::DAG_Node;
+
+my @ISA=qw"Tree::DAG_Node";
 
 =head1 NAME
 
@@ -173,109 +177,111 @@ sub Guess_Strand_Worker {
     };
     print "Going to stop after $options->{maximum} reads\n";
   BAMLOOP: while (my $align = $bam->read1) {
-      $read_num++;
-      $counters->{counted}++;
-      if ($read_num >= $options->{maximum}) {
-          last BAMLOOP;
-      }
-      ##if ($class->{debug}) {  ## Stop after a relatively small number of reads when debugging.
-      ##    last BAMLOOP if ($align_count > 200);
-      ##}
-      my $seqid = $target_names->[$align->tid];
-      ## my $start = $align->pos + 1;
-      ## my $end = $align->calend;
-      my $start = $align->pos;
-      my $end = $align->calend - 1;
-      my $strand = $align->strand;
-      my $seq = $align->query->dna;
-      my $qual = $align->qual;
-      my $pairedp = $align->paired;
-      my $unmappedp = $align->unmapped;
-      my $mate_unmappedp = $align->munmapped;
-      my $reversedp = $align->reversed;
-      my $mate_reversedp = $align->mreversed;
-      my $mate_id = $align->mtid;
-      my $mate_start = $align->mpos;
-      my $properp = $align->proper_pair;
-      if ($unmappedp && $mate_unmappedp) {
-          next BAMLOOP;
-      }
+        $read_num++;
+        $counters->{counted}++;
+        if ($read_num >= $options->{maximum}) {
+            last BAMLOOP;
+        }
+        ##if ($class->{debug}) {  ## Stop after a relatively small number of reads when debugging.
+        ##    last BAMLOOP if ($align_count > 200);
+        ##}
+        my $seqid = $target_names->[$align->tid];
+        ## my $start = $align->pos + 1;
+        ## my $end = $align->calend;
+        my $start = $align->pos;
+        my $end = $align->calend - 1;
+        my $strand = $align->strand;
+        my $seq = $align->query->dna;
+        my $qual = $align->qual;
+        my $pairedp = $align->paired;
+        my $unmappedp = $align->unmapped;
+        my $mate_unmappedp = $align->munmapped;
+        my $reversedp = $align->reversed;
+        my $mate_reversedp = $align->mreversed;
+        my $mate_id = $align->mtid;
+        my $mate_start = $align->mpos;
+        my $properp = $align->proper_pair;
+        if ($unmappedp && $mate_unmappedp) {
+            next BAMLOOP;
+        }
 
-      my @seq_array = split(//, $seq);
-      my @tags = $align->get_all_tags;
-      ## A reminder when playing with tag values and get_all_tags()
-      ## These are coming from the 2nd sam column and are the result of a decimal->binary conversion:
-      ## E.g. a paired, proper, first of pair, reverse in binary is: 1100101 -> 1+2+16+64 -> 83
-      ## 0x1(1) or first binary character: paired or unpaired
-      ## 0x2(2) or second binary character: proper or not proper pair
-      ## 0x4(4): this read is unmapped
-      ## 0x8(8): the mate read is unmapped
-      ## 0x10(16): this read is reverse
-      ## 0x20(32): the mate is reverse
-      ## 0x40(64): this is the first of a pair
-      ## 0x80(128): this is the second of a pair
-      ## 0x100(256): this is not the primary read
-      ## 0x200(512): this failed the sequencer checks
-      ## 0x400(1024): this is an optical duplicate
-      ## 0x800(2048): this is a supplemental alignment.
-      ## These flags get the following constant names for get_tag_values():
-      ## 0x0001 => 'PAIRED', 0x0002 => 'MAP_PAIR', 0x0004 => 'UNMAPPED', 0x0008 => 'M_UNMAPPED',
-      ## 0x0010 => 'REVERSED', 0x0020 => 'M_REVERSED', 0x0040 => 'FIRST_MATE',
-      ## 0x0080 => 'SECOND_MATE', 0x0100 => 'NOT_PRIMARY', 0x0200 => 'QC_FAILED',
-      ## 0x0400 => 'DUPLICATE', 0x0800 => 'SUPPLEMENTARY',
-      $counters->{paired}++ if ($align->get_tag_values('PAIRED'));
-      $counters->{proper_pair}++ if ($align->get_tag_values('MAP_PAIR'));
-      $counters->{this_unmapped}++ if ($align->get_tag_values('UNMAPPED'));
-      $counters->{mate_unmapped}++ if ($align->get_tag_values('M_UNMAPPED'));
-      $counters->{this_reversed}++ if ($align->get_tag_values('REVERSED'));
-      $counters->{mate_reversed}++ if ($align->get_tag_values('M_REVERSED'));
-      $counters->{first_pair}++ if ($align->get_tag_values('FIRST_MATE'));
-      $counters->{second_pair}++ if ($align->get_tag_values('SECOND_MATE'));
-      $counters->{not_primary}++ if ($align->get_tag_values('NOT_PRIMARY'));
-      $counters->{failed_sequencer}++ if ($align->get_tag_values('QC_FAILED'));
-      $counters->{optical_duplicate}++ if ($align->get_tag_values('DUPLICATE'));
-      $counters->{supplemental_align}++ if ($align->get_tag_values('SUPPLEMENTARY'));
-      $counters->{total_aligned_bases} += $align->query->length;
-      if ($align->strand > 0) {
-          $counters->{plus_stranded}++;
-      } else {
-          $counters->{minus_stranded}++;
-      }
-      my $score_ref = $align->qscore;
-      my @scores = @{$score_ref};
-      if (scalar(@scores) > 0) {
-          sub this_mean {
-              return(sum (@_)/@_);
-          }
-          $counters->{mean_scores} += this_mean(@scores);
-          $counters->{mean_scored} += scalar(@scores);
-      } else {
-          print "No score ref\n";
-      }
+        my @seq_array = split(//, $seq);
+        my @tags = $align->get_all_tags;
+        ## A reminder when playing with tag values and get_all_tags()
+        ## These are coming from the 2nd sam column and are the result of a decimal->binary conversion:
+        ## E.g. a paired, proper, first of pair, reverse in binary is: 1100101 -> 1+2+16+64 -> 83
+        ## 0x1(1) or first binary character: paired or unpaired
+        ## 0x2(2) or second binary character: proper or not proper pair
+        ## 0x4(4): this read is unmapped
+        ## 0x8(8): the mate read is unmapped
+        ## 0x10(16): this read is reverse
+        ## 0x20(32): the mate is reverse
+        ## 0x40(64): this is the first of a pair
+        ## 0x80(128): this is the second of a pair
+        ## 0x100(256): this is not the primary read
+        ## 0x200(512): this failed the sequencer checks
+        ## 0x400(1024): this is an optical duplicate
+        ## 0x800(2048): this is a supplemental alignment.
+        ## These flags get the following constant names for get_tag_values():
+        ## 0x0001 => 'PAIRED', 0x0002 => 'MAP_PAIR', 0x0004 => 'UNMAPPED', 0x0008 => 'M_UNMAPPED',
+        ## 0x0010 => 'REVERSED', 0x0020 => 'M_REVERSED', 0x0040 => 'FIRST_MATE',
+        ## 0x0080 => 'SECOND_MATE', 0x0100 => 'NOT_PRIMARY', 0x0200 => 'QC_FAILED',
+        ## 0x0400 => 'DUPLICATE', 0x0800 => 'SUPPLEMENTARY',
+        $counters->{paired}++ if ($align->get_tag_values('PAIRED'));
+        $counters->{proper_pair}++ if ($align->get_tag_values('MAP_PAIR'));
+        $counters->{this_unmapped}++ if ($align->get_tag_values('UNMAPPED'));
+        $counters->{mate_unmapped}++ if ($align->get_tag_values('M_UNMAPPED'));
+        $counters->{this_reversed}++ if ($align->get_tag_values('REVERSED'));
+        $counters->{mate_reversed}++ if ($align->get_tag_values('M_REVERSED'));
+        $counters->{first_pair}++ if ($align->get_tag_values('FIRST_MATE'));
+        $counters->{second_pair}++ if ($align->get_tag_values('SECOND_MATE'));
+        $counters->{not_primary}++ if ($align->get_tag_values('NOT_PRIMARY'));
+        $counters->{failed_sequencer}++ if ($align->get_tag_values('QC_FAILED'));
+        $counters->{optical_duplicate}++ if ($align->get_tag_values('DUPLICATE'));
+        $counters->{supplemental_align}++ if ($align->get_tag_values('SUPPLEMENTARY'));
+        $counters->{total_aligned_bases} += $align->query->length;
+        if ($align->strand > 0) {
+            $counters->{plus_stranded}++;
+        }
+        else {
+            $counters->{minus_stranded}++;
+        }
+        my $score_ref = $align->qscore;
+        my @scores = @{$score_ref};
+        if (scalar(@scores) > 0) {
+            sub this_mean {
+                return(sum (@_)/@_);
+            }
+            $counters->{mean_scores} += this_mean(@scores);
+            $counters->{mean_scored} += scalar(@scores);
+        }
+            else {
+                print "No score ref\n";
+            }
 
-      my $cigar = $align->cigar_str;
-      if ($cigar eq '') {
-          ## print "This did not align.\n";
-          next BAMLOOP;
-      }
-      $align_count++;
-      ## Look for a feature at this position...
-      #my %chr_features = %{$features->{$seqid}};
-      #for my $feat_id (keys %chr_features) {
-      #    my %feat = %{$chr_features{$feat_id}};
-      #
-      #    ##  ------------------->>>>>-------<<<<<--------------------------
-      #    ##                  >>>>>
-      #    if ($start <= $feat{start} && $end >= $feat{start} && $end < $feat{end}) {
-      #        use Data::Dumper;
-      #        #print Dumper %feat;
-      #    }
-      #}
-  } ## End reading each bam entry
-    $counters->{grand_mean_score} = $counters->{mean_scores} / $counters->{mean_scored};
-    # $counters->{mean_mismatches} = $counters->{num_mismatches} / $counters->{total_bases};
-    # $counters->{proportion_unmapped} = (($counters->{this_unmapped} + $counters->{mate_unmapped}) / 2) / $counters->{couted};
-    print $log "
+            my $cigar = $align->cigar_str;
+            if ($cigar eq '') {
+                ## print "This did not align.\n";
+                next BAMLOOP;
+            }
+            $align_count++;
+            ## Look for a feature at this position...
+            #my %chr_features = %{$features->{$seqid}};
+            #for my $feat_id (keys %chr_features) {
+            #    my %feat = %{$chr_features{$feat_id}};
+            #
+            #    ##  ------------------->>>>>-------<<<<<--------------------------
+            #    ##                  >>>>>
+            #    if ($start <= $feat{start} && $end >= $feat{start} && $end < $feat{end}) {
+            #        use Data::Dumper;
+            #        #print Dumper %feat;
+            #    }
+            #}
+        }   ## End reading each bam entry
+        $counters->{grand_mean_score} = $counters->{mean_scores} / $counters->{mean_scored};
+        # $counters->{mean_mismatches} = $counters->{num_mismatches} / $counters->{total_bases};
+        # $counters->{proportion_unmapped} = (($counters->{this_unmapped} + $counters->{mate_unmapped}) / 2) / $counters->{couted};
+        print $log "
 Reads counted: $counters->{counted}
 Paired reads: $counters->{paired}
 Properly paired: $counters->{proper_pair}
@@ -302,8 +308,8 @@ Minus stranded: $counters->{minus_stranded}
 Grand score_mean: $counters->{grand_mean_score}
 Proportion unmapped: $counters->{proportion_unmapped}
 ";
-    $log->close();
-}
+        $log->close();
+    }
 
 =head2 C<HT_Multi>
 
@@ -343,9 +349,11 @@ sub HT_Multi {
     my $stranded = $options->{stranded};
     if ($stranded eq '1') {
         $stranded = 'yes';
-    } elsif ($stranded eq 'forward') {
+    }
+    elsif ($stranded eq 'forward') {
         $stranded = 'yes';
-    } elsif ($stranded eq '0') {
+    }
+    elsif ($stranded eq '0') {
         $stranded = 'no';
     }
 
@@ -388,7 +396,8 @@ sub HT_Multi {
                 suffix => $options->{suffix},);
             push(@jobs, $ht);
             $htseq_runs++;
-        } elsif (-r "$gtf") {
+        }
+        elsif (-r "$gtf") {
             print "Found ${gtf}, performing htseq with it.\n";
             my $ht = $class->Bio::Adventure::Count::HTSeq(
                 gff_type => $gff_type,
@@ -404,7 +413,7 @@ sub HT_Multi {
             push(@jobs, $ht);
             $htseq_runs++;
         }
-    } ## End foreach type
+    }                           ## End foreach type
     ## Also perform a whole genome count
     my $htall_jobname = qq"htall_${output_name}_$options->{species}_s${stranded}_$ro_opts{gff_type}_$ro_opts{gff_tag}";
     if (-r "$paths->{gff}") {
@@ -422,7 +431,8 @@ sub HT_Multi {
             prescript => $options->{prescript},
             suffix => $options->{suffix},);
         push(@jobs, $ht);
-    } elsif (-r "$paths->{gtf}") {
+    }
+    elsif (-r "$paths->{gtf}") {
         print "Found $paths->{gtf}, performing htseq_all with it.\n";
         my $ht = $class->Bio::Adventure::Count::HTSeq(
             htseq_gff => $paths->{gff},
@@ -436,7 +446,8 @@ sub HT_Multi {
             prescript => $args{prescript},
             suffix => $args{suffix},);
         push(@jobs, $ht);
-    } else {
+    }
+    else {
         print "Did not find $paths->{gff} nor $paths->{gtf}, not running htseq_all.\n";
     }
     return(\@jobs);
@@ -495,18 +506,20 @@ sub HT_Types {
         my $canonical = $names[0];
         if ($found_types{$type}) {
             $found_types{$type}++;
-        } else {
+        }
+        else {
             $found_types{$type} = 1;
         }
         if ($found_canonical{$canonical}) {
             $found_canonical{$canonical}++;
-        } else {
+        }
+        else {
             $found_canonical{$canonical} = 1;
         }
         if ($count > $max_lines) {
             last LOOP;
         }
-    } ## End loop
+    }                           ## End loop
     $reader->close();
     my $found_my_type = 0;
     my $max_type = '';
@@ -520,7 +533,7 @@ sub HT_Types {
             print "The specified type: ${my_type} is in the gff file, comprising $found_types{$my_type} of the first 40,000.\n";
             $found_my_type = 1;
         }
-    } ## End the loop
+    }                           ## End the loop
 
     my $max_can = 0;
     my $max_canonical = 0;
@@ -532,13 +545,14 @@ sub HT_Types {
             $max_can = $can;
             $max_canonical = $found_canonical{$can};
         }
-    } ## End the loop
+    }                           ## End the loop
     my $returned_canonical = $max_can;
 
     my $returned_type = "";
     if ($found_my_type == 1) {
         $returned_type = $my_type;
-    } else {
+    }
+    else {
         print "Did not find your specified type.  Changing it to: ${max_type} which had ${max} entries.\n";
         $returned_type = $max_type;
     }
@@ -585,7 +599,7 @@ sub HTSeq {
     my $options = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species', 'htseq_args',],
-	jcpu => 1,
+        jcpu => 1,
         jmem => 30,
         jname => '',
         jprefix => '',);
@@ -594,9 +608,11 @@ sub HTSeq {
     my $stranded = $options->{stranded};
     if ($stranded eq '1') {
         $stranded = 'yes';
-    } elsif ($stranded eq 'forward') {
+    }
+    elsif ($stranded eq 'forward') {
         $stranded = 'yes';
-    } elsif ($stranded eq '0') {
+    }
+    elsif ($stranded eq '0') {
         $stranded = 'no';
     }
     print "Note, this is running with stranded: $options->{stranded}\n";
@@ -643,20 +659,23 @@ sub HTSeq {
     }
     my $variable_string = '';
     if (!defined($gff_type) or $gff_type eq '' or $gff_type eq 'auto' or
-            !defined($gff_tag) or $gff_tag eq '' or $gff_tag eq 'auto') {
+        !defined($gff_tag) or $gff_tag eq '' or $gff_tag eq 'auto') {
         my $gff_type_pair = $class->Bio::Adventure::Count::HT_Types(
             annotation => $annotation,
             type => $gff_type,);
         $gff_type = $gff_type_pair->[0];
         $gff_type_arg = qq" --type ${gff_type}";
         $gff_tag_arg = qq" --idattr ${gff_tag}";
-    } elsif (ref($gff_type) eq 'ARRAY') {
+    }
+    elsif (ref($gff_type) eq 'ARRAY') {
         $gff_type_arg = qq" --type $gff_type->[0]";
         $gff_tag_arg = qq" --idattr ${gff_tag}";
-    } elsif ($gff_type eq 'none') {
+    }
+    elsif ($gff_type eq 'none') {
         $gff_type_arg = qq'';
         $gff_tag_arg = qq'';
-    } else {
+    }
+    else {
         $gff_type_arg = qq" --type \${gff_type}";
         $gff_tag_arg = qq" --idattr \${gff_tag}";
     }
@@ -670,25 +689,27 @@ supplementary=${supplementary}
 sort=${sort}
 !;
     }
-    $output .= qq"_r${sort}_s${stranded}_${gff_type}_${gff_tag}.count";
+    $output .= qq"_r${sort}_s${stranded}_${gff_type}_${gff_tag}.csv";
     if (!-r "${gff}" and !-r "${gtf}") {
         die("Unable to read ${gff} nor ${gtf}, please fix this and try again.\n");
     }
-    my $error = basename($output, ('.count'));
-    $error = qq"${output_dir}/${error}.stderr";
+    my $error = basename($output, ('.csv'));
+    $stderr = qq"${output_dir}/${error}.stderr";
+    my $stdout = qq"${output_dir}/${error}.stdout";
 
     my $htseq_jobname = qq"hts_${top_dir}_$options->{mapper}_$options->{species}_s${stranded}_${gff_type}_${gff_tag}";
-        my $htseq_invocation = qq!${variable_string}
+    my $htseq_invocation = qq!${variable_string}
 htseq-count \\
   -q -f bam \\
   -s \${stranded} -a ${aqual} -r \${sort} \\
   ${gff_type_arg} ${gff_tag_arg} --mode \${mode} \\
-  --secondary-alignments \${secondary} --supplementary-alignments \${supplementary} \\!;
+  --secondary-alignments \${secondary} --supplementary-alignments \${supplementary} \\
+  --counts_output ${output} \\!;
     my $jstring = qq!${htseq_invocation}
   ${htseq_input} \\
   ${annotation} \\
-  2>${error} \\
-  1>${output}
+  2>${stderr} \\
+  1>${stdout}
 xz -f -9e ${output}
 !;
     $output = qq"${output}.xz";
@@ -702,8 +723,8 @@ xz -f -9e ${output}
         gff_tag => $options->{gff_tag},
         input => $htseq_input,
         output => $output,
-        stderr => $error,
-        stdout => $output,
+        stderr => $stderr,
+        stdout => $stdout,
         postscript => $args{postscript},
         prescript => $args{prescript},
         jdepends => $options->{jdepends},
@@ -785,20 +806,21 @@ sub Jellyfish {
     my $ret;
     if (scalar(@kmer_array) > 1) {
         my $first = shift @kmer_array;
-          my $job = $class->Bio::Adventure::Count::Jellyfish(
-              %{$options},
-              length => $first);
+        my $job = $class->Bio::Adventure::Count::Jellyfish(
+            %{$options},
+            length => $first);
       KMERARR: for my $k (@kmer_array) {
-          my $job = $class->Bio::Adventure::Count::Jellyfish(
-              %{$options},
-              length => $k);
-          if ($count == 0) {
-              $ret = $job;
-          } else {
-              $ret->{$k} = $job;
-          }
-          $count++;
-      }
+            my $job = $class->Bio::Adventure::Count::Jellyfish(
+                %{$options},
+                length => $k);
+            if ($count == 0) {
+                $ret = $job;
+            }
+            else {
+                $ret->{$k} = $job;
+            }
+            $count++;
+        }
         return($ret);
     }
     my $job_name = $class->Get_Job_Name();
@@ -939,15 +961,17 @@ sub Jellyfish_Matrix {
     my $nmer_identity = '';
     while (my $line = <$in>) {
         chomp($line);
-        if ($counter == 1) {  ## Then it is the number line, also why in the flying hell did they do that
+        if ($counter == 1) { ## Then it is the number line, also why in the flying hell did they do that
             $nmer_count = $line;
             $nmer_count =~ s/^>//g;
             $counter++;
-        } elsif ($counter == 2) {
+        }
+        elsif ($counter == 2) {
             $counter--;
             $nmer_identity = $line;
             $counts->{$nmer_identity} = $nmer_count;
-        } else {
+        }
+        else {
             die('Should not get here.');
         }
     }
@@ -1008,7 +1032,8 @@ sub Kraken {
         if ($in[0] =~ /\.fastq$/) {
             $input_string = qq" --paired $in[0] $in[1] ";
         }
-    } else {
+    }
+    else {
         my $r1_fd = $class->Get_FD(input => $options->{input});
         $input_string = qq"${r1_fd} ";
         if ($options->{input} =~ /\.fastq$/) {
@@ -1135,7 +1160,8 @@ sub Kraken_to_Matrix_Worker {
         $genus =~ s/\s+/_/g;
         if (defined($genus_observed{$genus})) {
             $genus_observed{$genus} = $genus_observed{$genus} + $number;
-        } else {
+        }
+        else {
             $genus_observed{$genus} = $number;
         }
     }
@@ -1261,7 +1287,7 @@ sub Mi_Map {
     my $job = $printed;
     $job->{final_hits} = $final_hits;
     return($job);
-} ## End of Mi_Map
+}                               ## End of Mi_Map
 
 =head2 C<Read_Mi>
 
@@ -1412,12 +1438,14 @@ sub Read_Mappings_Mi {
                 push(@hit_list, $element);
                 $newdb->{$ensembl_id} = \@hit_list;
                 print $out "${id}; $element->{mirbase_id}; $element->{ensembl}; $element->{hit_id}; $element->{mimat}; $element->{sequence}\n";
-            } else {
+            }
+            else {
                 @hit_list = ();
                 push(@hit_list, $element);
                 $newdb->{$ensembl_id} = \@hit_list;
             }
-        } else {
+        }
+        else {
             ## print "Did not find $id\n";
         }
     }
@@ -1496,7 +1524,7 @@ sub Read_Bam_Mi {
                 ## }
             }
         }
-    } ## Finish iterating through every read
+    }                           ## Finish iterating through every read
     return($mappings);
 }
 
@@ -1527,7 +1555,7 @@ sub Final_Print_Mi {
     }
     $output->close();
     return($hits);
-} ## End of Final_Print
+}                               ## End of Final_Print
 
 =head2 C<Count_Alignments>
 
@@ -1567,15 +1595,15 @@ sub Count_Alignments {
         multi_count => 0,
         single_count => 0,
         unmapped_count => 0,
-        single_para => 0, ## Single-hit parasite
-        single_host => 0, ## Single-hit host
+        single_para => 0,       ## Single-hit parasite
+        single_host => 0,       ## Single-hit host
         multi_host => 0, ## Multi-hit host -- keep in mind htseq will not count these.
         multi_para => 0, ## Ditto parasite
         single_both => 0, ## These are the dangerzone reads, 1 hit on both. -- false positives
         single_para_multi_host => 0,
         single_host_multi_para => 0,
         multi_both => 0, ## These have multi on both and are not a problem.
-        zero_both => 0, ## This should stay zero.
+        zero_both => 0,  ## This should stay zero.
         wtf => 0,
     };
 
@@ -1618,20 +1646,24 @@ sub Count_Alignments {
         if ($cigar eq '') {
             $result->{unmapped}++;
             next BAMLOOP;
-        } else {
+        }
+        else {
             ## Everything which follows is for a mapped read.
             $result->{mapped}++;
             my $type;
             if ($options->{para_pattern}) {
                 if ($seqid =~ m/$options->{para_pattern}/) {
                     $type = 'para';
-                } else {
+                }
+                else {
                     $type = 'host';
                 }
-            } elsif ($options->{host_pattern}) {
+            }
+            elsif ($options->{host_pattern}) {
                 if ($seqid =~ m/$options->{host_pattern}/) {
                     $type = 'host';
-                } else {
+                }
+                else {
                     $type = 'para';
                 }
             }
@@ -1640,54 +1672,69 @@ sub Count_Alignments {
                 my $reads_in_group = $group{host} + $group{para};
                 if ($reads_in_group > 1) {
                     $result->{multi_count}++;
-                } elsif ($reads_in_group == 1) {
+                }
+                elsif ($reads_in_group == 1) {
                     $result->{single_count}++;
-                } else {
+                }
+                else {
                     $result->{unmapped_count}++;
                 }
                 if ($group{host} == 0) {
                     if ($group{para} == 0) {
                         $result->{zero_both}++;
-                    } elsif ($group{para} == 1) {
+                    }
+                    elsif ($group{para} == 1) {
                         $result->{single_para} = $result->{single_para} + $reads_in_group;
-                    } elsif ($group{para} > 1) {
+                    }
+                    elsif ($group{para} > 1) {
                         $result->{multi_para} = $result->{multi_para} + $reads_in_group;
-                    } else {
+                    }
+                    else {
                         $result->{wtf}++;
                     }
-                } elsif ($group{host} == 1) {
+                }
+                elsif ($group{host} == 1) {
                     if ($group{para} == 0) {
                         $result->{single_host} = $result->{single_host} + $reads_in_group;
-                    } elsif ($group{para} == 1) {
+                    }
+                    elsif ($group{para} == 1) {
                         $result->{single_both} = $result->{single_both} + $reads_in_group;
-                    } elsif ($group{para} > 1) {
+                    }
+                    elsif ($group{para} > 1) {
                         $result->{single_host_multi_para} = $result->{single_host_multi_para} + $reads_in_group;
-                    } else {
+                    }
+                    else {
                         $result->{wtf}++;
                     }
-                } elsif ($group{host} > 1) {
+                }
+                elsif ($group{host} > 1) {
                     if ($group{para} == 0) {
                         $result->{multi_host} = $result->{multi_host} + $reads_in_group;
-                    } elsif ($group{para} == 1) {
+                    }
+                    elsif ($group{para} == 1) {
                         $result->{single_para_multi_host} = $result->{single_para_multi_host} + $reads_in_group;
-                    } elsif ($group{host} > 1) {
+                    }
+                    elsif ($group{host} > 1) {
                         $result->{multi_both} = $result->{multi_both} + $reads_in_group;
-                    } else {
+                    }
+                    else {
                         $result->{wtf}++;
                     }
-                } else {
+                }
+                else {
                     $result->{wtf}++;
                 }
                 print "Map:$result->{mapped} Un:$result->{unmapped} SingleC:$result->{single_count} MultC:$result->{multi_count} sp:$result->{single_para} sh:$result->{single_host} mh:$result->{multi_host} mp:$result->{multi_para} SB:$result->{single_both} spmh:$result->{single_para_multi_host} shmp:$result->{single_host_multi_para} bm:$result->{multi_both} bz:$result->{zero_both} wtf:$result->{wtf}\n" if ($options->{debug});
                 %group = %null_group;
                 ## Now set the first read for the new group to the type of this read.
                 $group{$type}++;
-            } else {
+            }
+            else {
                 $group{$type}++;
             }
         }
         $last_readid = $readid;
-    } ## End reading each bam entry
+    }                           ## End reading each bam entry
     print $out "Mapped: $result->{mapped}
 Unmapped: $result->{unmapped}
 Multi-mapped: $result->{multi}
@@ -1712,5 +1759,173 @@ Email <abelew@gmail.com>
 L<htseq-count> L<Bio::DB::Sam> L<Bio::SeqIO>
 
 =cut
+
+sub GFF_Tree {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['species'],);
+    my $job_name = $class->Get_Job_Name();
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $output_dir = $paths->{output_dir};
+    make_path($output_dir) unless (-d $output_dir);
+    my $input_gff = $paths->{gff};
+    my $gff_in = Bio::Adventure::Get_FH(input => $input_gff,
+                                        suffix => qq"| grep -v '^#'");
+    my $gff_io = Bio::FeatureIO->new(-format => 'gff', -fh => $gff_in);
+    my %id_types = ();
+    my $counters = {};
+
+    package GFFTree;
+    sub new {
+        my $class = shift;
+        my $options = shift;
+        my $self = bless $class->SUPER::new();
+        $self->attributes($options);
+        return $self;
+    }
+
+    sub ids {
+        my $node = shift;
+        my $val = shift;
+        if ($val) {
+            my @ids = @{$node->attributes->{ids}};
+            push(@ids, $val);
+            $node->attributes->{ids} = \@ids;
+        }
+        else {
+            return $node->attributes->{ids};
+        }
+    }
+
+    sub num_ids {
+        my $node = shift;
+        my $val = shift;
+        if ($val) {
+            $node->attributes->{num_ids}++;
+        }
+        else {
+            return $node->attributes->{num_ids};
+        }
+    }
+
+    sub print_num_ids {
+        $_[0]->walk_down({callback=> sub {
+                              my $node = shift;
+                              printf "%s%.7s\t NumIDs: %d \n",
+                                  "  " x $_[0]->{_depth},
+                                  ## $node->name, scalar(@{$node->attributes->{ids}}),
+                                  $node->name, $node->attributes->{num_ids},
+                              }, _depth => 0 });
+    }
+
+
+    sub by_name {
+        my ($self, $name) = @_;
+        my @found =();
+        my $retvalue = wantarray ? 1 : 0;
+        $self->walk_down({callback => sub{
+            if ($_[0]->name eq $name) {
+                push @found, $_[0];
+                return $retvalue;
+            }
+            1}});
+        return wantarray? @found : @found ? $found[0] : undef;
+    }
+
+    package main;
+    # my $gff_tree = GFFTree->new({ ids => undef });
+    my $gff_tree = GFFTree->new({ num_ids => 1 });
+    my $root_name = 'hg38_111';
+    $gff_tree->name($root_name);
+
+    my $last_chromosome = 'start';
+    my $feat_count = 0;
+  FEAT: while (my $feature = $gff_io->next_feature()) {
+        $feat_count++;
+        my $chr = $feature->seq_id;
+        if ($chr ne $last_chromosome) {
+            print "Switched chromosome to $chr\n";
+            %id_types = ();
+            $last_chromosome = $chr;
+        }
+        my $type = $feature->primary_tag;
+        next FEAT unless(defined($type));
+        next FEAT if ($type eq 'biological_region');
+        my @ids = $feature->get_tag_values('ID');
+        my @names = $feature->get_tag_values('Name');
+        my @parents = $feature->get_tag_values('Parent');
+        my $id = undef;
+        if (scalar(@ids) > 0) {
+            $id = $ids[0];
+        } elsif (scalar(@names) > 0) {
+            #print "Using Name instead of ID.\n";
+            $id = $names[0];
+        } elsif (scalar(@parents) > 0) {
+            #print "Using parent as a last resort.\n";
+            $id = $parents[0];
+        }
+        if (!defined($id)) {
+            #print "This has no ID: $feat_count\n";
+            $id = 'hg38_111';
+        }
+
+        unless (defined($id_types{$id})) {
+            $id_types{$id} = $type;
+        }
+        $feat_count % 10000 == 0 and print "Tested id types: $feat_count\n";
+
+        my $parent = $root_name;
+        if (scalar(@parents) > 0) {
+            $parent = $parents[0];
+        }
+        my $parent_type = $id_types{$parent};
+        if (!defined($parent_type)) {
+            #print "This entry has no parent type: $parent $id $type $feat_count\n";
+            $parent_type = 'hg38_111';
+        }
+        #print "Searching for: $type and $id and $parent / $parent_type\n";
+        my $parent_node = undef;
+        if (defined($parent)) {
+            $parent_node = $gff_tree->by_name($parent_type);
+        }
+        my $node = undef;
+        if (defined($parent_node)) {
+            $node = $parent_node->by_name($type);
+        } else {
+            $node = $gff_tree->by_name($type);
+        }
+
+        if (defined($node) && defined($parent_node)) {
+            my $daughterp = $node->is_daughter_of($parent_node);
+            if ($node->is_daughter_of($parent_node)) {
+                ## $node->ids($id);
+                $node->num_ids($id);
+                #print "Parent and node are defiend, adding $id to a set of ids.\n";
+            } else {
+                ## $parent_node->new_daughter({ids => [$id]})->name($type);
+                $parent_node->new_daughter({num_ids => 1})->name($type);
+                my $parent_name = $parent_node->name;
+                #print "Parent and node are defined, but node is a new child of parent.\n";
+            }
+        } elsif (defined($node)) {
+            ## $node->ids($id);
+            $node->num_ids($id);
+            #print "Only node is defiend, adding $id to a set of ids.\n";
+        } elsif (defined($parent_node)) {
+            ## $parent_node->new_daughter({ids => [$id]})->name($type);
+            $parent_node->new_daughter({num_ids => 1})->name($type);
+            my $parent_name = $parent_node->name;
+            #print "Creating a new child under ${parent_name}\n";
+        } else {
+            ## $gff_tree->new_daughter({ids => [$id]})->name($type);
+            $gff_tree->new_daughter({num_ids => 1})->name($type);
+            #print "Creating a new root child of type: ${type}\n";
+        }
+    }
+
+    print map "$_\n", @{$gff_tree->draw_ascii_tree};
+    $gff_tree->print_num_ids;
+}
 
 1;

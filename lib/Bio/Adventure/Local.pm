@@ -76,12 +76,16 @@ sub Submit {
     if (!defined($options->{stdout}) && !defined($options->{output})) {
         die("Every job must have either output or stdout defined.");
     } elsif (!defined($options->{stdout})) {
+        my $subroutine = Bio::Adventure::Config::Get_Caller();
         $out_dir = dirname($options->{output});
-        warn("Every job should have a stdout defined, setting it to the output directory: $out_dir.\n");
+        warn("Every job should have a stdout defined, " .
+             "setting it to the output directory: ${out_dir} for ${subroutine}.");
         $options->{stdout} = $out_dir;
         sleep(5);
     } elsif (!defined($options->{output})) {
-        warn("Every job should have an output defined, setting it to $options->{stdout}.");
+        my $subroutine = Bio::Adventure::Config::Get_Caller();
+        warn("Every job should have an output defined, " .
+             "setting it to $options->{stdout} for ${subroutine}.");
         $options->{output} = $options->{stdout};
         $out_dir = dirname($options->{stdout});
         sleep(5);

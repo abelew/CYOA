@@ -119,6 +119,7 @@ sub Get_Menus {
             name => 'convert',
             message => 'And it rained a fever. And it rained a silence. And it rained a sacrifice. And it rained a miracle. And it rained sorceries and saturnine eyes of the totem.  Go to page 2584981.',
             choices => {
+                '(any2any): Convert from one format to another with Bio::SeqIO' => \&Bio::Adventure::Convert::Any2Any,
                 '(sam2bam): Convert a sam mapping to compressed/sorted/indexed bam.' => \&Bio::Adventure::Convert::Sam2Bam,
                 '(bam2cov): Convert a sorted bam to tsv of coverage/base.' => \&Bio::Adventure::Convert::Bam2Coverage,
                 '(gb2gff): Convert a genbank flat file to gff/fasta files.' => \&Bio::Adventure::Convert::Gb2Gff,
@@ -522,6 +523,7 @@ sub Get_Modules {
             exe => 'abricate' },
         'Abyss' => { modules => 'abyss' },
         'Angsd_Filter' => { modules => 'angsd' },
+        'Any2Any' => { modules => 'cyoa' },
         'Aragorn' => { modules => 'aragorn', exe => 'aragorn' },
         'Assembly_Coverage' => {
             modules => ['cyoa', 'hisat2', 'samtools', 'bbmap',], },
@@ -589,9 +591,9 @@ sub Get_Modules {
         'Merge_Annotations' => { modules => ['cyoa', 'ncbi_tools/6.1'], exe => 'tbl2asn' },
         'Merge_CDS_Predictions' => { modules => ['cyoa', 'ncbi_tools/6.1'], exe => 'tbl2asn' },
         'Merge_Parse_Blast' => { modules => ['cyoa'], },
-        'Mpileup' => { modules => 'samtools' },
+        'Mpileup' => { modules => ['samtools', 'gatk'] },
         'Mpileup_SNP_Search' => {
-            modules => ['samtools/1.13', 'bcftools', 'vcftools'],
+            modules => ['samtools/1.13', 'bcftools', 'gatk', 'vcftools'],
             exe => ['samtools', 'bcftools'], },
         'OrthoFinder' => { modules => ['cyoa', 'orthofinder'], exe => ['orthofinder'] },
         'OrthoMCL_Pipeline' => { modules => ['orthomcl'], exe => ['orthomclPairs'] },
@@ -1033,6 +1035,8 @@ sub Get_TODOs {
         "angsdfilter+" => \$todo_list->{todo}{'Bio::Adventure::PopGen::Angsd_Filter'},
         ## Use my phage pipeline to attempt to annotate a phage assembly.
         "annotatephage+" => \$todo_list->{todo}{'Bio::Adventure::Pipeline::Annotate_Phage'},
+        ## Arbitrary sequence format converter.
+        "any2any+" => \$todo_list->{todo}{'Bio::Adventure::Convert::Any2Any'},
         ## Given an assembly, search for tRNA-like genes.
         "aragorn+" => \$todo_list->{todo}{'Bio::Adventure::Feature_Prediction::Aragorn'},
         ## Remap reads to a new assembly to estimate coverage on a per-baseis.
