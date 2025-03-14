@@ -751,6 +751,7 @@ sub SLSearch {
     my $observed_sl = {
         tcruzi => ['ACGCTATTATTGATACAGTTTCTGTACTATATTG'],
         lmajor => ['ACGCTATATAAGTATCAGTTTCTGTACTTTATTG'],
+        lpanamensis => ['AAGTATCAGTTTCTGTACTTTATTG'],
     };
     my $input_string = qq"";
     my @input_lst = ();
