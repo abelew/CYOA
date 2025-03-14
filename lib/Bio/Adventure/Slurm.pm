@@ -152,9 +152,24 @@ sub Check_Job {
     my $id = $options->{input};
     my $write = $options->{write};
     $write = 0 if (!defined($write));
+    my $jobs_csv = qq"$options->{basedir}/outputs/logs/jobs.csv";
     my @all_info = ();
-    my @ids;
+    my %ids;
     my @names;
+    ## Read the jobs.csv if it exists to see which jobs have already been checked.
+    my $reader = FileHandle->new("<${jobs_csv}");
+    my $read_count = 0;
+  READER: while (my $line = <$reader>) {
+        chomp $line;
+        $read_count++;
+        next READER if ($read_count == 1);
+        my @csv_info = split(/\,/, $line);
+        my $elements = $#csv_info;
+        my $id = $csv_info[1];
+        $ids{$id}->{state} = $csv_info[$elements];
+    }
+    $reader->close();
+
     if (defined($id)) {
         my @tmp_ids = split(/\s|\:/, $id);
       TMPID: for my $i (@tmp_ids) {
@@ -173,6 +188,9 @@ sub Check_Job {
             next JOBLOG if ($line =~ /^#/);
             my ($name, $type, $id) = split(/\s+/, $line);
             next JOBLOG unless ($type eq 'slurm');
+            if (defined($ids{$id}->{state})) {
+                next JOBLOG;
+            }
             if ($id =~ /^\d+/) {
                 push(@names, $name);
                 push(@ids, $id);
@@ -279,7 +297,6 @@ sub Check_Job {
                        'ExitCode', 'MaxDiskRead', 'MaxDiskWrite',
                        'MaxPages', 'MaxRSS', 'MaxVMSize', 'Partition',
                        'ReqMem', 'State');
-        my $jobs_csv = qq"$options->{basedir}/outputs/logs/jobs.csv";
         my @data;
         ## If the csv already exists, append a new record to it by creating a new array
         ## from the existing data and adding the new stuff.

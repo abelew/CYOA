@@ -68,7 +68,7 @@ $actual = qx"tail ${test_file}";
 #}
 
 ## Look at the fastqc outputs
-$test_file = $rnaseq->{'02fastqc'}->{txtfile};
+$test_file = $rnaseq->{'03fastqc'}->{txtfile};
 $comparison = ok(-f $test_file, qq"Checking fastqc output: ${test_file}");
 print "Passed.\n" if ($comparison);
 $actual = qx"less ${test_file}";
@@ -86,9 +86,9 @@ PASS\tAdapter Content\tr1-trimmed.fastq
 ";
 
 
-my $sam_file = $rnaseq->{'03hisat'}->{samtools}->{output};
-my $htseq_file = $rnaseq->{'03hisat'}->{htseq}->[0]->{output};
-my $stats_file = $rnaseq->{'03hisat'}->{stats}->{output};
+my $sam_file = $rnaseq->{'04hisat'}->{samtools}->{output};
+my $htseq_file = $rnaseq->{'04hisat'}->{htseq}->[0]->{output};
+my $stats_file = $rnaseq->{'04hisat'}->{stats}->{output};
 
 ok(-f $sam_file, 'The sorted bamfile was created.');
 ok(-f $htseq_file, 'The count table was created.');

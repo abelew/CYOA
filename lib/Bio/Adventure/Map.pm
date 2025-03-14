@@ -1032,7 +1032,6 @@ sub Hisat2 {
             $hisat_input = qq" -U ${test_file} ";
         }
     }
-
     ## Check that the indexes exist
     if (!-r $paths->{index_file} && !-r $paths->{index_file2}) {
         my $genome_fasta = $paths->{fasta};
@@ -1116,6 +1115,7 @@ hisat2 -x $paths->{index_shell} ${hisat_args} \\
 ## read the sam/un(aligned) outputs.
 sync
 sleep 3
+
 !;
     my $hisat_job = $class->Submit(
         comment => $comment,
@@ -1167,6 +1167,13 @@ sleep 3
             jprefix => qq"$options->{jprefix}_3",
             jdepends => $sam_job->{job_id},);
         $hisat_job->{insertsizes} = $sizes;
+    }
+    if ($options->{duplicate}) {
+        my $duplication = $class->Bio::Adventure::Convert::GATK_Dedup(
+            input => $sam_job->{output},
+            remove => $options->{remove},
+            jprefix => qq"$options->{jprefix}_6",
+            jdepends => $sam_job->{job_id},);
     }
     $new_jprefix = qq"$options->{jprefix}_3";
     my $htseq_input;

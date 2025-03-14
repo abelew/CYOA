@@ -161,6 +161,7 @@ has delimiter => (is => 'rw', default => '[;:,]');
 has denominator => (is => 'rw', default => undef);
 has directories => (is => 'rw', default => undef); ## Apply a command to multiple input directories.
 has download => (is => 'rw', default => 1);
+has duplicate => (is => 'rw', default => 0);
 has email => (is => 'rw', default => 'abelew@umd.edu');
 has evalue => (is => 'rw', default => 0.001); ## Default e-value cutoff
 has fasta_args => (is => 'rw', default => '-b 20 -d 20'); ## Default arguments for the fasta36 suite
@@ -188,6 +189,7 @@ has htseq_args => (is => 'rw', default => ' --order=name --idattr=gene_id --mina
 has identity => (is => 'rw', default => 70); ## Alignment specific identity cutoff
 has index_file => (is => 'rw', default => 'indexes.txt'); ## File containing indexes:sampleIDs when demultiplexing samples - likely tnseq
 has index_hash => (is => 'rw', default => undef);
+has informat => (is => 'rw', default => '.fastq');
 has initial_input => (is => 'rw', default => undef);
 has input => (is => 'rw', default => undef); ## Generic input argument
 has input_abricate => (is => 'rw', default => 'outputs/12abricate_10prokka_09termreorder_08phageterm_07rosalind_plus/abricate_combined.tsv'); ## Used when merging annotation files into a xlsx/tbl/gbk file.
@@ -253,6 +255,7 @@ has module_string => (is => 'rw', default => '');
 has numerator => (is => 'rw', default => undef);
 has option_file => (is => 'rw', default => undef);
 has orientation => (is => 'rw', default => 'start'); ## Default orientation when normalizing riboseq reads
+has outformat => (is => 'rw', default => '.fasta');
 has outgroup => (is => 'rw', default => undef); ## Outgroup for phylogenetic tools
 has output => (is => 'rw', default => undef); ## Generic output argument
 has output_base => (is => 'rw', default => 'outputs');
@@ -771,7 +774,6 @@ sub Get_Path_Info {
             jbasename => $jbasename);
         push(@outputs, \%ret);
     }
-
     return(\@outputs);
 }
 

@@ -217,7 +217,7 @@ sub Mpileup_SNP_Search {
         min_value => 0.8,
         qual => 10,
         jprefix => '50',);
-    my $genome = qq"$options->{libpath}/$options->{libtype}/$options->{species}.fasta";
+    my $genome = qq"$options->{libpath}/$options->{libtype}/fasta/$options->{species}.fasta";
     my $query = $options->{input};
     my $query_home = dirname(${query});
     my $query_base = basename(${query}, ('.bam'));
@@ -622,7 +622,10 @@ sub SNP_Ratio_Worker {
             my ($same_forward, $same_reverse, $alt_forward, $alt_reverse) = split(/,/, $element_value);
             $diff_sum = $alt_forward + $alt_reverse;
             $all_sum = $same_forward + $same_reverse + $diff_sum;
-            $snp_pct = ($alt_forward + $alt_reverse) / $all_sum;
+            my $snp_pct = -1;
+            if (defined($all_sum) && $all_sum > 0) {
+                $snp_pct = ($alt_forward + $alt_reverse) / $all_sum;
+            }
             $snp_pct = nearest(0.01, $snp_pct);
             $individual_tags{snp_pct} = $snp_pct;
         }
