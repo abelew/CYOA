@@ -930,8 +930,16 @@ ${rev_cmd}
         jmem => $options->{jmem},
         jprefix => $options->{jprefix},
         jstring => $jstring,
-        stderr => $stderr,
-        stdout => $stdout,
+        stderr => $sl_fivep_stderr,
+        stdout => $sl_fivep_stdout,
+        polya_fivep_stderr =>  $polya_fivep_stderr,
+        polya_fivep_stdout =>  $polya_fivep_stdout,
+        polya_threep_stderr =>  $polya_threep_stderr,
+        polya_threep_stdout =>  $polya_threep_stdout,
+        sl_fivep_stderr =>  $sl_fivep_stderr,
+        sl_fivep_stdout =>  $sl_fivep_stdout,
+        sl_threep_stderr =>  $sl_threep_stderr,
+        sl_threep_stdout =>  $sl_threep_stdout,
     );
 
 }
