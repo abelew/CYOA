@@ -599,6 +599,7 @@ sub HTSeq {
     my $options = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species', 'htseq_args',],
+        jcpu => 1,
         jmem => 30,
         jname => '',
         jprefix => '',);
@@ -727,8 +728,8 @@ xz -f -9e ${output}
         postscript => $args{postscript},
         prescript => $args{prescript},
         jdepends => $options->{jdepends},
-        jcpu => 1,
-        jmem => 6,
+        jcpu => $options->{jcpu},
+        jmem => $options->{jmem},
         jname => $htseq_jobname,
         jprefix => $options->{jprefix},
         jstring => $jstring,);
