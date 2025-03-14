@@ -794,118 +794,124 @@ in the file(s): $options->{input}.\n";
 
     my $fwd_polya_string = qq"AAAAAAAAAAAA";
     my $rev_polya_string = qq"TTTTTTTTTTTT";
-    my $stderr = qq"$paths->{output_dir}/slsearch_cutadapt.stderr";
-    my $stdout = qq"$paths->{output_dir}/slsearch_cutadapt.stdout";
+    my $polya_fivep_stderr = qq"$paths->{output_dir}/slsearch_polya_fivep_cutadapt.stderr";
+    my $polya_fivep_stdout = qq"$paths->{output_dir}/slsearch_polya_fivep_cutadapt.stdout";
+    my $polya_threep_stderr = qq"$paths->{output_dir}/slsearch_polya_threep_cutadapt.stderr";
+    my $polya_threep_stdout = qq"$paths->{output_dir}/slsearch_polya_threep_cutadapt.stdout";
+    my $sl_fivep_stderr = qq"$paths->{output_dir}/slsearch_sl_fivep_cutadapt.stderr";
+    my $sl_fivep_stdout = qq"$paths->{output_dir}/slsearch_sl_fivep_cutadapt.stdout";
+    my $sl_threep_stderr = qq"$paths->{output_dir}/slsearch_sl_threep_cutadapt.stderr";
+    my $sl_threep_stdout = qq"$paths->{output_dir}/slsearch_sl_threep_cutadapt.stdout";
 
     my $fwd_cmd = qq"
 cutadapt -a ${fwd_sl_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/fwdsl_fwdorient_threepr1_r1.fastq.gz -p $paths->{output_dir}/fwdsl_fwdorient_threepr1_r2.fastq.gz \\
    --interleaved  ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${sl_threep_stderr} 1>>${sl_threep_stdout}
 cutadapt -g ${fwd_sl_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/fwdsl_revorient_fivepr1_r1.fastq.gz -p $paths->{output_dir}/fwdsl_revorient_fivepr1_r2.fastq.gz \\
    --interleaved ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${sl_fivep_stderr} 1>>${sl_fivep_stdout}
 cutadapt -A ${fwd_sl_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/fwdsl_fwdorient_threepr2_r1.fastq.gz -p $paths->{output_dir}/fwdsl_fwdorient_threepr2_r2.fastq.gz \\
    --interleaved ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${sl_threep_stderr} 1>>${sl_threep_stdout}
 cutadapt -G ${fwd_sl_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/fwdsl_revorient_fivepr2_r1.fastq.gz -p $paths->{output_dir}/fwdsl_revorient_fivepr2_r2.fastq.gz \\
    --interleaved ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${sl_fivep_stderr} 1>>${sl_fivep_stdout}
 
 cutadapt -a ${fwd_polya_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/fwdpolya_fwdorient_threepr1_r1.fastq.gz -p $paths->{output_dir}/fwdpolya_fwdorient_threepr1_r2.fastq.gz \\
    --interleaved ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${polya_threep_stderr} 1>>${polya_threep_stdout}
 cutadapt -g ${fwd_polya_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/fwdpolya_revorient_fivepr1_r1.fastq.gz -p $paths->{output_dir}/fwdpolya_revorient_fivepr1_r2.fastq.gz \\
    --interleaved ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${polya_fivep_stderr} 1>>${polya_fivep_stdout}
 cutadapt -A ${fwd_polya_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/fwdpolya_fwdorient_threepr2_r1.fastq.gz -p $paths->{output_dir}/fwdpolya_fwdorient_threepr2_r2.fastq.gz \\
    --interleaved ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${polya_threep_stderr} 1>>${polya_threep_stdout}
 cutadapt -G ${fwd_polya_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/fwdpolya_revorient_fivepr2_r1.fastq.gz -p $paths->{output_dir}/fwdpolya_revorient_fivepr2_r2.fastq.gz \\
    --interleaved ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${polya_fivep_stderr} 1>>${polya_fivep_stdout}
 
 ";
     my $rev_cmd = qq"
 cutadapt -a ${rev_sl_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/revsl_fwdorient_threepr1_r1.fastq.gz -p $paths->{output_dir}/revsl_fwdorient_threepr1_r2.fastq.gz \\
    --interleaved ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${sl_threep_stderr} 1>>${sl_threep_stdout}
 cutadapt -g ${rev_sl_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/revsl_revorient_fivepr1_r1.fastq.gz -p $paths->{output_dir}/revsl_revorient_fivepr1_r2.fastq.gz \\
    --interleaved ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${sl_fivep_stderr} 1>>${sl_fivep_stdout}
 cutadapt -A ${rev_sl_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/revsl_fwdorient_threepr2_r1.fastq.gz -p $paths->{output_dir}/revsl_fwdorient_threepr2_r2.fastq.gz \\
    --interleaved ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${sl_threep_stderr} 1>>${sl_threep_stdout}
 cutadapt -G ${rev_sl_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/revsl_revorient_fivepr2_r1.fastq.gz -p $paths->{output_dir}/revsl_revorient_fivepr2_r2.fastq.gz \\
    --interleaved ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${sl_fivep_stderr} 1>>${sl_fivep_stdout}
 
 cutadapt -a ${rev_polya_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/revpolya_fwdorient_threepr1_r1.fastq.gz -p $paths->{output_dir}/revpolya_fwdorient_threepr1_r2.fastq.gz \\
    --interleaved ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${polya_threep_stderr} 1>>${polya_threep_stdout}
 cutadapt -g ${rev_polya_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/revpolya_revorient_fivepr1_r1.fastq.gz -p $paths->{output_dir}/revpolya_revorient_fivepr1_r2.fastq.gz \\
    --interleaved ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${polya_fivep_stderr} 1>>${polya_fivep_stdout}
 cutadapt -A ${rev_polya_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/revpolya_fwdorient_threepr2_r1.fastq.gz -p $paths->{output_dir}/revpolya_fwdorient_threepr2_r2.fastq.gz \\
    --interleaved ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${polya_threep_stderr} 1>>${polya_threep_stdout}
 cutadapt -G ${rev_polya_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/revpolya_revorient_fivepr2_r1.fastq.gz -p $paths->{output_dir}/revpolya_revorient_fivepr2_r2.fastq.gz \\
    --interleaved ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${polya_fivep_stderr} 1>>${polya_fivep_stdout}
 ";
     unless ($paired) {
         $fwd_cmd = qq"
 cutadapt -b ${fwd_sl_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/fwdsl_fwdorient_r1.fastq.gz \\
    ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${sl_fivep_stderr} 1>>${sl_fivep_stdout}
 cutadapt -B ${fwd_sl_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/fwdsl_revorient_r1.fastq.gz \\
    ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${sl_threep_stderr} 1>>${sl_threep_stdout}
 
 cutadapt -b ${fwd_polya_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/fwdpolya_fwdorient_r1.fastq.gz \\
    ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${polya_fivep_stderr} 1>>${polya_fivep_stdout}
 cutadapt -B ${fwd_polya_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/fwdpolya_revorient_r1.fastq.gz \\
    ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${polya_threep_stderr} 1>>${polya_threep_stdout}
 ";
         $rev_cmd = qq"
 cutadapt -b ${rev_sl_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/revsl_fwdorient_r1.fastq.gz \\
    ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${sl_fivep_stderr} 1>>${sl_fivep_stdout}
 cutadapt -B ${rev_sl_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/revsl_revorient_r1.fastq.gz \\
    ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${sl_threep_stderr} 1>>${sl_threep_stdout}
 
 cutadapt -b ${rev_polya_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/revpolya_fwdorient_r1.fastq.gz \\
    ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${polya_fivep_stderr} 1>>${polya_fivep_stdout}
 cutadapt -B ${rev_polya_string} -b ${rev_polya_string} -e 1 --trimmed-only \\
    -o $paths->{output_dir}/revpolya_revorient_r1.fastq.gz \\
    ${input_string} \\
-   2>>${stderr} 1>>${stdout}
+   2>>${polya_threep_stderr} 1>>${polya_threep_stdout}
 ";
     }
     my $comment = qq!## This cutadapt invocation seeks to extract SL/polyA reads.!;
