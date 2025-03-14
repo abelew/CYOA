@@ -155,6 +155,7 @@ sub Check_Job {
     my $jobs_csv = qq"$options->{basedir}/outputs/logs/jobs.csv";
     my @all_info = ();
     my %ids;
+    my @check_ids = ();
     my @names;
     ## Read the jobs.csv if it exists to see which jobs have already been checked.
     my $reader = FileHandle->new("<${jobs_csv}");
@@ -175,7 +176,7 @@ sub Check_Job {
       TMPID: for my $i (@tmp_ids) {
             next TMPID unless defined($i);
             if ($i =~ /^\d+$/) {
-                push(@ids, $i);
+                push(@check_ids, $i);
             } else {
                 print "This id was inappropriately passed: ${i}\n";
             }
@@ -193,7 +194,7 @@ sub Check_Job {
             }
             if ($id =~ /^\d+/) {
                 push(@names, $name);
-                push(@ids, $id);
+                push(@check_ids, $id);
             } else {
                 print "This entry is not in the expected format: ${line}\n";
                 next JOBLOG;
@@ -201,7 +202,7 @@ sub Check_Job {
         }
         $job_file->close();
     }
-  IDS: for my $id (@ids) {
+  IDS: for my $id (@check_ids) {
         next IDS if (!defined($id));
         my $job_info = {};
         my $command = qq"sacct -l -j ${id} -p";
