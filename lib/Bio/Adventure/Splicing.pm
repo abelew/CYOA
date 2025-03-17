@@ -1148,7 +1148,7 @@ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
         ## If the read strand is +1, then I want it associated with a feature on the +1 with a start which is > this read start.
         ## If the read strand is -1, then I want it associated with a feature on the -1 with a end which is < this read end.
         my $num_features = undef;
-        next BAMLOOP unless (defined($observed->{$read_seqid}}));
+        next BAMLOOP unless (defined($observed->{$read_seqid}));
         my $type = ref($observed->{$read_seqid});
         my $test_features = scalar(@{$observed->{$read_seqid}}) - 1;
         if (defined($test_features)) {
