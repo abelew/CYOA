@@ -1268,6 +1268,9 @@ sub Write_SLData {
     my $gff_tag = $args{gff_tag};
     my $gffio = $args{gffio};
     my $gff_out = $args{gff_out};
+    if (!defined($observed->{$contig})) {
+        return(undef);
+    }
     my $observed_genes = scalar(@{$observed->{$contig}}) - 1;
     for my $c (0 .. $observed_genes) {
         my $feat_info = $observed->{$contig}[$c];
