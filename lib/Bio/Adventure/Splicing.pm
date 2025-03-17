@@ -1015,7 +1015,7 @@ my \$result = \$h->Bio::Adventure::Splicing::SLSeq_Recorder_Worker(
         input => $options->{input},
         jdepends => $options->{jdepends},
         jname => $jname,
-        jprefix => '40',
+        jprefix => $options->{jprefix},
         jstring => $jstring,
         output => $output_gff,
         output_dir => $output_dir,
@@ -1054,7 +1054,7 @@ sub SLSeq_Recorder_Worker {
     print "Starting SLSeq Recorder, reading $options->{gff_tag} tags from $options->{gff_type}
 entries of ${input_gff}.
 Writing results to ${gff_output_filename}.\n";
-    my ($counters, $observed) = Bio::Adventure::Parsers::Count_Extract_GFF(
+    my ($counters, $observed) = $class->Bio::Adventure::Parsers::Count_Extract_GFF(
         gff => $input_gff, log => $log,
         gff_type => $options->{gff_type},
         gff_tag => $options->{gff_tag},);
