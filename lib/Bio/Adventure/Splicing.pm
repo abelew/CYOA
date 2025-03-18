@@ -996,7 +996,7 @@ sub SLSeq_Recorder {
     make_path($output_dir) unless (-d $output_dir);
     my $output_gff = qq"${output_dir}/$options->{species}_maximum_utr.gff";
     my $output_tsv = qq"${output_dir}/$options->{species}_recorded_sl.tsv";
-    my $jname = qq"$options->{jprefix}SLSeq_$options->{species}";
+    my $jname = qq"SLSeq_$options->{species}";
     my $jstring = qq!use Bio::Adventure::Splicing;
 my \$result = \$h->Bio::Adventure::Splicing::SLSeq_Recorder_Worker(
   gff_type => '$options->{gff_type}',
@@ -1051,7 +1051,7 @@ sub SLSeq_Recorder_Worker {
     ## The log file:
     my $log_file = qq"${output_dir}/slseq_recorder.log";
     my $log = FileHandle->new(">${log_file}");
-    print "Starting SLSeq Recorder, reading $options->{gff_tag} tags from $options->{gff_type}
+    print $log "Starting SLSeq Recorder, reading $options->{gff_tag} tags from $options->{gff_type}
 entries of ${input_gff}.
 Writing results to ${gff_output_filename}.\n";
     my ($counters, $observed) = $class->Bio::Adventure::Parsers::Count_Extract_GFF(
@@ -1157,7 +1157,7 @@ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
             }
         } else {
             $counters->{nogene_contigs}++;
-            print "There appear to be no features for ${read_seqid}\n";
+            ## print "There appear to be no features for ${read_seqid}\n";
             next BAMLOOP;
         }
         my $checker = 0;
@@ -1174,7 +1174,7 @@ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
             my $current_name = $current_feat->{gene_name};
             last FEAT_SEARCH if ($checker > $num_features);
             if (!defined($current_strand)) {
-                print $log "In feature search, somehow strand is undefined for: ${current_name}\n";
+                print $log "In feature search, strand is undefined for: ${current_name}\n";
                 next FEAT_SEARCH;
             }
             if ($current_strand eq $read_strand &&
@@ -1189,7 +1189,7 @@ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
                 $current_end < $read_start &&
                 $next_strand eq '-1' &&
                 $next_start > $read_start) {
-                print "Contig:${read_seqid} Str:${current_strand} St:${read_start} vs. last end:${current_end} next start:${next_start}, unannotated ORF?\n";
+                print $log "Contig:${read_seqid} Str:${current_strand} St:${read_start} vs. last end:${current_end} next start:${next_start}, unannotated ORF?\n";
                 $counters->{unannotated_read}++;
                 next BAMLOOP;
             }
@@ -1241,20 +1241,33 @@ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
                     next FEAT_SEARCH;
                 }
             } else { ## End checking the - strand
-                print "What what? Neither +1 nor -1: $read_strand\n";
+                print $log "What what? Neither +1 nor -1: $read_strand\n";
                 next BAMLOOP;
             }
         } ## End iterating over every feature
     } ## End iterating over the alignments
-    print "Writing data for ${new_contig}\n";
+    print $log "Writing data for ${new_contig}\n";
     Write_SLData(observed => $observed,
                  contig => $new_contig,
                  output_csv => $output_csv,
                  gff_tag => $options->{gff_tag},
                  gffio => $gffout_io,
                  gff_out => $gff_out,);
-    use Data::Dumper;
-    print Dumper $counters;
+    print $log "Reads observed: $counters->{reads}
+Unstranded reads: $counters->{unstranded_reads}
+Plus reads: $counters->{plus_reads}
+Minus reads: $counters->{minus_reads}
+Unstranded: $counters->{notplusminus_reads}
+Unmapped: $counters->{unmapped_reads}
+Unmapped pair: $counters->{unmapped_pairs}
+Primary: $counters->{primary_reads}
+Supplemental: $counters->{supplemental_reads}
+Secondary: $counters->{secondary_reads}
+Same strand inside gene: $counters->{same_strand_in_gene}
+Unannotated: $counters->{unannotated_read}
+Opposite strand: $counters->{opposite_strand}
+Quantified: $counters->{quantified_reads}
+";
     $gff_out->close();
     $log->close();
     return($observed);
