@@ -158,18 +158,20 @@ sub Check_Job {
     my @check_ids = ();
     my @names;
     ## Read the jobs.csv if it exists to see which jobs have already been checked.
-    my $reader = FileHandle->new("<${jobs_csv}");
-    my $read_count = 0;
-  READER: while (my $line = <$reader>) {
-        chomp $line;
-        $read_count++;
-        next READER if ($read_count == 1);
-        my @csv_info = split(/\,/, $line);
-        my $elements = $#csv_info;
-        my $id = $csv_info[1];
-        $ids{$id}->{state} = $csv_info[$elements];
+    if (-r $jobs_csv) {
+        my $reader = FileHandle->new("<${jobs_csv}");
+        my $read_count = 0;
+      READER: while (my $line = <$reader>) {
+            chomp $line;
+            $read_count++;
+            next READER if ($read_count == 1);
+            my @csv_info = split(/\,/, $line);
+            my $elements = $#csv_info;
+            my $id = $csv_info[1];
+            $ids{$id}->{state} = $csv_info[$elements];
+        }
+        $reader->close();
     }
-    $reader->close();
 
     if (defined($id)) {
         my @tmp_ids = split(/\s|\:/, $id);

@@ -1065,6 +1065,7 @@ sub Get_TODOs {
         "calibrate+" => \$todo_list->{todo}{'Bio::Adventure::Riboseq::Calibrate'},
         "casfinder+" => \$todo_list->{todo}{'Bio::Adventure::Annotation::Casfinder'},
         "cgview+" => \$todo_list->{todo}{'Bio::Adventure::Visualization::CGView'},
+        "checkjobs+" => \$todo_list->{todo}{'Bio::Adventure::Check_Job'},
         "checkslurm+" => \$todo_list->{todo}{'Bio::Adventure::Check_Job'},
         "checkjob+" => \$todo_list->{todo}{'Bio::Adventure::Check_Job'},
         "classifyphage+" => \$todo_list->{todo}{'Bio::Adventure::Phage::Classify_Phage'},
