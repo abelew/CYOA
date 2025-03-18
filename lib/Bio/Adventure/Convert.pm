@@ -58,6 +58,55 @@ sub Any2Any {
     $in_fh->close();
 }
 
+=head2 C<GATK_Dedup>
+
+ An invocation of GATK's mark duplicate function.
+
+ Given an existing sorted bam alignment, this will attempt to mark and remove
+ duplicates without the help of UMIs.
+
+=cut
+sub GATK_Dedup {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['input',],
+        remove => 1,
+        jmem => 36,
+        jcpu => 4,
+        jprefix => '50',
+        jwalltime => '48:00:00',);
+    my $remove_string = 'true';
+    $remove_string = 'false' unless ($options->{remove});
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $marked = qq"$paths->{output_dir}/deduplication_stats.txt";
+    my $gatk_stdout = qq"$paths->{output_dir}/deduplication.stdout";
+    my $gatk_stderr = qq"$paths->{output_dir}/deduplication.stderr";
+    my $stdout = qq"$paths->{output_dir}/gatk_dedup.stdout";
+    my $stderr = qq"$paths->{output_dir}/gatk_dedup.stderr";
+    my $output = qq"$paths->{output_dir}/deduplicated.bam";
+    my $comment = qq!## This uses gatk to deduplicate an existing alignment.!;
+    my $jstring = qq!
+gatk MarkDuplicates \\
+  -I $options->{input} \\
+  -O ${output} \\
+  -M ${marked} --REMOVE_DUPLICATES ${remove_string} --COMPRESSION_LEVEL 9 \\
+  2>${gatk_stderr} \\
+  1>${gatk_stdout}
+samtools index ${output}
+!;
+    my $gatk = $class->Submit(
+        comment => $comment,
+        jdepends => $options->{jdepends},
+        jname => "gatk_dedup",
+        jprefix => $options->{jprefix},
+        jstring => $jstring,
+        stderr => $stderr,
+        stdout => $stdout,
+        output => $output,);
+    return($gatk);
+}
+
 =back
 
 =head2 C<Gff2Fasta>
