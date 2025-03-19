@@ -87,7 +87,7 @@ sub Count_Extract_GFF {
         $info->{start} = $feature->start;
         $info->{end} = $feature->end;
         $info->{strand} = $str;
-        ##$info->{feature} = $feature;
+        $info->{feature} = $feature;
         $info->{most_upstream} = 0;
         $info->{observed} = {};
         $info->{next_distance} = 0;

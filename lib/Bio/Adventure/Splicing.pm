@@ -1287,6 +1287,7 @@ sub Write_SLData {
     my $observed_genes = scalar(@{$observed->{$contig}}) - 1;
     for my $c (0 .. $observed_genes) {
         my $feat_info = $observed->{$contig}[$c];
+        my $original = $feat_info->{feature};
         my $observations = $feat_info->{observed};
         my @observed_positions = keys %{$observations};
         my $gene_name = $feat_info->{gene_name};
@@ -1315,7 +1316,9 @@ sub Write_SLData {
                 print "This is a failed entry: $contig $gene_name with start: $new_start\n";
                 $new_start = 0;
             }
-            my $standardized = Bio::SeqFeature::Generic->new(
+            ## Create a gene feature with the new coordinates
+            ## along with a CDS feature with the previous coordinates.
+            my $new_gene = Bio::SeqFeature::Generic->new(
                 -primary_tag => 'SLSeq_gene',
                 -display_name => $gene_name,
                 -seq_id => $contig,
@@ -1329,8 +1332,28 @@ sub Write_SLData {
                     old_start => $gene_start,
                     old_end => $gene_end,
                 });
-            my $gff_string = $gffio->gff_string($standardized);
+            my $gff_string = $gffio->gff_string($new_gene);
             print $gff_out "${gff_string}\n";
+            my $new_cds = Bio::SeqFeature::Generic->new(
+                -primary_tag => 'CDS',
+                -display_name => $original->display_name,
+                -seq_id => $original->seq_id,
+                -start => $original->start,
+                -end => $original->end,
+                -strand => $original->strand,
+                -score => $original->score,
+                -tag => {
+                    Parent => $gene_name,
+                });
+            my @original_tags = $original->get_all_tags();
+            for my $tag (@original_tags) {
+                my @tag_values = $original->get_tag_values($tag);
+                for my $val (@tag_values) {
+                    $new_cds->add_tag_value($tag, $val);
+                }
+            }
+            my $cds_string = $gffio->gff_string($new_cds);
+            print $gff_out "${cds_string}\n";
         }
     }
 }

@@ -268,7 +268,11 @@ sub Check_Job {
                 }
             }
         }
-        push(@all_info, $job_info);
+        if ($job_info->{State} eq 'RUNNING') {
+            print "This job is still running.\n";
+        } else {
+            push(@all_info, $job_info);
+        }
         $info->close();
     } ## Finished iterating over every job ID
 
