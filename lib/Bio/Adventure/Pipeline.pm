@@ -543,6 +543,63 @@ sub Kallisto {
     return($rnaseq_jobs);
 }
 
+sub Nextflow_RNASeq {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['input', 'species'],
+        profile => 'singularity',
+        aligner => 'star_rsem',
+        introns => 0,
+        jcpu => 8,
+        jmem => 48,
+        jprefix => '00',
+        jwalltime => '24:00:00',
+        jname => 'nfcore_rnaseq',
+    );
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $sample_sheet = qq"$paths->{output_dir}/sample_sheet.csv";
+    my $ss = FileHandle->new(">${sample_sheet}");
+    my $name = basename(cwd());
+    my @inputs = split(/$options->{delimiter}/, $options->{input});
+    if (scalar(@inputs) == 2) {
+        print $ss "sample,fastq_1,fastq_2,strandedness
+${name},$inputs[0],$inputs[1],auto\n";
+    } elsif (scalar(@inputs) == 1) {
+        print $ss "sample,fastq_1,strandedness
+${name},$inputs[0],auto\n";
+    } else {
+        die("This currently only understand 1 or 2 inputs.\n");
+    }
+    $ss->close();
+    my $comment = qq!## This is an experiment with nextflow.
+!;
+    my $stderr = qq"$paths->{output_dir}/nf.stderr";
+    my $stdout = qq"$paths->{output_dir}/nf.stdout";
+    my $jstring = qq!
+nextflow run nf-core/rnaseq \\
+  --input ${sample_sheet} --outdir $paths->{output_dir} \\
+  --gff $paths->{gff} --fasta $paths->{fasta} \\
+  --skip_gtf_filter --skip_biotype_qc --skip_rseqc \\
+  --featurecounts_feature_type transcript \\
+  --featurecounts_feature_type CDS \\
+  -profile $options->{profile} \\
+  1>${stdout} 2>${stderr}
+!;
+    my $nf_job = $class->Submit(
+        comment => $comment,
+        jdepends => $options->{jdepends},
+        jstring => $jstring,
+        jprefix => $options->{jprefix},
+        jcpu => $options->{jcpu},
+        jmem => $options->{jmem},
+        jname => $options->{jname},
+        output => $stdout,
+        stdout => $stdout,
+        stderr => $stderr,);
+    return($nf_job);
+}
+
 =head2 C<Process_DNASeq>
 
   Mostly copy/pasting Process_RNASeq with some tweaks.

@@ -526,7 +526,7 @@ sub PolyA_Extractor_Worker {
     ##$in_fh->close();
     ##close(INFH);
     $fh->close();
-    print $log "Counted: ${reads_counted} and wrote: ${reads_written} reads.\n";
+    print $log "Counted: $info{reads_counted} and wrote: $info{reads_written} reads.\n";
     $log->close();
     $out_fh->close();
     return(\%info);

@@ -595,6 +595,7 @@ sub Get_Modules {
         'Mpileup_SNP_Search' => {
             modules => ['samtools/1.13', 'bcftools', 'gatk', 'vcftools'],
             exe => ['samtools', 'bcftools'], },
+        'Nextflow_RNASeq' => { modules => ['nextflow'], },
         'OrthoFinder' => { modules => ['cyoa', 'orthofinder'], exe => ['orthofinder'] },
         'OrthoMCL_Pipeline' => { modules => ['orthomcl'], exe => ['orthomclPairs'] },
         'Parse_Fasta_Global' => { modules => 'cyoa' },
@@ -885,6 +886,9 @@ sub Get_Paths {
     elsif ($subroutine eq 'Merge_Annotations' || $subroutine eq 'Merge_Annotations_Worker') {
         $paths->{output_dir} = qq"${output_prefix}mergeannot";
     }
+    elsif ($subroutine eq 'Nextflow_RNASeq') {
+        $paths->{output_dir} = qq"${output_prefix}nf_rna_$options->{species}";
+    }
     elsif ($subroutine eq 'OrthoFinder') {
         $paths->{output_dir} = qq"${output_prefix}orthofinder";
     }
@@ -1129,6 +1133,7 @@ sub Get_TODOs {
         "mergeprodigal+" => \$todo_list->{todo}{'Bio::Adventure::Metadata::Merge_Annot_Prodigal'},
         "mimap+" => \$todo_list->{todo}{'Bio::Adventure::MiRNA::Mi_Map'},
         "mpileup+" => \$todo_list->{todo}{'Bio::Adventure::SNP::Mpileup_SNP_Search'},
+        "nfrna+" => \$todo_list->{todo}{'Bio::Adventure::Pipeline::Nextflow_RNASeq'},
         "orthomcl+" => \$todo_list->{todo}{'Bio::Adventure::Align_Blast::OrthoMCL_Pipeline'},
         "orthofinder+" => \$todo_list->{todo}{'Bio::Adventure::Align::OrthoFinder'},
         "phageterm+" => \$todo_list->{todo}{'Bio::Adventure::Phage::Phageterm'},
