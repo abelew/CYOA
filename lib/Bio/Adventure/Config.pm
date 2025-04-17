@@ -131,6 +131,7 @@ sub Get_Menus {
             name => 'count',
             message => 'Once men turned their thinking over to machines in the hope that this would set them free. But that only permitted other men with machines to enslave them.  Go to page 27812',
             choices => {
+                '(fcount): Use featureCounts to count aligned reads.' => \&Bio::Adventure::Count::Feature_Counts,
                 '(guessstrand): Count reads with respect to features and report strandedness.' => \&Bio::Adventure::Count::Guess_Strand,
                 '(htseq): Count mappings with htseq-count.' =>  \&Bio::Adventure::Count::HTSeq,
                 '(htmulti): Use different option sets for counting with htseq.' => \&Bio::Adventure::Count::HT_Multi,
@@ -509,6 +510,71 @@ sub Estimate_Time_Composite {
     return($total_hours);
 }
 
+## In my time estimator, I tried out some heuristics and have found them
+## somewhat difficult to rely upon because of the huge variance in cpu speeds.
+## I thought I would therefore try some simpler heuristics for memory usage
+## especially since memory usage tends to be a bit more consistent
+## which of course may be an argument for a multiplier based system.
+sub Get_Memory {
+    my %args = @_;
+    my $subroutine = Bio::Adventure::Config::Get_Caller();
+    ## I think that with recent changes, one need no longer add 'cyoa' as a module.
+    my %memory_data = (
+        'Example' => {
+            genes => {
+                '1000' => 4,
+                '10000' => 12,
+                '20000' => 24,
+                'default' => 30,
+            },
+        },
+        'Example2' => {
+            genome_size => {
+                '1000000' => 4,
+                '10000000' => 8,
+                '100000000' => 12,
+                'default' => 24,
+            },
+        },
+    );
+
+    my @function_array = split(/::/, $subroutine);
+    my $function = $function_array[$#function_array];
+    $function =~ s/_Worker$//g;
+    my $datum = $memory_data{$function};
+    my $needed_memory = 6;
+    if ($datum) {
+        my @expected_args = keys(%$datum);
+        my $expected = shift @expected_args;
+        my $actual = $args{$expected};
+        my @cutoff_values = keys %{$datum->{$expected}};
+        my $found_cutoff = 0;
+        my $used_default = 0;
+      CUTOFF: for my $cut (@cutoff_values) {
+            if ($actual <= $cut) {
+                $needed_memory = $datum->{$expected}->{$cut};
+                $found_cutoff = 1;
+                last CUTOFF;
+            }
+            if ($cut eq 'default') {
+                $needed_memory = $datum->{$expected}->{$cut};
+                $found_cutoff = 1;
+                $used_default = 1;
+                last CUTOFF;
+            }
+        }
+        if ($used_default) {
+            print "Used the default value: ${needed_memory}.\n";
+        }
+        unless ($found_cutoff) {
+            print "Did not find the expected cutoff type: ${expected}, using the global default: ${needed_memory}.\n";
+        }
+    } else {
+        print "This function does not have a memory configuration, using the global default: ${needed_memory}.\n";
+    }
+    return($needed_memory);
+}
+
 sub Get_Modules {
     my %args = @_;
     my $subroutine = Bio::Adventure::Config::Get_Caller();
@@ -555,6 +621,7 @@ sub Get_Modules {
         'Fastqc' => { modules => ['fastqc'] },
         'Fastq_Dump' => { modules => ['cyoa', 'sra'], },
         'Fastp' => { modules => ['fastp'], exe => 'fastp' },
+        'Feature_Counts' => { modules => ['subread'], exe => 'featureCounts', },
         'Filter_Host_Kraken' => {
             modules => ['cyoa', 'kraken', 'hisat2', 'htseq', 'samtools'], },
         'Fragment_Genome' => {
@@ -595,6 +662,7 @@ sub Get_Modules {
         'Mpileup_SNP_Search' => {
             modules => ['samtools/1.13', 'bcftools', 'gatk', 'vcftools'],
             exe => ['samtools', 'bcftools'], },
+        'Nextflow_RNASeq' => { modules => ['nextflow'], },
         'OrthoFinder' => { modules => ['cyoa', 'orthofinder'], exe => ['orthofinder'] },
         'OrthoMCL_Pipeline' => { modules => ['orthomcl'], exe => ['orthomclPairs'] },
         'Parse_Fasta_Global' => { modules => 'cyoa' },
@@ -820,6 +888,11 @@ sub Get_Paths {
     elsif ($subroutine eq 'Fastqc') {
         $paths->{output_dir} = qq"${output_prefix}fastqc";
     }
+    elsif ($subroutine eq 'Feature_Counts') {
+        $paths->{output_dir} = qq"${output_prefix}featureCounts";
+        $paths->{stdout} = qq"$paths->{output_dir}/featureCounts.stdout";
+        $paths->{stderr} = qq"$paths->{output_dir}/featureCounts.stderr";
+    }
     elsif ($subroutine eq 'Filter_Host_Kraken' || $subroutine eq 'Filter_Kraken_Worker') {
         $paths->{output_dir} = qq"${output_prefix}filter_kraken";
         $paths->{index_dir} = qq"$paths->{index_prefix}/hisat";
@@ -884,6 +957,9 @@ sub Get_Paths {
     }
     elsif ($subroutine eq 'Merge_Annotations' || $subroutine eq 'Merge_Annotations_Worker') {
         $paths->{output_dir} = qq"${output_prefix}mergeannot";
+    }
+    elsif ($subroutine eq 'Nextflow_RNASeq') {
+        $paths->{output_dir} = qq"${output_prefix}nf_rna_$options->{species}";
     }
     elsif ($subroutine eq 'OrthoFinder') {
         $paths->{output_dir} = qq"${output_prefix}orthofinder";
@@ -1092,6 +1168,8 @@ sub Get_TODOs {
         "fasta2gff+" => \$todo_list->{todo}{'Bio::Adventure::Convert::Fasta2Gff'},
         "fastqct+" => \$todo_list->{todo}{'Bio::Adventure::QA::Fastqc'},
         "fastqdump+" => \$todo_list->{todo}{'Bio::Adventure::Prepare::Fastq_Dump'},
+        "fcount+" => \$todo_list->{todo}{'Bio::Adventure::Count::Feature_Counts'},
+        "featurecount+" => \$todo_list->{todo}{'Bio::Adventure::Count::Feature_Counts'},
         "featureextract+" => \$todo_list->{todo}{'Bio::Adventure::Annotation_Genbank::Extract_Features'},
         "filterdepth+" => \$todo_list->{todo}{'Bio::Adventure::Assembly::Unicycler_Filter_Depth'},
         "filterkraken+" => \$todo_list->{todo}{'Bio::Adventure::Phage::Filter_Host_Kraken'},
@@ -1129,6 +1207,7 @@ sub Get_TODOs {
         "mergeprodigal+" => \$todo_list->{todo}{'Bio::Adventure::Metadata::Merge_Annot_Prodigal'},
         "mimap+" => \$todo_list->{todo}{'Bio::Adventure::MiRNA::Mi_Map'},
         "mpileup+" => \$todo_list->{todo}{'Bio::Adventure::SNP::Mpileup_SNP_Search'},
+        "nfrna+" => \$todo_list->{todo}{'Bio::Adventure::Pipeline::Nextflow_RNASeq'},
         "orthomcl+" => \$todo_list->{todo}{'Bio::Adventure::Align_Blast::OrthoMCL_Pipeline'},
         "orthofinder+" => \$todo_list->{todo}{'Bio::Adventure::Align::OrthoFinder'},
         "phageterm+" => \$todo_list->{todo}{'Bio::Adventure::Phage::Phageterm'},

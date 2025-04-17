@@ -177,7 +177,7 @@ has gcode => (is => 'rw', default => '11'); ## Choose a genetic code
 has genome => (is => 'rw', default => undef); ## Choose a genome to work on.
 has genus => (is => 'rw', default => undef); ## Choose a genus when using prokka and potentially others like kraken
 has gff => (is => 'rw', default => undef); ## Feature file to read/write
-has gff_tag => (is => 'rw', default => 'gene_id'); ## Likely redundant with htseq_id
+has gff_tag => (is => 'rw', default => 'ID'); ## Likely redundant with htseq_id
 ## Ahh I remember, htseq_type was added to facilitate performing multiple htseq counts on multiple gff files.
 ## Notably the interCDS for bacterial genomes.
 has gff_type => (is => 'rw', default => 'gene'); ## When blank, do it on the whole gff file, otherwise use that suffix.
@@ -241,6 +241,7 @@ has mapper => (is => 'rw', default => 'hisat'); ## Use this aligner if none was 
 has mature_fasta => (is => 'rw', default => undef); ## Database of mature miRNA sequences to search
 has maximum => (is => 'rw', default => undef); ## catchall maximum threshold
 has maxlength => (is => 'rw', default => 42); ## Maximum sequence length when trimming
+has max_reads => (is => 'rw', default => 1000000);
 has method => (is => 'rw', default => undef);
 has mi_genome => (is => 'rw', default => undef); ## Set a miRbase genome to hunt for mature miRNAs
 has min_depth => (is => 'rw', default => 5); ## Default use: variant searching, depth limit
@@ -282,6 +283,7 @@ has qual => (is => 'rw', default => undef); ## cutadapt quality string
 has query => (is => 'rw', default => undef); ## Used for searches when input is already taken, most likely blast/fasta
 has remove => (is => 'rw', default => 1);
 has reference => (is => 'rw', default => undef);
+has requeue => (is => 'rw', default => 0); ## requeue failed jobs?
 has restart => (is => 'rw', default => 0); ## Restart job(s) in the middle of a group
 has riboanchor => (is => 'rw', default => 'start'); ## When correcting, use the start or end position as an anchor
 has riboasite => (is => 'rw', default => 1); ## Count riboseq A site positions?
@@ -302,7 +304,7 @@ has sbatch_dependsarray => (is => 'rw', default => 'afterok:'); ## String to pas
 has sbatch_path => (is => 'rw', default => scalar_which('sbatch'));
 has script_dir => (is => 'rw', default => 'scripts');
 has search_string => (is => 'rw', default => 'tail');
-has secondary => (is => 'rw', default => 'score');  ## Or ignore, use by htseq-count.
+has secondary => (is => 'rw', default => 'ignore');  ## Or ignore, use by htseq-count.
 has separation => (is => 'rw', default => '10');
 has shell => (is => 'rw', default => '/usr/bin/bash'); ## Default qsub shell
 has sort => (is => 'rw', default => 'pos'); ## Explicitly set the sorting type for htseq
@@ -312,7 +314,7 @@ has starting_tree => (is => 'rw', default => undef); ## Starting tree for phylog
 ## Note 202212: Now most of the sequencing kits used by our sequencer are reverse.
 has stranded => (is => 'rw', default => 'reverse'); ## Did this data come from a stranded library kit?
 has suffixes => (is => 'rw', default => '.fastq,.gz,.xz,.fasta,.sam,.bam,.count,.csfasta,.qual,.fsa,.faa,.fna,.gbf,.gbk,.tsv,.csv,.gff,.tbl,.ffn,.sf'); ## Suffixes to remove when invoking basename
-has supplementary => (is => 'rw', default => 'score'); ## or ignore, used by htseq-count.
+has supplementary => (is => 'rw', default => 'ignore'); ## or ignore, used by htseq-count.
 has ta_offset => (is => 'rw', default => 0); ## When counting TAs, this is either 0 or 2 depending on if the TA was removed.
 has task => (is => 'rw', default => 'tnseq');
 has taxid => (is => 'rw', default => '353153'); ## Default taxonomy ID, unknown for now.

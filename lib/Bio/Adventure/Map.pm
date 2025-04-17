@@ -944,6 +944,7 @@ sub Hisat2 {
         args => \%args,
         compress => 1,
         count => 1,
+        counter => 'featureCounts',
         jcpu => 8,
         jmem => 48,
         jname => 'hisat',
@@ -992,8 +993,7 @@ sub Hisat2 {
     my $hisat_name = qq"${prefix_name}_$options->{species}_$options->{libtype}";
     my $xz_jname = qq"xz_${hisat_name}";
     my $sam_jname = qq"s2b_${hisat_name}";
-    my $htseq_jname = qq"htseq_${hisat_name}";
-    my $htmulti_jname = qq"htmulti_${hisat_name}";
+    my $counter_jname = qq"counter_${hisat_name}";
     my $stat_jname = qq"${hisat_name}_stat";
 
     my $hisat_input = $options->{input};
@@ -1176,58 +1176,72 @@ sleep 3
             jdepends => $sam_job->{job_id},);
     }
     $new_jprefix = qq"$options->{jprefix}_3";
-    my $htseq_input;
+    my $counter_input;
     if ($paired == 1) {
-        $htseq_input = $sam_job->{paired_output};
+        $counter_input = $sam_job->{paired_output};
     } else {
-        $htseq_input = $sam_job->{output};
+        $counter_input = $sam_job->{output};
     }
 
-    my $htmulti;
-    if ($options->{count}) {
+    my $counter_out = '';
+    my $counter;
+    my $stats;
+    if ($options->{count} && $options->{counter} eq 'htseq') {
         if ($options->{libtype} eq 'rRNA') {
-            $htmulti = $class->Bio::Adventure::Count::HTSeq(
-                input => $htseq_input,
+            $counter = $class->Bio::Adventure::Count::HTSeq(
+                input => $counter_input,
                 jdepends => $sam_job->{job_id},
-                jname => $htseq_jname,
+                jname => $counter_jname,
                 jprefix => $new_jprefix,
                 libtype => $options->{libtype},
                 mapper => 'hisat2',
                 paired => $paired,
                 stranded => $stranded,);
         } else {
-            $htmulti = $class->Bio::Adventure::Count::HT_Multi(
-                input => $htseq_input,
+            $counter = $class->Bio::Adventure::Count::HT_Multi(
+                input => $counter_input,
                 jdepends => $sam_job->{job_id},
-                jname => $htmulti_jname,
+                jname => $counter_jname,
                 jprefix => $new_jprefix,
                 libtype => $options->{libtype},
                 mapper => 'hisat2',
                 paired => $paired,
                 stranded => $stranded,);
         }
-        $hisat_job->{htseq} = $htmulti;
-    }  ## End checking if we should do htseq
-
-    my $htseq_out = '';
-    if (ref($hisat_job->{htseq}) eq 'ARRAY') {
-        $htseq_out = $hisat_job->{htseq}->[0]->{output};
-    } else {
-        $htseq_out = $hisat_job->{htseq}->{output};
+        $hisat_job->{htseq} = $counter;
+        if (ref($hisat_job->{htseq}) eq 'ARRAY') {
+            $counter_out = $hisat_job->{htseq}->[0]->{output};
+        } else {
+            $counter_out = $hisat_job->{htseq}->{output};
+        }
+        $stats = $class->Bio::Adventure::Metadata::HT2_Stats(
+            input => $stderr,
+            count_table => $counter_out,
+            jdepends => $hisat_job->{job_id},
+            jname => $stat_jname,
+            jprefix => $new_jprefix,
+            output_dir => $paths->{output_dir},);
+        $hisat_job->{stats} = $stats;
+        ## If this is not the final job in a chain, then make sure
+        ## that any jobs queued after it do not start until
+        ## samtools/htseq/etc are finished.
+        $hisat_job->{job_id} = $stats->{job_id};
+    } elsif ($options->{count} && $options->{counter} eq 'featureCounts') {
+        $counter = $class->Bio::Adventure::Count::Feature_Counts(
+            input => $counter_input,
+            jdepends => $sam_job->{job_id},
+            jname => $counter_jname,
+            jprefix => $new_jprefix,
+            libtype => $options->{libtype},
+            mapper => 'hisat2',
+            paired => $paired,
+            stranded => $stranded,);
+        ## If this is not the final job in a chain, then make sure
+        ## that any jobs queued after it do not start until
+        ## samtools/htseq/etc are finished.
+        $hisat_job->{job_id} = $counter->{job_id};
     }
-
-    my $stats = $class->Bio::Adventure::Metadata::HT2_Stats(
-        input => $stderr,
-        count_table => $htseq_out,
-        jdepends => $hisat_job->{job_id},
-        jname => $stat_jname,
-        jprefix => $new_jprefix,
-        output_dir => $paths->{output_dir},);
-    $hisat_job->{stats} = $stats;
-    ## If this is not the final job in a chain, then make sure
-    ## that any jobs queued after it do not start until
-    ## samtools/htseq/etc are finished.
-    $hisat_job->{job_id} = $stats->{job_id};
+    $hisat_job->{counter} = $counter;
     return($hisat_job);
 }
 

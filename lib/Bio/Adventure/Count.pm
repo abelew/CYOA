@@ -62,6 +62,93 @@ bedtools genomecov -bga -ibam $options->{input} 1>${stdout} 2>${stderr}
     return($bedtools);
 }
 
+sub Feature_Counts {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['input', 'species',],
+        fractional => 1,
+        minlength => 50,
+        maxlength => 800,
+        paired => 1,
+        jcpu => 1,
+        jmem => 12,
+        jname => '',
+        jprefix => '',);
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $output_name = basename($options->{input}, ('.bam', '.sam'));
+    my $output_dir = dirname($options->{input});
+    my $output = qq"${output_dir}/${output_name}";
+    my $sort = $options->{sort};
+    my $fc_invocation = qq"featureCounts \\
+  -T 1 ";
+    if ($options->{introns}) {
+        $fc_invocation .= qq" -J -G $paths->{fasta}";
+    }
+    if ($options->{fractional}) {
+        $fc_invocation .= ' -M --fraction';
+    }
+    my $qual = $options->{qual};
+    if (!defined($qual)) {
+        print "Setting minimum quality to 0.\n";
+        $qual = '0';
+    }
+    $fc_invocation .= qq" -Q ${qual}";
+    my $stranded = $options->{stranded};
+    if (defined($stranded)) {
+        if ($stranded eq 'forward') {
+            $stranded = 1;
+        } elsif ($stranded eq 'reverse') {
+            $stranded = 2;
+        } else {
+            $stranded = 0;
+        }
+        $fc_invocation .= qq" -s ${stranded}";
+    } else {
+        $stranded = 0;
+    }
+    if ($options->{paired}) {
+        $fc_invocation .= qq" -p --countReadPairs -B -P -d $options->{minlength} -D $options->{maxlength}";
+    }
+    $fc_invocation .= qq" \\
+  -R CORE -t $options->{gff_type} -g $options->{gff_tag} \\
+  -a $paths->{gff} \\
+";
+    $output .= qq"_s${stranded}_$options->{gff_type}_$options->{gff_tag}_fcounts.csv";
+    my $error = basename($output, ('.csv'));
+    my $stderr = qq"${output_dir}/${error}.stderr";
+    my $stdout = qq"${output_dir}/${error}.stdout";
+    $fc_invocation .= qq"  -o ${output} \\
+  $options->{input} \\
+  2>>${stderr} \\
+  1>>${stdout}
+xz -9e -f ${output}
+xz -9e -f ${output}.jcounts
+xz -9e -f $options->{input}.featureCounts";
+    $output .= '.xz';
+    my $comment = qq!## Counting the number of hits in $options->{input} for each feature found in $paths->{gff} via featureCounts.
+## Is this stranded? ${stranded}.
+!;
+    my $fc_jobname = qq"fcount_$options->{mapper}_$options->{species}_s${stranded}_$options->{gff_type}_$options->{gff_tag}";
+    my $fc = $class->Submit(
+        comment => $comment,
+        gff_type => $options->{gff_type},
+        gff_tag => $options->{gff_tag},
+        input => $options->{input},
+        output => $output,
+        stderr => $stderr,
+        stdout => $stdout,
+        postscript => $args{postscript},
+        prescript => $args{prescript},
+        jdepends => $options->{jdepends},
+        jcpu => $options->{jcpu},
+        jmem => $options->{jmem},
+        jname => $fc_jobname,
+        jprefix => $options->{jprefix},
+        jstring => $fc_invocation,);
+    return($fc);
+}
+
 sub Guess_Strand {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
@@ -396,8 +483,7 @@ sub HT_Multi {
                 suffix => $options->{suffix},);
             push(@jobs, $ht);
             $htseq_runs++;
-        }
-        elsif (-r "$gtf") {
+        } elsif (-r "$gtf") {
             print "Found ${gtf}, performing htseq with it.\n";
             my $ht = $class->Bio::Adventure::Count::HTSeq(
                 gff_type => $gff_type,
@@ -413,7 +499,7 @@ sub HT_Multi {
             push(@jobs, $ht);
             $htseq_runs++;
         }
-    }                           ## End foreach type
+    } ## End foreach type
     ## Also perform a whole genome count
     my $htall_jobname = qq"htall_${output_name}_$options->{species}_s${stranded}_$ro_opts{gff_type}_$ro_opts{gff_tag}";
     if (-r "$paths->{gff}") {
@@ -431,8 +517,7 @@ sub HT_Multi {
             prescript => $options->{prescript},
             suffix => $options->{suffix},);
         push(@jobs, $ht);
-    }
-    elsif (-r "$paths->{gtf}") {
+    } elsif (-r "$paths->{gtf}") {
         print "Found $paths->{gtf}, performing htseq_all with it.\n";
         my $ht = $class->Bio::Adventure::Count::HTSeq(
             htseq_gff => $paths->{gff},
@@ -446,8 +531,7 @@ sub HT_Multi {
             prescript => $args{prescript},
             suffix => $args{suffix},);
         push(@jobs, $ht);
-    }
-    else {
+    } else {
         print "Did not find $paths->{gff} nor $paths->{gtf}, not running htseq_all.\n";
     }
     return(\@jobs);
@@ -506,14 +590,12 @@ sub HT_Types {
         my $canonical = $names[0];
         if ($found_types{$type}) {
             $found_types{$type}++;
-        }
-        else {
+        } else {
             $found_types{$type} = 1;
         }
         if ($found_canonical{$canonical}) {
             $found_canonical{$canonical}++;
-        }
-        else {
+        } else {
             $found_canonical{$canonical} = 1;
         }
         if ($count > $max_lines) {
@@ -551,8 +633,7 @@ sub HT_Types {
     my $returned_type = "";
     if ($found_my_type == 1) {
         $returned_type = $my_type;
-    }
-    else {
+    } else {
         print "Did not find your specified type.  Changing it to: ${max_type} which had ${max} entries.\n";
         $returned_type = $max_type;
     }
@@ -668,16 +749,13 @@ sub HTSeq {
         $gff_type = $gff_type_pair->[0];
         $gff_type_arg = qq" --type ${gff_type}";
         $gff_tag_arg = qq" --idattr ${gff_tag}";
-    }
-    elsif (ref($gff_type) eq 'ARRAY') {
+    } elsif (ref($gff_type) eq 'ARRAY') {
         $gff_type_arg = qq" --type $gff_type->[0]";
         $gff_tag_arg = qq" --idattr ${gff_tag}";
-    }
-    elsif ($gff_type eq 'none') {
+    } elsif ($gff_type eq 'none') {
         $gff_type_arg = qq'';
         $gff_tag_arg = qq'';
-    }
-    else {
+    } else {
         $gff_type_arg = qq" --type \${gff_type}";
         $gff_tag_arg = qq" --idattr \${gff_tag}";
     }
@@ -689,6 +767,7 @@ mode=${mode}
 secondary=${secondary}
 supplementary=${supplementary}
 sort=${sort}
+max_reads=$options->{max_reads}
 !;
     }
     $output .= qq"_r${sort}_s${stranded}_${gff_type}_${gff_tag}.csv";
@@ -706,6 +785,7 @@ htseq-count \\
   -s \${stranded} -a ${aqual} -r \${sort} \\
   ${gff_type_arg} ${gff_tag_arg} --mode \${mode} \\
   --secondary-alignments \${secondary} --supplementary-alignments \${supplementary} \\
+  --max-reads-in-buffer \${max_reads} \\
   --counts_output ${output} \\!;
     my $jstring = qq!${htseq_invocation}
   ${htseq_input} \\
@@ -1016,6 +1096,7 @@ sub Kraken {
         args => \%args,
         required => ['input'],
         library => 'viral',
+        jcpu => 2,
         jmem => 32,
         jprefix => '11',
         clean => 1,);
@@ -1069,9 +1150,9 @@ rm -f ${output_dir}/*.fastq.gz
     my $output = qq"${output_dir}/kraken_report.txt";
     my $kraken = $class->Submit(
         comment => $comment,
-        jcpu => 6,
+        jcpu => $options->{jcpu},
         jdepends => $options->{jdepends},
-        jmem => 96,
+        jmem => $options->{jmem},
         jname => "kraken_${job_name}",
         jprefix => $options->{jprefix},
         jstring => $jstring,
