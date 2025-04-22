@@ -302,7 +302,7 @@ has sbatch_dependsarray => (is => 'rw', default => 'afterok:'); ## String to pas
 has sbatch_path => (is => 'rw', default => scalar_which('sbatch'));
 has script_dir => (is => 'rw', default => 'scripts');
 has search_string => (is => 'rw', default => 'tail');
-has secondary => (is => 'rw', default => 'score');  ## Or ignore, use by htseq-count.
+has secondary => (is => 'rw', default => 'ignore');  ## Or ignore, use by htseq-count.
 has separation => (is => 'rw', default => '10');
 has shell => (is => 'rw', default => '/usr/bin/bash'); ## Default qsub shell
 has sort => (is => 'rw', default => 'pos'); ## Explicitly set the sorting type for htseq
@@ -312,7 +312,7 @@ has starting_tree => (is => 'rw', default => undef); ## Starting tree for phylog
 ## Note 202212: Now most of the sequencing kits used by our sequencer are reverse.
 has stranded => (is => 'rw', default => 'reverse'); ## Did this data come from a stranded library kit?
 has suffixes => (is => 'rw', default => '.fastq,.gz,.xz,.fasta,.sam,.bam,.count,.csfasta,.qual,.fsa,.faa,.fna,.gbf,.gbk,.tsv,.csv,.gff,.tbl,.ffn,.sf'); ## Suffixes to remove when invoking basename
-has supplementary => (is => 'rw', default => 'score'); ## or ignore, used by htseq-count.
+has supplementary => (is => 'rw', default => 'ignore'); ## or ignore, used by htseq-count.
 has ta_offset => (is => 'rw', default => 0); ## When counting TAs, this is either 0 or 2 depending on if the TA was removed.
 has task => (is => 'rw', default => 'tnseq');
 has taxid => (is => 'rw', default => '353153'); ## Default taxonomy ID, unknown for now.

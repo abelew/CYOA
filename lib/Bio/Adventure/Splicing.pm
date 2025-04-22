@@ -337,11 +337,11 @@ mkdir -p ${cluster_base}
     ## type?  I will at least endeavor to do so.
     my @event_types = ('SE', 'SS', 'MX', 'RI', 'FL');
     my %mapped_types = (
-        'SE' => 'SE',
-        'SS' => 'A3',
-        'MX' => 'MX',
-        'RI' => 'RI',
-        'FL' => 'AF');
+        SE => 'SE',
+        SS => 'A3',
+        MX => 'MX',
+        RI => 'RI',
+        FL => 'AF');
     my @alt_types = ('SE', 'A3', 'A5', 'AF', 'AL', 'MX', 'RI');
     ## Read in the gtf (NOT GTF) annotation file and produce a series
     ## of event-type specific annotations.
@@ -951,7 +951,7 @@ ${rev_cmd}
 
 }
 
-=head2 C<SLSeq_Recorder>
+=head2 C<SL_Recorder>
 
   Use the reads from a SLSeq experiment to define the 5' UTRs of parasite genes.
   This is taking ideas from 10.1038/s41598-017-03987-0 and hopefully improving
@@ -982,7 +982,7 @@ ${rev_cmd}
 =back
 
 =cut
-sub SLSeq_Recorder {
+sub SL_Recorder {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
@@ -1024,15 +1024,105 @@ my \$result = \$h->Bio::Adventure::Splicing::SLSeq_Recorder_Worker(
     return($slseq);
 }
 
+=head2 C<PolyA_Recorder>
+
+  Use the reads from a SLSeq experiment to define the 3' UTRs of parasite genes.
+  This is taking ideas from 10.1038/s41598-017-03987-0 and hopefully improving
+  the logic a bit.
+
+  There is an important caveat: this code currently assumes/requires paired-end reads.
+  In addition, this assumes one is using a gff which was already modified by SLSeq_Recorder,
+  which should be renamed to something like 'SL_Recorder' to account for the fact that it is
+  specific to the 5' end of the genes.
+
+
+  The general idea: Read in the extant gene annotations and make a contig-keyed hash
+  where each key is comprised of an array of gene features including the relevant
+  information about the current gene and the 'next' gene (reading from beginning to end
+  of each contig).  Then read each aligned read from a position-sorted bam file from hisat
+  or whatever and keep only the reads which are: a) pointing in the same direction as the ORF
+  b) positioned in the 5' UTR of an ORF (thus the information about the next gene).  Given that,
+  record every SL position with respect to the AUG and count how many reads are observed at every
+  relative position.  Upon completion, write up a new gff file with new features of type 'SLSeq'
+  that have a new start for the + and new end for the - strand features.
+
+=over
+
+=item C<Arguments>
+
+  input(required): Sorted/indexed bam from hisat/bowtie/bwa/etc
+  species: Find the original genome/gff annotations with this.
+  gff_type(protein_coding_gene): Use this feature type to create new features.
+  output_type(SLSeq_gene): Create new features of this type.
+  id_tag(ID): Identify genes using this feature tag.
+
+=back
+
+=cut
+sub PolyA_Recorder {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['species', 'input',],
+        input_gff => '',
+        gff_type => 'SLSeq_gene',
+        output_type => 'SLSeq_gene',
+        jprefix => '50',
+        id_tag => 'ID',);
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $output_dir = $paths->{output_dir};
+    make_path($output_dir) unless (-d $output_dir);
+    my $output_gff = qq"${output_dir}/$options->{species}_maximum_3putr.gff";
+    my $output_tsv = qq"${output_dir}/$options->{species}_recorded_polya.tsv";
+    my $jname = qq"SLSeq_$options->{species}";
+    my $jstring = qq!use Bio::Adventure::Splicing;
+my \$result = \$h->Bio::Adventure::Splicing::SLSeq_Recorder_Worker(
+  direction => '3p',
+  gff_type => '$options->{gff_type}',
+  id_tag => '$options->{id_tag}',
+  input => '$options->{input}',
+  input_gff => '$options->{input_gff}',
+  jname => '${jname}',
+  output => '${output_gff}',
+  output_tsv => '${output_tsv}',
+  output_dir => '${output_dir}',
+  output_type => '$options->{output_type}',
+  species => '$options->{species}',);
+!;
+    my $comment = qq!## Seek SL positions.!;
+    my $slseq = $class->Submit(
+        comment => $comment,
+        direction => '3p',
+        input => $options->{input},
+        input_gff => $options->{input_gff},
+        jdepends => $options->{jdepends},
+        jname => $jname,
+        jprefix => $options->{jprefix},
+        jstring => $jstring,
+        output => $output_gff,
+        output_dir => $output_dir,
+        output_tsv => $output_tsv,
+        language => 'perl',);
+    return($slseq);
+}
+
 sub SLSeq_Recorder_Worker {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
         required => ['species', 'input',],
+        direction => '5p',
+        input_gff => '',
         gff_type => 'protein_coding_gene',
-        output_type => 'SLSeq_5pUTR',
+        output_type => 'SLSeq_gene',
         gff_tag => 'ID',);
-    my $input_gff = qq"$options->{libpath}/$options->{libtype}/gff/$options->{species}.gff";
+    my $input_gff = $options->{input_gff};
+    unless ($input_gff) {
+        $input_gff = qq"$options->{libpath}/$options->{libtype}/gff/$options->{species}.gff";
+        print "Input gff file not provided, using:
+${input_gff}.\n";
+
+    }
     my $fasta = qq"$options->{libpath}/$options->{libtype}/fasta/$options->{species}.fasta";
     unless (-r $options->{input}) {
         die("Unable to find input bam alignment.");
@@ -1041,7 +1131,16 @@ sub SLSeq_Recorder_Worker {
     make_path($output_dir) unless (-d $output_dir);
     ## Set up the output filehandles:
     ##  The output csv file.
-    my $output_csv = FileHandle->new(qq">${output_dir}/$options->{species}_recorded_sl.csv");
+    my $output_csv_filename;
+    if ($options->{direction} eq '5p') {
+        $output_csv_filename = qq"${output_dir}/$options->{species}_recorded_sl.csv";
+    } elsif ($options->{direction} eq '3p') {
+        $output_csv_filename = qq"${output_dir}/$options->{species}_recorded_polya.csv";
+    } else {
+        die("I only understand 5p and 3p directions.");
+    }
+
+    my $output_csv = FileHandle->new(qq">${output_csv_filename}");
     print $output_csv qq"$options->{gff_tag}\tstart\tend\tstrand\trelative_pos\tnum_reads\n";
     ## The output gff file, this will receive individual gff strings:
     my $gff_output_filename = qq"${output_dir}/$options->{species}_modified_genes.gff";
@@ -1137,6 +1236,7 @@ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
             if ($previous_contig ne 'start') {
                 print "Writing data for ${previous_contig}\n";
                 Write_SLData(observed => $observed,
+                             direction => $options->{direction},
                              contig => $previous_contig,
                              output_csv => $output_csv,
                              gff_tag => $options->{gff_tag},
@@ -1145,8 +1245,10 @@ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
             }
             $new_contig = $read_seqid;
         }
-        ## If the read strand is +1, then I want it associated with a feature on the +1 with a start which is > this read start.
-        ## If the read strand is -1, then I want it associated with a feature on the -1 with a end which is < this read end.
+        ## If the read strand is +1, then I want it associated with a
+        ## feature on the +1 with a start which is > this read start.
+        ## If the read strand is -1, then I want it associated with a
+        ## feature on the -1 with a end which is < this read end.
         my $num_features = undef;
         next BAMLOOP unless (defined($observed->{$read_seqid}));
         my $type = ref($observed->{$read_seqid});
@@ -1196,9 +1298,7 @@ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
             ## Sadly, I do not think I can exclude the opposite orientation,
             ## if the current feature is -1 and the next is +1, then the current reads
             ## may be associated with both
-
             next FEAT_SEARCH if (!defined($current_strand));
-
             if ($current_strand ne $read_strand &&
                 $next_strand ne $read_strand) {
                 $counters->{opposite_strand}++;
@@ -1249,6 +1349,7 @@ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
     print $log "Writing data for ${new_contig}\n";
     Write_SLData(observed => $observed,
                  contig => $new_contig,
+                 direction => $options->{direction},
                  output_csv => $output_csv,
                  gff_tag => $options->{gff_tag},
                  gffio => $gffout_io,
