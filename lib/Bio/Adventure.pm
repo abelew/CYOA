@@ -177,7 +177,7 @@ has gcode => (is => 'rw', default => '11'); ## Choose a genetic code
 has genome => (is => 'rw', default => undef); ## Choose a genome to work on.
 has genus => (is => 'rw', default => undef); ## Choose a genus when using prokka and potentially others like kraken
 has gff => (is => 'rw', default => undef); ## Feature file to read/write
-has gff_tag => (is => 'rw', default => 'gene_id'); ## Likely redundant with htseq_id
+has gff_tag => (is => 'rw', default => 'ID'); ## Likely redundant with htseq_id
 ## Ahh I remember, htseq_type was added to facilitate performing multiple htseq counts on multiple gff files.
 ## Notably the interCDS for bacterial genomes.
 has gff_type => (is => 'rw', default => 'gene'); ## When blank, do it on the whole gff file, otherwise use that suffix.
@@ -241,6 +241,7 @@ has mapper => (is => 'rw', default => 'hisat'); ## Use this aligner if none was 
 has mature_fasta => (is => 'rw', default => undef); ## Database of mature miRNA sequences to search
 has maximum => (is => 'rw', default => undef); ## catchall maximum threshold
 has maxlength => (is => 'rw', default => 42); ## Maximum sequence length when trimming
+has max_reads => (is => 'rw', default => 1000000);
 has method => (is => 'rw', default => undef);
 has mi_genome => (is => 'rw', default => undef); ## Set a miRbase genome to hunt for mature miRNAs
 has min_depth => (is => 'rw', default => 5); ## Default use: variant searching, depth limit
@@ -282,6 +283,7 @@ has qual => (is => 'rw', default => undef); ## cutadapt quality string
 has query => (is => 'rw', default => undef); ## Used for searches when input is already taken, most likely blast/fasta
 has remove => (is => 'rw', default => 1);
 has reference => (is => 'rw', default => undef);
+has requeue => (is => 'rw', default => 0); ## requeue failed jobs?
 has restart => (is => 'rw', default => 0); ## Restart job(s) in the middle of a group
 has riboanchor => (is => 'rw', default => 'start'); ## When correcting, use the start or end position as an anchor
 has riboasite => (is => 'rw', default => 1); ## Count riboseq A site positions?
