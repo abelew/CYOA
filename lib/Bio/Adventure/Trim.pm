@@ -388,7 +388,7 @@ trimmed=1
       1>$paths->{stdout}
     ${compress_string}
 } || {
-  echo 'fastp failed.' >> ${stderr}
+  echo 'fastp failed.' >> $paths->{stderr}
 }
 !;
 
