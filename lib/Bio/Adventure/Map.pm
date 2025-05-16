@@ -1993,7 +1993,6 @@ mapped=1
         input => $sa_input,
         jname => $jname,
         jstring => $jstring,
-        jtemplate => 'salmon.sh',
         output => qq"${outdir}/quant.sf",
         stderr => $stderr,
         stdout => $stdout,
