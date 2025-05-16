@@ -1991,17 +1991,19 @@ mapped=1
     my $salmon = $class->Submit(
         comment => $comment,
         input => $sa_input,
+        jname => $jname,
+        jstring => $jstring,
+        jtemplate => 'salmon.sh',
         output => qq"${outdir}/quant.sf",
         stderr => $stderr,
         stdout => $stdout,
-        jtemplate => 'salmon.sh',
     );
     $salmon->{index_job} = $index_job;
-    my %stat_args = $class->Extra_Options(options => $options, extras => {
+    my $stats = $class->Bio::Adventure::Metadata::Salmon_Stats(
         input => qq"${outdir}/lib_format_counts.json",
         jdepends => $salmon->{job_id},
-        jname => qq"sastats_$options->{species}", });
-    my $stats = $class->Bio::Adventure::Metadata::Salmon_Stats(%stat_args);
+        jname => qq"sastats_$options->{species}",
+    );
     $salmon->{stats} = $stats;
     return($salmon);
 }

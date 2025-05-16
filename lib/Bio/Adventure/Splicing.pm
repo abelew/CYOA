@@ -1508,8 +1508,8 @@ sub Write_SLData {
                 -tag => {
                     Parent => $gene_name,
                 });
-            my @original_tags = $original->get_all_tags();
-            for my $tag (@original_tags) {
+            my @most_tags = $original->get_all_tags();
+            for my $tag (@most_tags) {
                 my @tag_values = $original->get_tag_values($tag);
                 for my $val (@tag_values) {
                     $most_cds->add_tag_value($tag, $val);
