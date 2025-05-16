@@ -80,8 +80,10 @@ sub Feature_Counts {
     my $output_dir = dirname($options->{input});
     my $output = qq"${output_dir}/${output_name}";
     my $sort = $options->{sort};
-    my $fc_invocation = qq"featureCounts \\
-  -T 1 ";
+    my $fc_invocation = qq"counted=0
+{
+  /usr/bin/time -v -o ${output}.time -a featureCounts \\
+    -T 1 ";
     if ($options->{introns}) {
         $fc_invocation .= qq" -J -G $paths->{fasta}";
     }
@@ -111,20 +113,26 @@ sub Feature_Counts {
         $fc_invocation .= qq" -p --countReadPairs -B -P -d $options->{minlength} -D $options->{maxlength}";
     }
     $fc_invocation .= qq" \\
-  -R CORE -t $options->{gff_type} -g $options->{gff_tag} \\
-  -a $paths->{gff} \\
+    -R CORE -t $options->{gff_type} -g $options->{gff_tag} \\
+    -a $paths->{gff} \\
 ";
     $output .= qq"_s${stranded}_$options->{gff_type}_$options->{gff_tag}_fcounts.csv";
     my $error = basename($output, ('.csv'));
     my $stderr = qq"${output_dir}/${error}.stderr";
     my $stdout = qq"${output_dir}/${error}.stdout";
-    $fc_invocation .= qq"  -o ${output} \\
-  $options->{input} \\
-  2>>${stderr} \\
-  1>>${stdout}
-xz -9e -f ${output}
-xz -9e -f ${output}.jcounts
-xz -9e -f $options->{input}.featureCounts";
+    $fc_invocation .= qq!    -o ${output} \\
+    $options->{input} \\
+    2>>${stderr} \\
+    1>>${stdout}
+  counted=\$?
+} || {
+  echo 'featureCounts failed.' >> ${stderr}
+}
+if [[ "\${counted}" = 0 ]]; then
+  xz -9e -f ${output}
+  xz -9e -f $options->{input}.featureCounts;
+fi
+!;
     $output .= '.xz';
     my $comment = qq!## Counting the number of hits in $options->{input} for each feature found in $paths->{gff} via featureCounts.
 ## Is this stranded? ${stranded}.
@@ -780,7 +788,7 @@ max_reads=$options->{max_reads}
 
     my $htseq_jobname = qq"hts_${top_dir}_$options->{mapper}_$options->{species}_s${stranded}_${gff_type}_${gff_tag}";
     my $htseq_invocation = qq!${variable_string}
-htseq-count \\
+/usr/bin/time -v -o ${output}.time -a htseq-count \\
   -q -f bam \\
   -s \${stranded} -a ${aqual} -r \${sort} \\
   ${gff_type_arg} ${gff_tag_arg} --mode \${mode} \\

@@ -379,11 +379,17 @@ xz -9e -f ${output_r1}
 
     my $jstring = qq!
 mkdir -p ${out_dir}
-fastp ${umi_flags} ${input_flags} \\
-  ${report_flags} ${extra_args} \\
-  2>$paths->{stderr} \\
-  1>$paths->{stdout}
-${compress_string}
+trimmed=1
+{
+  /usr/bin/time -v -o $paths->{stdout}.time -a \
+    fastp ${umi_flags} ${input_flags} \\
+      ${report_flags} ${extra_args} \\
+      2>$paths->{stderr} \\
+      1>$paths->{stdout}
+    ${compress_string}
+} || {
+  echo 'fastp failed.' >> ${stderr}
+}
 !;
 
     my $fastp = $class->Submit(

@@ -1077,12 +1077,14 @@ sub Hisat2 {
     }
     my $sam_filename = qq"$paths->{output_dir}/$options->{species}_$options->{libtype}.sam";
     my $jstring = qq!mkdir -p $paths->{output_dir}
-hisat2 -x $paths->{index_shell} ${hisat_args} \\
-  -p ${jcpu} \\
-  ${hisat_input_flag} ${hisat_input} \\
-  --phred$options->{phred} \\
-  --un ${unaligned_discordant_filename} \\
-  --al ${aligned_discordant_filename} \\
+mapped=1
+{
+  /usr/bin/time -v -o ${stdout}.time -a hisat2 -x $paths->{index_shell} ${hisat_args} \\
+    -p ${jcpu} \\
+    ${hisat_input_flag} ${hisat_input} \\
+    --phred$options->{phred} \\
+    --un ${unaligned_discordant_filename} \\
+    --al ${aligned_discordant_filename} \\
 !;
     ## Record the aligned/unaligned filenames both before and after compression.
     my $aligned_filenames = $aligned_discordant_filename;
@@ -1092,8 +1094,8 @@ hisat2 -x $paths->{index_shell} ${hisat_args} \\
     if ($paired) {
         ## The concordant flag tries to send reads to xxx.1 and xxx.2 even if
         ## the data is not paired.
-        $jstring .= qq!  --un-conc ${unaligned_concordant_filename} \\
-  --al-conc ${aligned_concordant_filename} \\
+        $jstring .= qq!    --un-conc ${unaligned_concordant_filename} \\
+    --al-conc ${aligned_concordant_filename} \\
 !;
         my $aligned_base = basename($aligned_concordant_filename, ('.fastq', '.fasta'));
         my $unaligned_base = basename($unaligned_concordant_filename, ('.fastq', '.fastq'));
@@ -1107,15 +1109,16 @@ hisat2 -x $paths->{index_shell} ${hisat_args} \\
         $unaligned_xz = qq"${the_dirname}/${unaligned_base}.1.fastq.xz:${the_dirname}/${unaligned_base}.2.fastq.xz:${unaligned_discordant_filename}.xz";
     }
     my $all_filenames = qq"${aligned_filenames}:${unaligned_filenames}";
-    $jstring .= qq!  -S ${sam_filename} \\
-  --met-file ${metrics} \\
-  2>${stderr} \\
-  1>${stdout}
+    $jstring .= qq!    -S ${sam_filename} \\
+    --met-file ${metrics} \\
+    2>${stderr} \\
+    1>${stdout}
+} || {
+  echo 'hisat2 failed.' >> ${stderr}
+}
 ## It seems like small files on NFS can cause a race condition leading to failure to properly
 ## read the sam/un(aligned) outputs.
 sync
-sleep 3
-
 !;
     my $hisat_job = $class->Submit(
         comment => $comment,
@@ -1177,12 +1180,11 @@ sleep 3
     }
     $new_jprefix = qq"$options->{jprefix}_3";
     my $counter_input;
-    if ($paired == 1) {
+    if ($paired) {
         $counter_input = $sam_job->{paired_output};
     } else {
         $counter_input = $sam_job->{output};
     }
-
     my $counter_out = '';
     my $counter;
     my $stats;
@@ -1422,20 +1424,21 @@ sub PolyA_Recorder {
     my $options = $class->Get_Vars(
         args => \%args,
         required => ['species', 'input',],
+        input_gff => '',
         gff_type => 'protein_coding_gene',
-        output_type => 'SLSeq_gene',
-        jprefix => '50',
-        id_tag => 'ID',);
+        gff_tag => 'ID',
+        output_type => 'polyA_gene',
+        jprefix => '50',);
     my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $output_dir = $paths->{output_dir};
     make_path($output_dir) unless (-d $output_dir);
     my $output_gff = qq"${output_dir}/$options->{species}_maximum_3p_utr.gff";
     my $output_tsv = qq"${output_dir}/$options->{species}_recorded_polyA.tsv";
-    my $jname = qq"$options->{jprefix}polyA_$options->{species}";
+    my $jname = qq"polyA_$options->{species}";
     my $jstring = qq!use Bio::Adventure::Map;
 my \$result = \$h->Bio::Adventure::Map::PolyA_Recorder_Worker(
   gff_type => '$options->{gff_type}',
-  id_tag => '$options->{id_tag}',
+  gff_tag => '$options->{gff_tag}',
   input => '$options->{input}',
   jname => '${jname}',
   output => '${output_gff}',
@@ -1447,14 +1450,18 @@ my \$result = \$h->Bio::Adventure::Map::PolyA_Recorder_Worker(
     my $comment = qq!## Seek polyA positions.!;
     my $polyA = $class->Submit(
         comment => $comment,
+        gff_type => $options->{gff_type},
+        gff_tag => $options->{gff_tag},
         input => $options->{input},
+        input_gff => $options->{input_gff},
         jdepends => $options->{jdepends},
         jname => $jname,
-        jprefix => '40',
+        jprefix => $options->{jprefix},
         jstring => $jstring,
         output => $output_gff,
         output_dir => $output_dir,
         output_tsv => $output_tsv,
+        output_type => $options->{output_type},
         language => 'perl',);
     return($polyA);
 }
@@ -1474,10 +1481,21 @@ sub PolyA_Recorder_Worker {
     my $options = $class->Get_Vars(
         args => \%args,
         required => ['species', 'input',],
+        input_gff => '',
         gff_type => 'protein_coding_gene',
         output_type => 'SLSeq_3pUTR',
         gff_tag => 'ID',);
-    my $input_gff = qq"$options->{libpath}/$options->{libtype}/gff/$options->{species}.gff";
+    ## A couple of notes:
+    ## 1.  These are all extracted from larger polyA containing reads
+    ##     Thus I should not need to think about R1 vs R2 nor the read strand, only the
+    ##     relative position of the nearest stop codon.
+
+    my $input_gff = $options->{input_gff};
+    unless ($input_gff) {
+        $input_gff = qq"$options->{libpath}/$options->{libtype}/gff/$options->{species}.gff";
+        print "Input gff file not provided, using:
+${input_gff}.\n";
+    }
     my $fasta = qq"$options->{libpath}/$options->{libtype}/fasta/$options->{species}.fasta";
     unless (-r $options->{input}) {
         die("Unable to find input bam alignment.");
@@ -1486,22 +1504,22 @@ sub PolyA_Recorder_Worker {
     make_path($output_dir) unless (-d $output_dir);
     ## Set up the output filehandles:
     ##  The output csv file.
-    my $output_csv = FileHandle->new(qq">${output_dir}/$options->{species}_recorded_sl.csv");
-    print $output_csv qq"$options->{gff_tag}\tstart\tend\tstrand\trelative_pos\tnum_reads\n";
+    my $output_tsv_filename = qq"${output_dir}/$options->{species}_recorded_polya.tsv";
+    my $output_tsv = FileHandle->new(qq">${output_dir}/$options->{species}_recorded_sl.tsv");
+    print $output_tsv qq"$options->{gff_tag}\tstart\tend\tstrand\trelative_pos\tnum_reads\n";
     ## The output gff file, this will receive individual gff strings:
-    my $gff_output_filename = qq"${output_dir}/$options->{species}_modified_genes.gff";
+    my $gff_output_filename = qq"${output_dir}/$options->{species}_3p_modified_genes.gff";
     my $gff_out = FileHandle->new(">${gff_output_filename}");
     ## Use Bio::Tools::GFF to create the gff strings.
     my $gffout_io = Bio::Tools::GFF->new(-noparse => 1, -gff_version => 3);
     ## The log file:
-    my $log_file = qq"${output_dir}/slseq_recorder.log";
+    my $log_file = qq"${output_dir}/polya_recorder.log";
     my $log = FileHandle->new(">${log_file}");
-    print "Starting SLSeq Recorder, reading $options->{gff_tag} tags from $options->{gff_type}
+    print $log "Starting PolyA Recorder, reading $options->{gff_tag} tags from $options->{gff_type}
 entries of ${input_gff}.
 Writing results to ${gff_output_filename}.\n";
-    my ($counters, $observed) = Bio::Adventure::Parsers::Count_Extract_GFF(
-        gff => $input_gff, log => $log,
-        gff_type => $options->{gff_type},
+    my ($counters, $observed) = $class->Bio::Adventure::Parsers::Count_Extract_GFF(
+        gff => $input_gff, log => $log, gff_type => $options->{gff_type},
         gff_tag => $options->{gff_tag},);
     print $log "Beginning to read alignments from: $options->{input}.\n";
     my $sam = Bio::DB::Sam->new(-bam => $options->{input},
@@ -1528,7 +1546,7 @@ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
     $counters->{inside_gene} = 0;
   BAMLOOP: while (my $align = $bam->read1) {
         $counters->{reads}++;
-        ## last BAMLOOP if ($counters->{quantified_reads} > 10000);
+        ##last BAMLOOP if ($counters->{quantified_reads} > 20000);
         my $read_seqid = $target_names->[$align->tid];
         ## my $start = $align->pos + 1;
         ## my $end = $align->calend;
@@ -1547,10 +1565,6 @@ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
         my $read_unmappedp = $align->unmapped;
         if ($read_unmappedp) {
             $counters->{unmapped_reads}++;
-        }
-        my $read_mate_unmappedp = $align->munmapped;
-        if ($read_unmappedp && $read_mate_unmappedp) {
-            $counters->{unmapped_pairs}++;
             next BAMLOOP;
         }
         my @tags = $align->get_all_tags;
@@ -1559,13 +1573,14 @@ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
             $counters->{primary_reads}++;
         }
         my $supplementalp = $align->get_tag_values('SUPPLEMENTARY');
+        ## I am going to take another look at the supplemental alignments
+        ## My thought is that since these are only single ended and have lost the polyA region,
+        ## perhaps they will align relatively poorly.
         if ($supplementalp) {
             $counters->{supplemental_reads}++;
-            next BAMLOOP;
         }
         if ($not_primaryp) {
             $counters->{secondary_reads}++;
-            next BAMLOOP;
         }
         if ($read_seqid ne $new_contig) {
             print "Starting new contig: ${read_seqid}\n";
@@ -1574,18 +1589,20 @@ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
                 print "Writing data for ${previous_contig}\n";
                 Write_PolyA_Data(observed => $observed,
                                  contig => $previous_contig,
-                                 output_csv => $output_csv,
+                                 output_tsv => $output_tsv,
                                  gff_tag => $options->{gff_tag},
                                  gffio => $gffout_io,
                                  gff_out => $gff_out,);
             }
             $new_contig = $read_seqid;
         }
-        ## If the read strand is +1, then I want it associated with a
-        ## feature on the +1 with a end which is < this read end.
-        ## If the read strand is -1, then I want it associated with a
-        ## feature on the -1 with a start which is > this read start.
+        ## Since these reads came from all manner of library types,
+        ## I no longer want to consider the relative strand of the closest gene and the
+        ## strand of the read.
         my $num_features = undef;
+
+        ## Recall, that the read_seqid may include scaffolds which do not have annotated ORFs
+        next BAMLOOP unless (defined($observed->{$read_seqid}));
         my $type = ref($observed->{$read_seqid});
         my $test_features = scalar(@{$observed->{$read_seqid}}) - 1;
         if (defined($test_features)) {
@@ -1598,8 +1615,13 @@ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
             next BAMLOOP;
         }
         my $checker = 0;
+        ## Now iterate over the features on this chromosome/contig and look for the following:
+        ## 1.  If it is ---------->, then I want reads which are > the end.
+        ## 2.  If it is <----------, then I want reads which are < the end.
+        my $feature_start = 0;
       FEAT_SEARCH: for my $c (0 .. $num_features) {
             my $checker++;
+            next FEAT_SEARCH if ($feature_start > $c);
             my $current_feat = $observed->{$read_seqid}[$c];
             my $current_tag = $current_feat->{primary_tag};
             my $current_start = $current_feat->{start};
@@ -1608,20 +1630,25 @@ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
             my $next_distance = $current_feat->{next_distance};
             my $next_start = $current_feat->{next_start};
             my $next_strand = $current_feat->{next_strand};
+            my $previous_distance = $current_feat->{previous_distance};
+            my $previous_end = $current_feat->{previous_end};
+            my $previous_strand = $current_feat->{previous_strand};
             my $current_name = $current_feat->{gene_name};
             last FEAT_SEARCH if ($checker > $num_features);
             if (!defined($current_strand)) {
                 print $log "In feature search, somehow strand is undefined for: ${current_name}\n";
                 next FEAT_SEARCH;
             }
-
-            next FEAT_SEARCH if (!defined($current_strand));
-
-            ## Don't bother with the opposite strand.
-            if ($current_strand ne $read_strand &&
-                $next_strand ne $read_strand) {
-                $counters->{opposite_strand}++;
+            ## Handle the (rare) case where reads are after a + strand gene and
+            ## before a - strand gene
+            if ($current_strand eq '1' && $current_end < $read_start &&
+                $next_strand eq '-1' && $next_start > $read_start) {
+                print $log "Contig:${read_seqid} Str:${current_strand} St:${read_start} vs. last end:${current_end} next start:${next_start}, unannotated ORF?\n";
+                $counters->{unannotated_read}++;
                 next BAMLOOP;
+            }
+            if ($current_strand ne $read_strand && $next_strand ne $read_strand) {
+                $counters->{opposite_strand}++;
             }
 
             ## Don't bother with reads inside the current gene.
@@ -1631,11 +1658,15 @@ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
                 next BAMLOOP;
             }
 
-
-            if ($read_strand eq '1') {
-                my $relative_position = $read_start - $current_end;
-                next FEAT_SEARCH if ($relative_position >= $next_distance);
-                if ($current_end < $read_start) {
+            if ($current_strand eq '1') {
+                my $relative_position = $read_end - $current_end;
+                ## When we get to > 10000 nt past the first gene in the list
+                ## stop looking at the first gene and move forward
+                if ($relative_position < -10000) {
+                    $feature_start++;
+                }
+                print "TESTME: Start at $read_start, Relative position: $relative_position vs. $current_name\n";
+                if ($read_end < $next_start) {
                     $counters->{quantified_reads}++;
                     ## print "Got a +1 hit: $counters->{quantified_reads}\n";
                     if (defined($observed->{$read_seqid}[$c]->{observed}->{$relative_position})) {
@@ -1650,12 +1681,11 @@ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
                 } else {
                     next FEAT_SEARCH;
                 }
-            } elsif ($read_strand eq '-1') {
-                my $relative_position = $current_start - $read_end;
-                next FEAT_SEARCH if ($relative_position >= $next_distance);
+            } elsif ($current_strand eq '-1') {
+                my $relative_position = $current_start - $read_start;
+                print "TESTME: End at $read_end, Relative position: $relative_position vs. $current_name\n";
                 if ($read_end < $current_start) {
                     $counters->{quantified_reads}++;
-                    ## print "Got a -1 hit: $counters->{quantified_reads}\n";
                     if (defined($observed->{$read_seqid}[$c]->{observed}->{$relative_position})) {
                         $observed->{$read_seqid}[$c]->{observed}->{$relative_position}++;
                     } else {
@@ -1677,12 +1707,25 @@ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
     print "Writing data for ${new_contig}\n";
     Write_PolyA_Data(observed => $observed,
                      contig => $new_contig,
-                     output_csv => $output_csv,
+                     output_tsv => $output_tsv,
                      gff_tag => $options->{gff_tag},
                      gffio => $gffout_io,
                      gff_out => $gff_out,);
-    use Data::Dumper;
-    print Dumper $counters;
+    print $log "Reads observed: $counters->{reads}
+Unstranded reads: $counters->{unstranded_reads}
+Plus reads: $counters->{plus_reads}
+Minus reads: $counters->{minus_reads}
+Unstranded: $counters->{notplusminus_reads}
+Unmapped: $counters->{unmapped_reads}
+Unmapped pair: $counters->{unmapped_pairs}
+Primary: $counters->{primary_reads}
+Supplemental: $counters->{supplemental_reads}
+Secondary: $counters->{secondary_reads}
+Same strand inside gene: $counters->{same_strand_in_gene}
+Unannotated: $counters->{unannotated_read}
+Opposite strand: $counters->{opposite_strand}
+Quantified: $counters->{quantified_reads}
+";
     $gff_out->close();
     $log->close();
     return($observed);
@@ -1699,7 +1742,7 @@ sub Write_PolyA_Data {
     my %args = @_;
     my $observed = $args{observed};
     my $contig = $args{contig};
-    my $output_csv = $args{output_csv};
+    my $output_tsv = $args{output_tsv};
     my $gff_tag = $args{gff_tag};
     my $gffio = $args{gffio};
     my $gff_out = $args{gff_out};
@@ -1719,7 +1762,7 @@ sub Write_PolyA_Data {
         if ($num_positions > 0) {
             for my $obs (sort {$a <=> $b } @observed_positions) {
                 $farthest = $obs;
-                print $output_csv qq"${gene_name}\t${gene_start}\t${gene_end}\t${gene_strand}\t${obs}\t$observations->{$obs}\n";
+                print $output_tsv qq"${gene_name}\t${gene_start}\t${gene_end}\t${gene_strand}\t${obs}\t$observations->{$obs}\n";
             }
             if ($gene_strand eq '1') {
                 $new_end = $gene_end + $farthest;
@@ -1873,6 +1916,8 @@ sub Salmon {
     my $options = $class->Get_Vars(
         args => \%args,
         required => ['species', 'input'],
+        jcpu => 8,
+        jwalltime => '4:00:00',
         jmem => 24,
         jprefix => '45',);
     my $depends = $options->{jdepends};
@@ -1930,24 +1975,27 @@ sub Salmon {
 ## ${sa_reflib}.
 !;
     my $jstring = qq!mkdir -p ${outdir}
-salmon quant -i ${sa_reflib} \\
-  -l A --gcBias --validateMappings  \\
-  ${sa_args} \\
-  -o ${outdir} \\
-  2>${stderr} \\
-  1>${stdout}
+mapped=1
+{
+  /usr/bin/time -v -o ${stdout}.time -a \
+    salmon quant -i ${sa_reflib} \\
+      -l A --gcBias --validateMappings  \\
+      ${sa_args} \\
+      -o ${outdir} \\
+      2>${stderr} \\
+      1>${stdout}
+} || {
+  echo 'salmon failed.' >> ${stderr}
+}
 !;
-
-    my %submit_extras = (
+    my $salmon = $class->Submit(
         comment => $comment,
         input => $sa_input,
-        jname => $jname,
-        jstring => $jstring,
         output => qq"${outdir}/quant.sf",
         stderr => $stderr,
         stdout => $stdout,
-        jtemplate => 'salmon.sh', );
-    my $salmon = $class->Submit(%submit_extras);
+        jtemplate => 'salmon.sh',
+    );
     $salmon->{index_job} = $index_job;
     my %stat_args = $class->Extra_Options(options => $options, extras => {
         input => qq"${outdir}/lib_format_counts.json",

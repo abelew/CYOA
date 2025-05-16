@@ -58,12 +58,15 @@ sub Compress {
         $jstring .= qq!
 ## Compressing ${in_full}
 echo "Compressing ${in_full}" 1>>${stdout}
+compressed=1
 if [ -f "${in_full}" ]; then
-  /usr/bin/du -h ${in_full} 1>>${stdout} 2>>${stderr}
-  /usr/bin/time -a -o ${stdout} xz -9e -f ${in_full} 1>>${stdout} 2>>${stderr}
-  if [ "\$?" -ne "0" ]; then
-    echo "The compression of ${in_full} failed." 1>>${stderr}
-  fi
+  {
+    /usr/bin/du -h ${in_full} 1>>${stdout} 2>>${stderr}
+    /usr/bin/time -a -o ${stdout} xz -9e -f ${in_full} 1>>${stdout} 2>>${stderr}
+  } || {
+    echo "Compression of ${in_full} failed." >> ${stdout}
+    compressed=0
+  }
 else
   echo "The input: ${in_full} does not exist." 1>>${stderr}
 fi
@@ -113,6 +116,56 @@ ${fc} | xz -9e -f > ${in_dir}/${in_base}.xz
         } else {
             $jstring .= qq!
 xz -9e -f ${in_full}
+!;
+        }
+    }
+    $output_string =~ s/:$//g;
+
+    my $compression = $class->Submit(
+        comment => $options->{comment},
+        jdepends => $options->{jdepends},
+        input => $options->{input},
+        jcpu => 1,
+        jmem => $options->{jmem},
+        jname => $options->{jname},
+        jprefix => $options->{jprefix},
+        jstring => $jstring,
+        jwalltime => $options->{jwalltime},
+        output => $output_string,);
+    return($compression);
+}
+
+sub Spring {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['input'],
+        comment => '## Recompressing files.',
+        jname => 'spring',
+        jmem => 8,
+        jprefix => '99',
+        jwalltime => '12:00:00',);
+    my $input_paths = $class->Get_Path_Info($options->{input});
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+
+    my $jstring = qq"mkdir -p $paths->{output_dir}";
+    my $output_string = '';
+    for my $in (@{$input_paths}) {
+        my $in_dir = $in->{directory};
+        my $in_base = $in->{filebase_compress};
+        my $in_full = $in->{fullpath};
+        my $output_file = qq"$paths->{output_dir}/${in_base}.spring";
+        my $fc = $class->Get_FC(input => $in_full);
+        $output_string .= qq"${output_file}:";
+        if ($in_full =~ /\.xz|\.gz|\.bz2|\.zip/) {
+            $jstring .= qq!
+spring -c -i <(${fc}) -o ${output_file} \\
+  2>>$paths->{stderr} 1>>$paths->{stdout}
+!;
+        } else {
+            $jstring .= qq!
+spring -c -i ${in_full} -o ${output_file} \\
+  2>>$paths->{stderr} 1>>$paths->{stdout}
 !;
         }
     }

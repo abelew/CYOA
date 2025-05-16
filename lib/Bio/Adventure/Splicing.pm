@@ -988,6 +988,7 @@ sub SL_Recorder {
         args => \%args,
         required => ['species', 'input',],
         gff_type => 'protein_coding_gene',
+        gff_tag => 'ID',
         output_type => 'SLSeq_gene',
         jprefix => '50',
         id_tag => 'ID',);
@@ -1024,94 +1025,11 @@ my \$result = \$h->Bio::Adventure::Splicing::SLSeq_Recorder_Worker(
     return($slseq);
 }
 
-=head2 C<PolyA_Recorder>
-
-  Use the reads from a SLSeq experiment to define the 3' UTRs of parasite genes.
-  This is taking ideas from 10.1038/s41598-017-03987-0 and hopefully improving
-  the logic a bit.
-
-  There is an important caveat: this code currently assumes/requires paired-end reads.
-  In addition, this assumes one is using a gff which was already modified by SLSeq_Recorder,
-  which should be renamed to something like 'SL_Recorder' to account for the fact that it is
-  specific to the 5' end of the genes.
-
-
-  The general idea: Read in the extant gene annotations and make a contig-keyed hash
-  where each key is comprised of an array of gene features including the relevant
-  information about the current gene and the 'next' gene (reading from beginning to end
-  of each contig).  Then read each aligned read from a position-sorted bam file from hisat
-  or whatever and keep only the reads which are: a) pointing in the same direction as the ORF
-  b) positioned in the 5' UTR of an ORF (thus the information about the next gene).  Given that,
-  record every SL position with respect to the AUG and count how many reads are observed at every
-  relative position.  Upon completion, write up a new gff file with new features of type 'SLSeq'
-  that have a new start for the + and new end for the - strand features.
-
-=over
-
-=item C<Arguments>
-
-  input(required): Sorted/indexed bam from hisat/bowtie/bwa/etc
-  species: Find the original genome/gff annotations with this.
-  gff_type(protein_coding_gene): Use this feature type to create new features.
-  output_type(SLSeq_gene): Create new features of this type.
-  id_tag(ID): Identify genes using this feature tag.
-
-=back
-
-=cut
-sub PolyA_Recorder {
-    my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
-        args => \%args,
-        required => ['species', 'input',],
-        input_gff => '',
-        gff_type => 'SLSeq_gene',
-        output_type => 'SLSeq_gene',
-        jprefix => '50',
-        id_tag => 'ID',);
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
-    my $output_dir = $paths->{output_dir};
-    make_path($output_dir) unless (-d $output_dir);
-    my $output_gff = qq"${output_dir}/$options->{species}_maximum_3putr.gff";
-    my $output_tsv = qq"${output_dir}/$options->{species}_recorded_polya.tsv";
-    my $jname = qq"SLSeq_$options->{species}";
-    my $jstring = qq!use Bio::Adventure::Splicing;
-my \$result = \$h->Bio::Adventure::Splicing::SLSeq_Recorder_Worker(
-  direction => '3p',
-  gff_type => '$options->{gff_type}',
-  id_tag => '$options->{id_tag}',
-  input => '$options->{input}',
-  input_gff => '$options->{input_gff}',
-  jname => '${jname}',
-  output => '${output_gff}',
-  output_tsv => '${output_tsv}',
-  output_dir => '${output_dir}',
-  output_type => '$options->{output_type}',
-  species => '$options->{species}',);
-!;
-    my $comment = qq!## Seek SL positions.!;
-    my $slseq = $class->Submit(
-        comment => $comment,
-        direction => '3p',
-        input => $options->{input},
-        input_gff => $options->{input_gff},
-        jdepends => $options->{jdepends},
-        jname => $jname,
-        jprefix => $options->{jprefix},
-        jstring => $jstring,
-        output => $output_gff,
-        output_dir => $output_dir,
-        output_tsv => $output_tsv,
-        language => 'perl',);
-    return($slseq);
-}
-
 sub SLSeq_Recorder_Worker {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
         required => ['species', 'input',],
-        direction => '5p',
         input_gff => '',
         gff_type => 'protein_coding_gene',
         output_type => 'SLSeq_gene',
@@ -1131,22 +1049,20 @@ ${input_gff}.\n";
     make_path($output_dir) unless (-d $output_dir);
     ## Set up the output filehandles:
     ##  The output csv file.
-    my $output_csv_filename;
-    if ($options->{direction} eq '5p') {
-        $output_csv_filename = qq"${output_dir}/$options->{species}_recorded_sl.csv";
-    } elsif ($options->{direction} eq '3p') {
-        $output_csv_filename = qq"${output_dir}/$options->{species}_recorded_polya.csv";
-    } else {
-        die("I only understand 5p and 3p directions.");
-    }
-
+    my $output_csv_filename = qq"${output_dir}/$options->{species}_recorded_sl.csv";
     my $output_csv = FileHandle->new(qq">${output_csv_filename}");
     print $output_csv qq"$options->{gff_tag}\tstart\tend\tstrand\trelative_pos\tnum_reads\n";
+    my $most_csv_filename = qq"${output_dir}/$options->{species}_most_sl.csv";
+    my $most_csv = FileHandle->new(qq">${most_csv_filename}");
+    print $most_csv qq"$options->{gff_tag}\tstart\tend\tstrand\trelative_pos\tnum_reads\n";
     ## The output gff file, this will receive individual gff strings:
     my $gff_output_filename = qq"${output_dir}/$options->{species}_modified_genes.gff";
     my $gff_out = FileHandle->new(">${gff_output_filename}");
+    my $gff_most_filename = qq"${output_dir}/$options->{species}_most_genes.gff";
+    my $gff_most = FileHandle->new(">${gff_most_filename}");
     ## Use Bio::Tools::GFF to create the gff strings.
     my $gffout_io = Bio::Tools::GFF->new(-noparse => 1, -gff_version => 3);
+    my $gffmost_io = Bio::Tools::GFF->new(-noparse => 1, -gff_version => 3);
     ## The log file:
     my $log_file = qq"${output_dir}/slseq_recorder.log";
     my $log = FileHandle->new(">${log_file}");
@@ -1174,15 +1090,14 @@ Writing results to ${gff_output_filename}.\n";
     my @unaligns = split(/\t/, $alignfun[1]);
     my $number_reads = $aligns[2] + $unaligns[3];
     my $output_name = qq"$options->{input}.txt";
-    my $summary_string = qq"There are ${number_reads} alignments in $options->{input}.
-There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
-    print $summary_string;
     my $new_contig = 'start';
     my $previous_contig = 'start';
+    my $feature_start = 0;
+    my $last_read_start = 0;
   BAMLOOP: while (my $align = $bam->read1) {
         $counters->{reads}++;
         ## last BAMLOOP if ($counters->{quantified_reads} > 10000);
-        my $read_seqid = $target_names->[$align->tid];
+        my $read_contig = $target_names->[$align->tid];
         ## my $start = $align->pos + 1;
         ## my $end = $align->calend;
         my $read_start = $align->pos;
@@ -1230,118 +1145,198 @@ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
             $counters->{secondary_reads}++;
             next BAMLOOP;
         }
-        if ($read_seqid ne $new_contig) {
-            print "Starting new contig: ${read_seqid}\n";
+        if ($read_contig ne $new_contig) {
+            print "Starting new contig: ${read_contig}\n";
+            $feature_start = 0;
+            $last_read_start = 0;
             $previous_contig = $new_contig;
             if ($previous_contig ne 'start') {
                 print "Writing data for ${previous_contig}\n";
                 Write_SLData(observed => $observed,
-                             direction => $options->{direction},
                              contig => $previous_contig,
+                             direction => $options->{direction},
                              output_csv => $output_csv,
+                             most_csv => $most_csv,
                              gff_tag => $options->{gff_tag},
                              gffio => $gffout_io,
-                             gff_out => $gff_out,);
+                             gffio_most => $gffmost_io,
+                             gff_out => $gff_out,
+                             gff_most_out => $gff_most,
+                             );
             }
-            $new_contig = $read_seqid;
+            $new_contig = $read_contig;
         }
         ## If the read strand is +1, then I want it associated with a
         ## feature on the +1 with a start which is > this read start.
         ## If the read strand is -1, then I want it associated with a
         ## feature on the -1 with a end which is < this read end.
         my $num_features = undef;
-        next BAMLOOP unless (defined($observed->{$read_seqid}));
-        my $type = ref($observed->{$read_seqid});
-        my $test_features = scalar(@{$observed->{$read_seqid}}) - 1;
+        next BAMLOOP unless (defined($observed->{$read_contig}));
+        my $type = ref($observed->{$read_contig});
+        my $test_features = scalar(@{$observed->{$read_contig}}) - 1;
         if (defined($test_features)) {
             unless (defined($num_features)) {
                 $num_features = $test_features;
             }
         } else {
             $counters->{nogene_contigs}++;
-            ## print "There appear to be no features for ${read_seqid}\n";
+            ## print "There appear to be no features for ${read_contig}\n";
             next BAMLOOP;
         }
         my $checker = 0;
-      FEAT_SEARCH: for my $c (0 .. $num_features) {
+      FEAT_SEARCH: for my $c ($feature_start .. $num_features) {
             my $checker++;
-            my $current_feat = $observed->{$read_seqid}[$c];
+            my $current_feat = $observed->{$read_contig}[$c];
             my $current_tag = $current_feat->{primary_tag};
             my $current_start = $current_feat->{start};
             my $current_end = $current_feat->{end};
             my $current_strand = $current_feat->{strand};
             my $next_distance = $current_feat->{next_distance};
+            my $previous_distance = $current_feat->{previous_distance};
+            my $previous_start = $current_feat->{previous_start};
+            my $previous_strand = $current_feat->{previous_strand};
             my $next_start = $current_feat->{next_start};
+            my $next_end = $current_feat->{next_end};
             my $next_strand = $current_feat->{next_strand};
             my $current_name = $current_feat->{gene_name};
-            last FEAT_SEARCH if ($checker > $num_features);
-            if (!defined($current_strand)) {
-                print $log "In feature search, strand is undefined for: ${current_name}\n";
+            my $previous_name = $current_feat->{previous_name};
+            my $next_name = $current_feat->{next_name};
+            if ($next_end && $read_end > $next_end) {
+                $feature_start++;
+            }
+
+            ## Move to the next feature if this read cannot be before it.
+            if ($read_strand eq '-1' && $read_start > $next_end) {
+                ## print "$feature_start: This read is $read_strand and the read starts $read_start after the next end $next_end.\n";
                 next FEAT_SEARCH;
             }
-            if ($current_strand eq $read_strand &&
-                $current_start <= $read_start &&
-                $current_end > $read_start) {
-                $counters->{same_strand_in_gene}++;
+            if ($read_strand eq '1' && $read_start > $next_start) {
+                ## print "$feature_start: This read is $read_strand and the read starts $read_start after the next start $next_start.\n";
+                next FEAT_SEARCH;
+            }
+
+            ## Set some boundaries for skipping reads.
+            ## First, drop any read inside a gene.
+            if ($read_start > $current_start && $read_end < $current_end) {
+                if ($read_strand eq $current_strand) {
+                    $counters->{same_strand_in_gene}++;
+                } else {
+                    $counters->{opposite_strand_in_gene}++;
+                }
+                ## print "Skipping read, inside a gene.\n";
                 next BAMLOOP;
             }
+
+            if ($read_strand eq '1') {
+                ## Any +1 strand read which is in a -1 region is dropped.
+                if ($current_strand eq '-1' && $next_strand eq '-1' && $previous_strand eq '-1') {
+                    ## print "This plus read is in a -1 region and will be dropped.\n";
+                    next BAMLOOP;
+                }
+            }
+            if ($read_strand eq '-1') {
+                ## Any -1 strand read which is in a + region is dropped.
+                if ($current_strand eq '+1' && $next_strand eq '+1' && $previous_strand eq '+1') {
+                    ## print "This minus read is in a +1 region and will be dropped.\n";
+                    next BAMLOOP;
+                }
+            }
+
+            if ($last_read_start ne $read_start) {
+                ## print "TESTME cpn: $current_name($current_strand) vs $previous_name($previous_strand) vs $next_name($next_strand) || $read_strand $read_start\n";
+                $last_read_start = $read_start;
+            }
+
+            if (!defined($current_strand)) {
+                print $log "In feature search, strand is undefined for: ${current_name}\n";
+                ## print "In feature search, strand is undefined for: ${current_name}\n";
+                next FEAT_SEARCH;
+            }
+
             ## Handle the (rare) case where reads are after a + strand gene and
             ## before a - strand gene
+            ##    >>>>>>>>>>>   <<<<<<
+            ##                #
+
             if ($current_strand eq '1' &&
-                $current_end < $read_start &&
+                $current_end >= $read_start &&
                 $next_strand eq '-1' &&
-                $next_start > $read_start) {
-                print $log "Contig:${read_seqid} Str:${current_strand} St:${read_start} vs. last end:${current_end} next start:${next_start}, unannotated ORF?\n";
+                $next_start > $read_end) {
+                ## print "Contig:${read_contig} Str:${current_strand} St:${read_start} vs. last end:${current_end} next start:${next_start}, unannotated ORF?\n";
                 $counters->{unannotated_read}++;
                 next BAMLOOP;
             }
             ## Sadly, I do not think I can exclude the opposite orientation,
             ## if the current feature is -1 and the next is +1, then the current reads
             ## may be associated with both
-            next FEAT_SEARCH if (!defined($current_strand));
-            if ($current_strand ne $read_strand &&
-                $next_strand ne $read_strand) {
-                $counters->{opposite_strand}++;
-                next BAMLOOP;
+            if (!defined($current_strand)) {
+                ## print "TESTME: No current strand defined, skipping.\n";
+                next FEAT_SEARCH;
             }
             if ($read_strand eq '1') {
                 my $relative_position = $current_start - $read_start;
-                next FEAT_SEARCH if ($relative_position >= $next_distance);
-                if ($current_start > $read_start) {
+                if ($current_start > $read_start && $read_strand eq $next_strand) {
                     $counters->{quantified_reads}++;
+                    ## print "Plus strand, recording relative: $relative_position vs $read_contig $current_name at $read_start\n";
                     ## print "Got a +1 hit: $counters->{quantified_reads}\n";
-                    if (defined($observed->{$read_seqid}[$c]->{observed}->{$relative_position})) {
-                        $observed->{$read_seqid}[$c]->{observed}->{$relative_position}++;
+                    if (defined($observed->{$read_contig}[$c]->{observed}->{$relative_position})) {
+                        $observed->{$read_contig}[$c]->{observed}->{$relative_position}++;
                     } else {
-                        $observed->{$read_seqid}[$c]->{observed}->{$relative_position} = 1;
+                        $observed->{$read_contig}[$c]->{observed}->{$relative_position} = 1;
                     }
-                    if ($relative_position > $observed->{$read_seqid}[$c]->{most_upstream}) {
-                        $observed->{$read_seqid}[$c]->{most_upstream} = $relative_position;
+                    if ($relative_position > $observed->{$read_contig}[$c]->{most_upstream}) {
+                        $observed->{$read_contig}[$c]->{most_upstream} = $relative_position;
+                    }
+                    ## Also record the most observed position for each gene in addition to the most upstream position.
+                    if (defined($observed->{$read_contig}[$c]->{most_observed})) {
+                        if ($observed->{$read_contig}[$c]->{observed}->{$relative_position} >
+                            $observed->{$read_contig}[$c]->{most_observed}) {
+                            $observed->{$read_contig}[$c]->{most_observed_relative} = $relative_position;
+                            $observed->{$read_contig}[$c]->{most_observed} = $observed->{$read_contig}[$c]->{observed}->{$relative_position};
+                        }
+                    } else {
+                        $observed->{$read_contig}[$c]->{most_observed_relative} = $relative_position;
+                        $observed->{$read_contig}[$c]->{most_observed} = $observed->{$read_contig}[$c]->{observed}->{$relative_position};
                     }
                     last FEAT_SEARCH;
                 } else {
                     next FEAT_SEARCH;
                 }
-            } elsif ($read_strand eq '-1') {
+            } elsif ($read_strand eq '-1' && $read_strand eq $current_strand) {
                 my $relative_position = $read_end - $current_end;
-                next FEAT_SEARCH if ($relative_position >= $next_distance);
+                if ($relative_position >= $next_distance) {
+                    ## print "Skipping to the next feature because $relative_position is greater than the distance to the next gene: $next_distance\n";
+                    next FEAT_SEARCH;
+                }
                 if ($current_end < $read_end) {
                     $counters->{quantified_reads}++;
                     ## print "Got a -1 hit: $counters->{quantified_reads}\n";
-                    if (defined($observed->{$read_seqid}[$c]->{observed}->{$relative_position})) {
-                        $observed->{$read_seqid}[$c]->{observed}->{$relative_position}++;
+                    ## print "Minus strand, recording relative: $relative_position vs $read_contig $current_name at $read_end\n";
+                    if (defined($observed->{$read_contig}[$c]->{observed}->{$relative_position})) {
+                        $observed->{$read_contig}[$c]->{observed}->{$relative_position}++;
                     } else {
-                        $observed->{$read_seqid}[$c]->{observed}->{$relative_position} = 1;
+                        $observed->{$read_contig}[$c]->{observed}->{$relative_position} = 1;
                     }
-                    if ($relative_position > $observed->{$read_seqid}[$c]->{most_upstream}) {
-                        $observed->{$read_seqid}[$c]->{most_upstream} = $relative_position;
+                    if ($relative_position > $observed->{$read_contig}[$c]->{most_upstream}) {
+                        $observed->{$read_contig}[$c]->{most_upstream} = $relative_position;
+                    }
+                    ## Also record the most observed position for each gene in addition to the most upstream position.
+                    if (defined($observed->{$read_contig}[$c]->{most_observed})) {
+                        if ($observed->{$read_contig}[$c]->{observed}->{$relative_position} >
+                            $observed->{$read_contig}[$c]->{most_observed}) {
+                            $observed->{$read_contig}[$c]->{most_observed_relative} = $relative_position;
+                            $observed->{$read_contig}[$c]->{most_observed} = $observed->{$read_contig}[$c]->{observed}->{$relative_position};
+                        }
+                    } else {
+                        $observed->{$read_contig}[$c]->{most_observed_relative} = $relative_position;
+                        $observed->{$read_contig}[$c]->{most_observed} = $observed->{$read_contig}[$c]->{observed}->{$relative_position};
                     }
                     last FEAT_SEARCH;
                 } else {
+                    ## print "TESTME: end of current feature: $current_end is greater than the read end: $read_end\n";
                     next FEAT_SEARCH;
                 }
             } else { ## End checking the - strand
-                print $log "What what? Neither +1 nor -1: $read_strand\n";
                 next BAMLOOP;
             }
         } ## End iterating over every feature
@@ -1351,9 +1346,13 @@ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
                  contig => $new_contig,
                  direction => $options->{direction},
                  output_csv => $output_csv,
+                 most_csv => $most_csv,
                  gff_tag => $options->{gff_tag},
                  gffio => $gffout_io,
-                 gff_out => $gff_out,);
+                 gffio_most => $gffmost_io,
+                 gff_out => $gff_out,
+                 gff_most_out => $gff_most,
+             );
     print $log "Reads observed: $counters->{reads}
 Unstranded reads: $counters->{unstranded_reads}
 Plus reads: $counters->{plus_reads}
@@ -1371,6 +1370,9 @@ Quantified: $counters->{quantified_reads}
 ";
     $gff_out->close();
     $log->close();
+    $most_csv->close();
+    $output_csv->close();
+    $gff_most->close();
     return($observed);
 }
 
@@ -1379,9 +1381,12 @@ sub Write_SLData {
     my $observed = $args{observed};
     my $contig = $args{contig};
     my $output_csv = $args{output_csv};
+    my $most_csv = $args{most_csv};
     my $gff_tag = $args{gff_tag};
     my $gffio = $args{gffio};
+    my $gffio_most = $args{gffio_most};
     my $gff_out = $args{gff_out};
+    my $gff_most_out = $args{$gff_most_out};
     if (!defined($observed->{$contig})) {
         return(undef);
     }
@@ -1393,13 +1398,27 @@ sub Write_SLData {
         my @observed_positions = keys %{$observations};
         my $gene_name = $feat_info->{gene_name};
         my $gene_start = $feat_info->{start};
+        ## I used an uninitialized start position of 0 to make an easy way to see if
+        ## there are any observations; however the gff feature must start at 1.
+        if ($gene_start == 0) {
+            $gene_start = 1;
+        }
+        my $most_start = $gene_start;
+        my $most_end = $feat_info->{end};
         my $new_start = $gene_start;
         my $gene_end = $feat_info->{end};
         my $new_end = $gene_end;
         my $gene_strand = $feat_info->{strand};
+        if ($gene_strand eq '.') {
+            print "WARNING: gene_strand was '.', setting it to 1.\n";
+            $gene_strand = 1;
+        }
         my $farthest = 0;
         my $num_positions = scalar(@observed_positions);
         if ($num_positions > 0) {
+            my $most_obs = $observed->{$contig}[$c]->{most_observed};
+            my $most_pos = $observed->{$contig}[$c]->{most_observed_relative};
+            print $most_csv qq"${gene_name}\t${gene_start}\t${gene_end}\t${gene_strand}\t${most_obs}\t$most_pos\n";
             for my $obs (sort {$a <=> $b } @observed_positions) {
                 $farthest = $obs;
                 print $output_csv qq"${gene_name}\t${gene_start}\t${gene_end}\t${gene_strand}\t${obs}\t$observations->{$obs}\n";
@@ -1407,15 +1426,19 @@ sub Write_SLData {
             if ($gene_strand eq '1') {
                 $new_start = $gene_start - $farthest;
                 $new_end = $gene_start;
+                $most_start = $gene_start - $most_pos;
+                $most_end = $gene_start;
             } elsif ($gene_strand eq '-1') {
                 $new_start = $gene_end;
                 $new_end = $gene_end + $farthest;
+                $most_start = $gene_end;
+                $most_end = $gene_end + $most_pos;
             } else {
                 die("This should not happen, neither +1/-1.\n");
             }
             if ($new_start < 0) {
                 print "This is a failed entry: $contig $gene_name with start: $new_start\n";
-                $new_start = 0;
+                $new_start = 1;
             }
             ## Create a gene feature with the new coordinates
             ## along with a CDS feature with the previous coordinates.
@@ -1455,10 +1478,48 @@ sub Write_SLData {
             }
             my $cds_string = $gffio->gff_string($new_cds);
             print $gff_out "${cds_string}\n";
+
+            ## Create a gene feature with the new coordinates
+            ## along with a CDS feature with the previous coordinates.
+            my $most_gene = Bio::SeqFeature::Generic->new(
+                -primary_tag => 'SLSeq_gene',
+                -display_name => $gene_name,
+                -seq_id => $contig,
+                -start => $most_start,
+                -end => $most_end,
+                -strand => $gene_strand,
+                -score => 0,
+                -tag => {
+                    $gff_tag => $gene_name,
+                    inference => 'SLSeq',
+                    old_start => $gene_start,
+                    old_end => $gene_end,
+                });
+            my $gff_most_string = $gffmost_io->gff_string($most_gene);
+            print $gff_most_out "${gff_most_string}\n";
+            my $most_cds = Bio::SeqFeature::Generic->new(
+                -primary_tag => 'CDS',
+                -display_name => $original->display_name,
+                -seq_id => $original->seq_id,
+                -start => $original->start,
+                -end => $original->end,
+                -strand => $original->strand,
+                -score => $original->score,
+                -tag => {
+                    Parent => $gene_name,
+                });
+            my @original_tags = $original->get_all_tags();
+            for my $tag (@original_tags) {
+                my @tag_values = $original->get_tag_values($tag);
+                for my $val (@tag_values) {
+                    $most_cds->add_tag_value($tag, $val);
+                }
+            }
+            my $most_cds_string = $gffmost_io->gff_string($most_cds);
+            print $gff_most_out "${most_cds_string}\n";
         }
     }
 }
-
 
 =head2 C<SL_UTR>
 
@@ -1534,7 +1595,7 @@ sub SL_UTR_Worker {
         jmem => 24,
         jprefix => '50',
         polya_search => 'AAAAAAAAA',
-        sl_search => 'AGTTTCTGTACTTTAT',);
+        sl_search => 'AGTTTCTGTACTATATTG',);
     ## Ideally, I would like to run this function on the mapping
     ## directories and search the aligned/unaligned sequences
     ## separately.
@@ -1612,10 +1673,12 @@ in the file(s): $options->{input}.\n";
             my $seq_id = $seq->id;
             my $read_seq = $seq->seq;
             my $fwd_end = undef;
+
             if ($read_seq =~ m/$sl_fwd_search/g) {
                 $ind_search_result{sl_fwd_found}++;
                 $fwd_end = pos($read_seq);
                 my $new_read = $read_seq;
+                next FSA if (length($new_read < 12));
                 $new_read =~ s/^.*$sl_fwd_search//g;
                 print $output_sl_reads ">${seq_id} fwd
 $new_read\n";
@@ -1625,6 +1688,7 @@ $new_read\n";
                 $fwd_end = pos($read_seq);
                 my $new_read = $read_seq;
                 $new_read =~ s/^.*$polya_fwd_search//g;
+                next FSA if (length($new_read < 12));
                 print $output_polya_reads ">${seq_id} fwd
 $new_read\n";
             }
@@ -1633,8 +1697,9 @@ $new_read\n";
                 $ind_search_result{sl_rev_found}++;
                 $rc_end = pos($read_seq);
                 my $new_read = reverse($read_seq);
-                $new_read =~ tr/AGCTU/tcgaa/;
+                $new_read =~ tr/AGCTU/TCGAA/;
                 $new_read =~ s/^.*$sl_fwd_search//g;
+                next FSA if (length($new_read < 12));
                 print $output_sl_reads ">${seq_id} rev
 ${new_read}\n";
             }
@@ -1642,8 +1707,9 @@ ${new_read}\n";
                 $ind_search_result{polya_rev_found}++;
                 $rc_end = pos($read_seq);
                 my $new_read = reverse($read_seq);
-                $new_read =~ tr/AGCTU/tcgaa/;
+                $new_read =~ tr/AGCTU/TCGAA/;
                 $new_read =~ s/^.*$polya_fwd_search//g;
+                next FSA if (length($new_read < 12));
                 print $output_polya_reads ">${seq_id} rev
 ${new_read}\n";
             }

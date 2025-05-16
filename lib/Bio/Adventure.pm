@@ -163,6 +163,7 @@ has directories => (is => 'rw', default => undef); ## Apply a command to multipl
 has download => (is => 'rw', default => 1);
 has duplicate => (is => 'rw', default => 0);
 has email => (is => 'rw', default => 'abelew@umd.edu');
+has end => (is => 'rw', default => 10000);
 has evalue => (is => 'rw', default => 0.001); ## Default e-value cutoff
 has fasta_args => (is => 'rw', default => '-b 20 -d 20'); ## Default arguments for the fasta36 suite
 has fasta_tool => (is => 'rw', default => 'ggsearch36'); ## Which fasta36 program to run?
@@ -192,6 +193,7 @@ has index_hash => (is => 'rw', default => undef);
 has informat => (is => 'rw', default => '.fastq');
 has initial_input => (is => 'rw', default => undef);
 has input => (is => 'rw', default => undef); ## Generic input argument
+has inputs => (is => 'rw', default => undef); ## Generic input argument
 has input_abricate => (is => 'rw', default => 'outputs/12abricate_10prokka_09termreorder_08phageterm_07rosalind_plus/abricate_combined.tsv'); ## Used when merging annotation files into a xlsx/tbl/gbk file.
 has input_aragorn => (is => 'rw', default => 'outputs/21aragorn/aragorn.txt'); ## Used when merging annotation files into a xlsx/tbl/gbk file.
 has input_classifier => (is => 'rw', default => 'outputs/18classifier/ictv_filtered.tsv'); ## Similar taxa detected by tblastx
@@ -310,6 +312,7 @@ has shell => (is => 'rw', default => '/usr/bin/bash'); ## Default qsub shell
 has sort => (is => 'rw', default => 'pos'); ## Explicitly set the sorting type for htseq
 has species => (is => 'rw', default => undef); ## Primarily for getting libraries to search against
 has sra => (is => 'rw', default => 0);
+has start => (is => 'rw', default => 1);
 has starting_tree => (is => 'rw', default => undef); ## Starting tree for phylogenetic analyses
 ## Note 202212: Now most of the sequencing kits used by our sequencer are reverse.
 has stranded => (is => 'rw', default => 'reverse'); ## Did this data come from a stranded library kit?
@@ -475,6 +478,9 @@ $ENV{PATH}.") unless($check);
     my $splitter = qq"/[;:,]/";
     if (defined($class->{suffixes})) {
         @suffixes = split($splitter, $class->{suffixes});
+    }
+    if (defined($class->{inputs})) {
+        $class->{input} = $class->{inputs};
     }
     if (defined($class->{input})) {
         $job_basename = $class->{input};
@@ -1536,7 +1542,6 @@ if [[ -z "${mod}" ]]; then
   }
   export -f module
 fi
-module purge
 module add ';
         for my $m (@module_lst) {
             $module_string .= qq"${m} " if (defined($m));

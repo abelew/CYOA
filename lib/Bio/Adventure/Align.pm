@@ -585,6 +585,78 @@ location=\$(dirname Mauve)
     return($mauve);
 }
 
+sub MauveAligner {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['input', 'reference'],
+        jmem => 24,
+        jprefix => '20',);
+    my $jname = 'mauve';
+    my $outdir = qq"outputs/$options->{jprefix}mauve";
+    make_path(qq"${outdir}");
+    my $stderr = qq"${outdir}/mauve.stderr";
+    my $stdout = qq"${outdir}/mauve.stdout";
+    my $comment = qq!## Attempting to run mauveAligner using a directory of genbank/fasta files: $options->{input}.
+!;
+    my @directory = ($options->{input});
+    my @file_list = ();
+    find(
+        sub {
+            push(@file_list, $File::Find::name) if ($File::Find::name =~ /\.f.+$/);
+        },
+        @directory);
+    my $input_files = '';
+    for my $in (@file_list) {
+        $input_files .= qq"${in} ";
+    }
+    $input_files =~ s/ $//g;
+    my $mem = $options->{jmem} * 1000;
+    my $jstring = qq!mauveAligner \\
+  --output=${outdir} \\
+  --island-size=50 \\
+  --island-output=${outdir}/islands.txt \\
+  --backbone-size=50 --max-backbone-gap=50 \\
+  --backbone-output=${outdir}/backbone.txt \\
+  --id-matrix=${outdir}/id_matrix.txt \\
+  --output-alignment=${outdir}/alignment.txt \\
+  --output-guide-tree=${outdir}/test.guide.tree \\
+  ${input_files}
+
+    /z1/scratch/atb/dnaseq/cdc1551_pknf_2025/preprocessing/mauve/MD76CY_1_rerun_Sample_1_1.fsa
+    /z1/scratch/atb/dnaseq/cdc1551_pknf_2025/preprocessing/mauve/MD76CY_1_rerun_Sample_1_1.fsa.sslist
+    /z1/scratch/atb/dnaseq/cdc1551_pknf_2025/preprocessing/mauve/MD76CY_2_rerun_Sample_2_2.fsa
+    /z1/scratch/atb/dnaseq/cdc1551_pknf_2025/preprocessing/mauve/MD76CY_2_rerun_Sample_2_2.fsa.sslist
+    /z1/scratch/atb/dnaseq/cdc1551_pknf_2025/preprocessing/mauve/MD76CY_3_rerun_Sample_3_3.fsa
+    /z1/scratch/atb/dnaseq/cdc1551_pknf_2025/preprocessing/mauve/MD76CY_3_rerun_Sample_3_3.fsa.sslist
+    /z1/scratch/atb/dnaseq/cdc1551_pknf_2025/preprocessing/mauve/mycobacterium_tuberculosis_cdc1551.fasta
+    /z1/scratch/atb/dnaseq/cdc1551_pknf_2025/preprocessing/mauve/mycobacterium_tuberculosis_cdc1551.fasta.sslist
+Sequence loaded successfully.
+
+
+location=\$(dirname Mauve)
+\${location}/progressiveMauve \
+  --output=${outdir}/alignment \
+  --output-guide-tree=${outdir}/guide_tree \
+  --backbone-output=${outdir}/backbone \
+  $options->{library} \
+  \$(/bin/find $options->{input})
+!;
+    my $mauve = $class->Submit(
+        comment => $comment,
+        input => $options->{input},
+        library => $options->{library},
+        jdepends => $options->{jdepends},
+        jmem => $options->{jmem},
+        jname => $jname,
+        jprefix => $options->{jprefix},
+        jstring => $jstring,
+        output => qq"${outdir}/alignment",
+        stderr => $stderr,
+        stdout => $stdout,);
+    return($mauve);
+}
+
 =head2 C<OrthoFinder>
 
   Search for orthologs across an arbitrary number of cds/amino acid sequence sets.

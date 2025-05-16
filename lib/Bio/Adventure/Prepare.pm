@@ -8,6 +8,7 @@ extends 'Bio::Adventure';
 
 use Cwd qw"abs_path getcwd cwd";
 use Bio::DB::EUtilities;
+use File::Basename;
 use File::Path qw"make_path rmtree";
 use File::Which qw"which";
 use HTML::TreeBuilder::XPath;
@@ -35,7 +36,10 @@ use XML::LibXML;
 ## I am hoping to make this more robust and useful elsewhere.
 sub Download_NCBI_Assembly {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars();
+    my $options = $class->Get_Vars(
+        required => ['input'],
+        term => 'ORGN',
+    );
     my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $output_dir = $paths->{output_dir};
     my $gbk_dir = $paths->{gbk_dir};
@@ -48,17 +52,22 @@ sub Download_NCBI_Assembly {
     $escaped_search =~ s/\s/\+/g;
     my $search_data = undef;
     my $downloaded_file;
+    my $full_search = qq"${escaped_search}";
+    if ($options->{term} ne 'none') {
+        $full_search .= qq"[$options->{term}]";
+    }
     my $fact = Bio::DB::EUtilities->new(-eutil => 'esearch',
                                         -email => $options->{email},
                                         -db => 'assembly',
                                         -usehistory => 'y',
-                                        -term => qq"${escaped_search}[ORGN]");
+                                        -term => $full_search,);
     my $hist = $fact->next_History;
     my $count = $fact->get_count;
     my @ids = $fact->get_ids();
     my $accession;
     if ($count) {
         print $log "The search string: ${search_string} returned ${count} ids.\n";
+        print "The search string: ${search_string} returned ${count} ids.\n";
         $fact->reset_parameters(-eutil => 'esummary',
                                 -history => $hist,
                                 -email => $options->{email},
@@ -76,6 +85,7 @@ sub Download_NCBI_Assembly {
         my @test = split(/\./, $accession);
         my $url = $dom->getElementsByTagName('FtpPath_GenBank');
         print $log "Found ${accession} with uid ${uid} at ${url}.\n";
+        print "Found ${accession} with uid ${uid} at ${url}.\n";
         ## This url is a ftp link with a nice series of downloadable files.
         my $mech = WWW::Mechanize->new(autocheck => 1);
         my @suffixes = ('_ani_contam_ranges.tsv', '_ani_report.txt',
@@ -96,6 +106,7 @@ sub Download_NCBI_Assembly {
             $downloads{$name} = qq"${url}/${url_suffix}";
         }
         print $log "The full download url for the genbank file is: $downloads{'genomic.gbff'}.\n";
+        print "The full download url for the genbank file is: $downloads{'genomic.gbff'}.\n";
         $downloaded_file = qq"$paths->{gbk_dir}/${accession}.gbff.gz";
         print $log "Downloading to ${downloaded_file}.\n";
         $mech->get($downloads{'genomic.gbff'});
@@ -104,7 +115,7 @@ sub Download_NCBI_Assembly {
         print STDOUT "The search for an assembly for ${search_string} failed.\n";
     }
     if (!-r $downloaded_file) {
-        print $log "Unable to download assembly information for: ${accession}.\n";
+        print "Unable to download assembly information for: ${accession}.\n";
     }
 }
 

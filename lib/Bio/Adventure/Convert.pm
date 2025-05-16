@@ -58,6 +58,48 @@ sub Any2Any {
     $in_fh->close();
 }
 
+sub Extract_Subseq {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['input', 'start', 'end'],
+        seqid => undef,
+        direction => 'forward',
+        informat => 'fasta',
+        outformat => 'fasta',
+        jprefix => '78');
+    my $base = basename($options->{input}, ('.fasta', '.fsa', '.ffn', '.faa'));
+    (my $base_no_extension = $base) =~ s/\.[^.]+$//;
+    my $dir = dirname($options->{input});
+    my $output_file = qq"${dir}/${base}_$options->{start}_$options->{end}.$options->{outformat}";
+    my $in_fh = FileHandle->new("less $options->{input} |");
+    my $input_seq = Bio::SeqIO->new(-fh => $in_fh,
+                                    -format => $options->{informat},);
+    my $output_seq = Bio::SeqIO->new(-file   => ">${output_file}",
+                                     -format => $options->{outformat},);
+    my $seq_count = 0;
+    my $found_id = 0;
+  SEQ_LOOP: while (my $input_seq = $input_seq->next_seq) {
+        my $sequence_id = $input_seq->id;
+        if (defined($options->{seqid})) {
+            if ($options->{seqid} eq $sequence_id) {
+                $found_id = 1;
+            }
+            ## If seqid is not provided, assume there is only 1 sequence and use the first.
+        } else {
+            $found_id = 1;
+        }
+        if ($found_id) {
+            my $subseq_region = $input_seq->subseq($options->{start}, $options->{end});
+            my $subseq_seq = Bio::Seq->new(-seq => $subseq_region,
+                                           -display_id => qq"${sequence_id}_$options->{start}_$options->{end}");
+            $output_seq->write_seq($subseq_seq);
+            last SEQ_LOOP;
+        }
+    }
+    $in_fh->close();
+}
+
 =head2 C<GATK_Dedup>
 
  An invocation of GATK's mark duplicate function.
@@ -105,6 +147,263 @@ samtools index ${output}
         stdout => $stdout,
         output => $output,);
     return($gatk);
+}
+
+=head2 C<Gb2Gff>
+
+ A poorly named genbank flat file converter.
+
+ Gb2Gff() takes a genbank genome file and splits it into:
+ A genomic fasta file, CDS fasta, peptide fasta, gff file of all
+ entries, CDS, and interCDS regions.
+
+=cut
+sub Gb2Gff {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['input']);
+    my $input = $options->{input};
+
+    my $base = basename($input, ('.gz', '.xz', '.bz2'));
+    my @suffix = ('.gb', '.gbk', '.gbff', '.genbank');
+    $base = basename($base, @suffix);
+    my $dir = dirname($input);
+
+    my $in = FileHandle->new("less ${input} |");
+    my $seqio = Bio::SeqIO->new(-format => 'genbank', -fh => $in);
+    my $seq_count = 0;
+    my $total_nt = 0;
+    my $feature_count = 0;
+    my $output_fasta = qq"${dir}/${base}.fsa";
+    my $fasta = Bio::SeqIO->new(-file => qq">${output_fasta}", -format => 'fasta', -flush => 0);
+    my $all_gff = qq"${dir}/${base}_all.gff";
+    my $gffout = Bio::Tools::GFF->new(-file => ">${all_gff}", -gff_version => 3);
+    my $output_gff = qq"${dir}/${base}.gff";
+    my $gene_gff = Bio::Tools::GFF->new(-file => ">${output_gff}", -gff_version => 3);
+    my $output_cds_gff = qq"${dir}/${base}_cds.gff";
+    my $cds_gff = Bio::Tools::GFF->new(-file => ">${output_cds_gff}", -gff_version => 3);
+    my $output_inter_gff = qq"${dir}/${base}_interCDS.gff";
+    my $inter_gffout = Bio::Tools::GFF->new(-file => ">${output_inter_gff}", -gff_version => 3);
+    my $output_cds_fasta = qq"${dir}/${base}.ffn";
+    my $cds_fasta = Bio::SeqIO->new(-file => qq">${output_cds_fasta}", -format => 'Fasta');
+    my $output_pep_fasta = qq"${dir}/${base}.faa";
+    my $pep_fasta = Bio::SeqIO->new(-file => qq">${output_pep_fasta}", -format => 'Fasta');
+    my $output_rrna_gff = qq"${dir}/${base}_rrna.gff";
+    my $rrna_gffout = Bio::Tools::GFF->new(-file => ">${output_rrna_gff}", -gff_version => 3);
+    my $output_rrna_fasta = qq"${dir}/${base}_rrna.fasta";
+    my $rrna_fasta = Bio::SeqIO->new(-file => qq">${output_rrna_fasta}", -format => 'Fasta');
+    while (my $seq = $seqio->next_seq) {
+        $seq_count++;
+        $total_nt = $total_nt + $seq->length();
+        $fasta->write_seq($seq);
+        print "Wrote ${seq_count} features.\n";
+        my @feature_list = ();
+        ## defined a default name
+
+        ## $feature is an object of type: Bio::SeqFeatureI
+        ## Some of the things you can call on it are:
+        ## display_name(), primary_tag(), has_tag(something), get_tag_values(), get_all_tags(), attach_seq(Bio::Seq),
+        ## seq(), entire_seq(), seq_id(), gff_string(), spliced_seq(), primary_id(), phase(),
+        foreach my $feature ($seq->top_SeqFeatures()) {
+            $gffout->write_feature($feature);
+            my $feat_count = 0;
+        }
+      FEAT: for my $feat_object ($seq->get_SeqFeatures) {
+          $feature_count++;
+          my $feat_count = 0;
+          if ($feat_object->primary_tag eq 'rRNA') {
+              $rrna_gffout->write_feature($feat_object);
+              my $id_string = '';
+              my $desc = '';
+              my $id_hash = {};
+              foreach my $thing (keys %{$feat_object->{_gsf_tag_hash}}) {
+                  my @arr = @{$feat_object->{_gsf_tag_hash}->{$thing}};
+                  $id_hash->{$thing} = $arr[0];
+              }
+              my $id = '';
+              if (defined($id_hash->{protein_id})) {
+                  $id = qq"$id_hash->{protein_id}";
+              }
+              if (defined($id_hash->{gene})) {
+                  $desc .= "$id_hash->{gene} ; ";
+              }
+              if (defined($id_hash->{db_xref})) {
+                  $desc .= "$id_hash->{db_xref} ; ";
+              }
+              if (defined($id_hash->{product})) {
+                  $desc .= "$id_hash->{product}";
+              }
+              my $start = $feat_object->start;
+              my $end = $feat_object->end;
+              my $len = $feat_object->length;
+              my $seq;
+              try {
+                  $seq = $feat_object->spliced_seq->seq;
+              }
+              catch ($e) {
+                  print qq"Something went wrong getting the sequence.\n";
+                  next FEAT;
+              }
+              my $size = {
+                  id => $id_string,
+                  start => $start,
+                  end => $end,
+                  len => $len,
+                  feat => $feat_object,
+              };
+              my $rrna_object = Bio::PrimarySeq->new(-id => $id_string, -seq => $seq,
+                                                     description => $desc);
+              $rrna_fasta->write_seq($rrna_object);
+          } elsif ($feat_object->primary_tag eq 'CDS') {
+              $cds_gff->write_feature($feat_object);
+              $feat_count++;
+              my $id_string = '';
+              my $id_hash = {};
+              foreach my $thing (keys %{$feat_object->{_gsf_tag_hash}}) {
+                  my @arr = @{$feat_object->{_gsf_tag_hash}->{$thing}};
+                  $id_hash->{$thing} = $arr[0];
+              }
+              my $id = '';
+              if (defined($id_hash->{protein_id})) {
+                  $id = qq"$id_hash->{protein_id}";
+              }
+              my $desc = '';
+              if (defined($id_hash->{gene})) {
+                  $desc .= "$id_hash->{gene} ; ";
+              }
+              if (defined($id_hash->{db_xref})) {
+                  $desc .= "$id_hash->{db_xref} ; ";
+              }
+              if (defined($id_hash->{product})) {
+                  $desc .= "$id_hash->{product}";
+              }
+              $desc .= "\n";
+              my $start = $feat_object->start;
+              my $end = $feat_object->end;
+              my $len = $feat_object->length;
+              ## This is in response to the puzzling error:
+              ## "Error::throw("Bio::Root::Exception", "Location end (601574) exceeds length (0) of called sequence C"...) called at /sw/local/perl/5.28.1/perl5/Bio/Root/Root.pm line 449"
+              my $seq = '';
+              my $pep = '';
+
+              my $e;
+              try {
+                  $seq = $feat_object->spliced_seq->seq;
+              }
+              catch ($e) {
+                  print "Something went wrong getting the sequence.\n";
+                  next FEAT;
+              }
+              try {
+                  $pep = $feat_object->spliced_seq->translate->seq;
+              }
+              catch ($e) {
+                  print "Something went wrong getting the peptide sequence.\n";
+                  next FEAT;
+              }
+              my $size = {
+                  id => $id,
+                  start => $start,
+                  end => $end,
+                  len => $len,
+                  feat => $feat_object,
+              };
+              push(@feature_list, $size);
+              my $seq_object = Bio::PrimarySeq->new(-id => $id, -seq => $seq, description => $desc);
+              my $pep_object = Bio::PrimarySeq->new(-id => $id, -seq => $pep, description => $desc);
+              $cds_fasta->write_seq($seq_object);
+              my $ttseq = $seq_object->seq;
+              $pep_fasta->write_seq($pep_object);
+          } elsif ($feat_object->primary_tag eq 'gene') {
+              $gene_gff->write_feature($feat_object);
+          }
+        } ## End looking at every feature and putting them into the @feature_list
+        ## Now make a hash from it and fill in the inter-cds data
+
+        my %inter_features = ();
+        my ($p_st, $p_en, $c_st, $c_en, $inter_start, $inter_end) = 0;
+      INTER: for my $c (0 .. $#feature_list) {
+          my $p_size = {};
+          if ($c == 0) {
+              $p_size = $feature_list[$#feature_list];
+          } else {
+              $p_size = $feature_list[$c - 1];
+          }
+
+          my $c_size = $feature_list[$c];
+          next INTER if (!defined($p_size->{start}));
+          next INTER if (!defined($p_size->{end}));
+          next INTER if (!defined($c_size->{start}));
+          next INTER if (!defined($c_size->{end}));
+
+          my $p_start = $p_size->{start};
+          my $p_end = $p_size->{end};
+          my $c_start = $c_size->{start};
+          my $c_end = $c_size->{end};
+          my $interstart = 0;
+          my $interend = 0;
+
+          if ($p_start > $p_end) {
+              $interstart = $p_start;
+          } else {
+              $interstart = $p_end;
+          }
+          if ($c_start < $c_end) {
+              $interend = $c_start;
+          } else {
+              $interend = $c_end;
+          }
+          my $tmp_start = $interstart;
+          my $tmp_end = $interend;
+          if ($tmp_start > $tmp_end) {
+              $interstart = $tmp_end;
+              $interend = $tmp_start;
+          }
+          ## I need a little logic to catch the first feature
+          ## As it is currently written, it grabs the position of the last feature
+          ## and uses that number rather than the beginning of the chromosome.
+          ## Therefore we end up with a first feature which contains the entire chromosome.
+          if ($c <= 2) {   ## Arbitrarily set it to check the first 2 features
+              if ($interend >= 100000) { ## If the first feature take >= 1/2 the chromosome
+                  $interend = $interstart;
+                  $interstart = 1;
+              }
+          }
+
+          my $new_feature = $c_size->{feat};
+          my $inter_location = Bio::Location::Atomic->new(-start => $interstart,
+                                                          -end => $interend,
+                                                          -strand => 1);
+          $new_feature->{_location} = $inter_location;
+          $inter_gffout->write_feature($new_feature);
+      }
+    }                           ## End while every sequence
+    my $ret_stats = {
+        num_sequences => $seq_count,
+        total_nt => $total_nt,
+        num_features => $feature_count,
+        fasta_out => $output_fasta,
+        gff_out => $all_gff,
+        gene_gff => $output_gff,
+        inter_cds => $output_inter_gff,
+        cds_fasta => $output_cds_fasta,
+        cds_gff => $output_cds_gff,
+        pep_fasta => $output_pep_fasta,
+        rrna_gff => $output_rrna_gff,
+        rrna_fasta => $output_rrna_fasta,
+    };
+    close($in);
+    $fasta->close();
+    $gffout->close();
+    $gene_gff->close();
+    $cds_gff->close();
+    $inter_gffout->close();
+    $cds_fasta->close();
+    $pep_fasta->close();
+    $rrna_gffout->close();
+    $rrna_fasta->close();
+    return($ret_stats);
 }
 
 =back
@@ -482,13 +781,21 @@ sub Samtools {
 if [[ -f "${output}.tmp.000.bam" ]]; then
   rm -f ${output}.tmp.*.bam
 fi
-samtools view -u -t $options->{libdir}/genome/$options->{species}.fasta \\
-  -S ${input} -o ${output}  \\
-  2>${stderr} \\
-  1>${stdout}
+echo 'Time for initial samtools conversion command.' >> ${output}.time
+## I think the most likely reason for this to fail is when
+## hisat dropped out in the middle of reading the input because of a mismatch in R1/R2.
+{
+  /usr/bin/time -v -o ${output}.time -a samtools view -u -t $options->{libdir}/genome/$options->{species}.fasta \\
+    -S ${input} -o ${output}  \\
+    2>${stderr} \\
+    1>${stdout}
+} || {
+  echo "Sam conversion failed."
+}
 !;
 
-    my $samtools_second = qq"samtools sort -l 9 ${output} \\
+    my $samtools_second = qq"echo 'Time for initial samtools sort command.' >> ${output}.time
+/usr/bin/time -v -o ${output}.time -a samtools sort -l 9 ${output} \\
   -o ${sorted_name}.bam \\
   2>>${stderr} \\
   1>>${stdout}";
@@ -502,43 +809,22 @@ samtools view -u -t $options->{libdir}/genome/$options->{species}.fasta \\
   2>>${stderr} \\
   1>>${stdout}";
     }
-    my $jstring = qq!
-echo "Starting samtools"
-if [[ -f "${output}" && -f "${input}" ]]; then
-  echo "Both the bam and sam files exist, rerunning."
-elif [[ -f "${output}" ]]; then
-  echo "The output file exists, quitting."
-  exit 0
-elif [[ \! -f "${input}" ]]; then
-  echo "Could not find the samtools input file."
-  exit 1
-fi
-${samtools_first}
-echo "First samtools command finished with \$?"
-${samtools_second}
-rm ${output}
-rm ${input}
-mv ${sorted_name}.bam ${output}
-samtools index ${output} \\
-  2>>${stderr} \\
-  1>>${stdout}
-echo "Second samtools command finished with \$?"
-bamtools stats -in ${output} \\
-  2>>${output}_samtools.stats 1>&2
-echo "Bamtools finished with \$?"
-!;
+    my $paired_string = '';
     if ($options->{paired}) {
-        $jstring .= qq!
+        $paired_string = qq!
 ## The following will fail if this is single-ended.
-samtools view -b -f 2 \\
+echo 'Time for second samtools command.' >> ${output}.time
+/usr/bin/time -v -o ${output}.time -a samtools view -b -f 2 \\
   -o ${paired_name}.bam \\
   ${output} \\
   2>>${stderr} \\
   1>>${stdout}
-samtools index ${paired_name}.bam \\
+echo 'Time for second samtools index.' >> ${output}.time
+/usr/bin/time -v -o ${output}.time -a samtools index ${paired_name}.bam \\
   2>>${stderr} \\
   1>>${stdout}
-bamtools stats -in ${paired_name}.bam \\
+echo 'Time for second bamtools.' >> ${output}.time
+/usr/bin/time -v -o ${output}.time -a bamtools stats -in ${paired_name}.bam \\
   2>>${output}_samtools.stats 1>&2
 !;
     } else {
@@ -549,6 +835,35 @@ bamtools stats -in ${paired_name}.bam \\
         ## check later for different inputs.
         $paired_name = basename($output, ('.bam'));
     }
+        my $jstring = qq!
+echo "Starting samtools"
+if [[ -f "${output}" && -f "${input}" ]]; then
+  echo "Both the bam and sam files exist, rerunning."
+elif [[ -f "${paired_name}.bam" ]]; then
+  echo "The output file exists, quitting."
+  exit 0
+elif [[ \! -f "${input}" ]]; then
+  echo "Could not find the samtools input file."
+  exit 1
+fi
+echo 'Time for first samtools command.' >> ${output}.time
+${samtools_first}
+echo "First samtools command finished with \$?"
+${samtools_second}
+rm ${output}
+rm ${input}
+mv ${sorted_name}.bam ${output}
+echo 'Time for samtools index command.' >> ${output}.time
+/usr/bin/time -v -o ${output}.time -a samtools index ${output} \\
+  2>>${stderr} \\
+  1>>${stdout}
+echo "Second samtools command finished with \$?"
+echo 'Time for bamtools command.' >> ${output}.time
+/usr/bin/time -v -o ${output}.time -a bamtools stats -in ${output} \\
+  2>>${output}_samtools.stats 1>&2
+echo "Bamtools finished with \$?"
+${paired_string}
+!;
 
     unless ($options->{mismatch}) {
         $jstring .= qq!

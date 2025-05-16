@@ -115,6 +115,16 @@ sub Get_Menus {
                 '(rosalind_plus): Make sure the Rosalind strand has the most pluses.' => \&Bio::Adventure::Annotation::Rosalind_Plus,
             },
         },
+        Compression => {
+            name => 'compress',
+            message => 'There is a time when the operation of the machine becomes so odious,
+makes you so sick at heart, that you can’t take part; you can’t even passively take part,
+and you’ve got to put your bodies upon the gears and upon the wheels, upon the levers,
+upon all the apparatus, and you’ve got to make it stop. Go to page 2025.',
+            choices => {
+                '(spring): Compress fastq data with spring.' => \&Bio::Adventure::Compress::Spring,
+            },
+        },
         Conversion => {
             name => 'convert',
             message => 'And it rained a fever. And it rained a silence. And it rained a sacrifice. And it rained a miracle. And it rained sorceries and saturnine eyes of the totem.  Go to page 2584981.',
@@ -125,6 +135,7 @@ sub Get_Menus {
                 '(gb2gff): Convert a genbank flat file to gff/fasta files.' => \&Bio::Adventure::Convert::Gb2Gff,
                 '(gff2fasta): Convert a gff file to a fasta file.' => \&Bio::Adventure::Convert::Gff2Fasta,
                 '(gatkdedup): Deduplicate an existing bam alignment with gatk.' => \&Bio::Adventure::Convert::GATK_Dedup,
+                '(extract_subseq): Extract a subsequence from a reference genome.' => \&Bio::Adventure::Convert::Extract_Subseq,
             },
         },
         Counting => {
@@ -247,6 +258,7 @@ sub Get_Menus {
                 '(sradownload): Extract SRA accession from a bioproject and download.' => \&Bio::Adventure::Prepare::Download_SRA_PRJNA,
                 '(fastqdump): Download data from sra.' => \&Bio::Adventure::Prepare::Fastq_Dump,
                 '(ncbidownload): Download accessions from ncbi.' => \&Bio::Adventure::Prepare::Download_NCBI_Accessions,
+                '(downloadassembly): Download an assembly from ncbi.' => \&Bio::Adventure::Prepare::Download_NCBI_Assembly,
             },
         },
         QA => {
@@ -317,7 +329,7 @@ sub Get_Menus {
                 '(rmats): Quantify changes in transcript splicing events across samples.' => \&Bio::Adventure::Splicing::RMats,
                 '(suppa): Quantify changes in transcript splicing events across samples.' => \&Bio::Adventure::Splicing::Suppa,
                 '(sl_recorder): Record observed spliced leaders in an SLSeq experiment.' => \&Bio::Adventure::Splicing::SL_Recorder,
-                '(polya_recorder): Record observed spliced leaders in an SLSeq experiment.' => \&Bio::Adventure::Splicing::PolyA_Recorder,
+                '(polya_recorder): Record observed spliced leaders in an SLSeq experiment.' => \&Bio::Adventure::Map::PolyA_Recorder,
                 '(slsearch): Count frequency of SL (or an arbitrary) sequences.' => \&Bio::Adventure::Splicing::SLSearch,
                 '(slutr): Search for SL junction reads and use them to define UTRs.' => \&Bio::Adventure::Splicing::SL_UTR,
             },
@@ -656,6 +668,7 @@ sub Get_Modules {
         'Make_Fasta_Job' => { modules => ['cyoa', 'fasta'] },
         'Make_Codon_Table' => { modules => ['cyoa'] },
         'Mash' => { modules => 'mash', exe => 'mash' },
+        'MauveAligner' => { modules => 'mauve' },
         'Merge_Annotations' => { modules => ['cyoa', 'ncbi_tools/6.1'], exe => 'tbl2asn' },
         'Merge_CDS_Predictions' => { modules => ['cyoa', 'ncbi_tools/6.1'], exe => 'tbl2asn' },
         'Merge_Parse_Blast' => { modules => ['cyoa'], },
@@ -674,6 +687,7 @@ sub Get_Modules {
         'PolyA_Extractor_Worker' => { modules => ['cyoa'] },
         'PolyA_Recorder' => { modules => ['cyoa', 'samtools'] },
         'Prodigal' => { modules => ['cyoa', 'prodigal'] },
+        'ProgressiveMauve' => { modules => 'mauve' },
         'Prokka' => { ## Prokka should not need cyoa; it is getting requisite perl module from it for now
             modules => ['cyoa', 'prokka', 'blast'], exe => 'prokka'},
         'Racer' => { modules => ['hitec'], exe => ['RACER'], },
@@ -716,6 +730,7 @@ sub Get_Modules {
         'Spladder' => { modules => 'spladder' },
         'Split_Align_Blast' => { modules => ['cyoa', 'blast', 'blastdb'], exe => 'blastn' },
         'Split_Align_Fasta' => { modules => ['cyoa', 'fasta',], exe => 'fasta36' },
+        'Spring' => { modules => ['spring',] },
         'STAR' => { modules => 'star' },
         'STAR_Index' => { modules => ['star'] },
         'Suppa' => { modules => ['suppa'] },
@@ -878,6 +893,10 @@ sub Get_Paths {
         $paths->{output_dir} = qq"${output_prefix}classify_phage";
         $paths->{log} = qq"$paths->{output_dir}/classify_phage.log";
     }
+    elsif ($subroutine eq 'Download_NCBI_Assembly') {
+        $paths->{output_dir} = qq"${output_prefix}download_assembly";
+        $paths->{log} = qq"$paths->{output_dir}/download_assembly.log";
+    }
     elsif ($subroutine eq 'Downsample_Guess_Strand') {
         $paths->{index} = qq"$paths->{index_prefix}/salmon/$options->{species}";
         $paths->{index_dir} = qq"$paths->{index_prefix}/salmon";
@@ -957,6 +976,9 @@ sub Get_Paths {
     elsif ($subroutine eq 'Make_Codon_Table') {
         $paths->{codon_table} = qq"$paths->{codon_dir}/$options->{species}.txt";
     }
+    elsif ($subroutine eq 'MauveAligner') {
+        $paths->{output_dir} = qq"${output_prefix}/mauve";
+    }
     elsif ($subroutine eq 'Merge_Annotations' || $subroutine eq 'Merge_Annotations_Worker') {
         $paths->{output_dir} = qq"${output_prefix}mergeannot";
     }
@@ -1032,6 +1054,11 @@ sub Get_Paths {
         $paths->{output_many} = qq"${output_dir}/${output_base}_many.txt";
         $paths->{output_zero} = qq"${output_dir}/${output_base}_zero.txt";
         $paths->{output_all} = qq"${output_dir}/${output_base}_all.txt";
+    }
+    elsif ($subroutine eq 'Spring') {
+        $paths->{output_dir} = qq"${output_prefix}spring";
+        $paths->{stdout} = qq"$paths->{output_dir}/spring.stdout";
+        $paths->{stderr} = qq"$paths->{output_dir}/spring.stderr";
     }
     elsif ($subroutine eq 'STAR') {
         $paths->{index} = qq"$paths->{index_prefix}/star/$options->{species}";
@@ -1159,9 +1186,11 @@ sub Get_TODOs {
         "cutadapt+" => \$todo_list->{todo}{'Bio::Adventure::Trim::Cutadapt'},
         "dedupgatk+" => \$todo_list->{todo}{'Bio::Adventure::Convert::GATK_Dedup'},
         "ncbidownload+" => \$todo_list->{todo}{'Bio::Adventure::Prepare::Download_NCBI_Accession'},
+        "downloadassembly+" => \$todo_list->{todo}{'Bio::Adventure::Prepare::Download_NCBI_Assembly'},
         "downsampleguess+" => \$todo_list->{todo}{'Bio::Adventure::Map::Downsample_Guess_Strand'},
         "essentialitytas+" => \$todo_list->{todo}{'Bio::Adventure::TNSeq::Essentiality_TAs'},
         "extendkraken+" => \$todo_list->{todo}{'Bio::Adventure::Index::Extend_Kraken_DB'},
+        "extractsubseq+" => \$todo_list->{todo}{'Bio::Adventure::Convert::Extract_Subseq'},
         "extracttrinotate+" => \$todo_list->{todo}{'Bio::Adventure::Annotation::Extract_Trinotate'},
         "fastp+" => \$todo_list->{todo}{'Bio::Adventure::Trim::Fastp'},
         "splitalignfasta+" => \$todo_list->{todo}{'Bio::Adventure::Align_Fasta::Split_Align_Fasta'},
@@ -1206,6 +1235,7 @@ sub Get_TODOs {
         "kallisto+" => \$todo_list->{todo}{'Bio::Adventure::Map::Kallisto'},
         "kraken+" => \$todo_list->{todo}{'Bio::Adventure::Count::Kraken'},
         "mash+" => \$todo_list->{todo}{'Bio::Adventure::Count::Mash'},
+        "mauve+" => \$todo_list->{todo}{'Bio::Adventure::Align::MauveAligner'},
         "mergeannotations+" => \$todo_list->{todo}{'Bio::Adventure::Metadata::Merge_Annotations'},
         "mergecds+" => \$todo_list->{todo}{'Bio::Adventure::Annotation_Genbank::Merge_CDS_Predictions'},
         "mergeparse+" => \$todo_list->{todo}{'Bio::Adventure::Align_Blast::Merge_Parse_Blast'},
@@ -1224,8 +1254,9 @@ sub Get_TODOs {
         "parsebcf+" => \$todo_list->{todo}{'Bio::Adventure::SNP::SNP_Ratio'},
         "phagepromoter+" => \$todo_list->{todo}{'Bio::Adventure::Feature_Prediction_Phagepromoter'},
         "polya+" => \$todo_list->{todo}{'Bio::Adventure::Trim::PolyA_Extractor'},
-        "polyarecord+" => \$todo_list->{todo}{'Bio::Adventure::Splicing::PolyA_Recorder'},
+        "polyarecord+" => \$todo_list->{todo}{'Bio::Adventure::Map::PolyA_Recorder'},
         "posttrinity+" => \$todo_list->{todo}{'Bio::Adventure::Assembly::Trinity_Post'},
+        "pmauve+" => \$todo_list->{todo}{'Bio::Adventure::Align::ProgressiveMauve'},
         "prokka+" => \$todo_list->{todo}{'Bio::Adventure::Annotation::Prokka'},
         "queryjob+" => \$todo_list->{todo}{'Bio::Adventure::Slurm::Query_Job'},
         "racer+" => \$todo_list->{todo}{'Bio::Adventure::Trim::Racer'},
@@ -1254,6 +1285,7 @@ sub Get_TODOs {
         "sortindexes+" => \$todo_list->{todo}{'Bio::Adventure::TNSeq::Sort_Indexes'},
         "spladder+" => \$todo_list->{todo}{'Bio::Adventure::Splicing::Spladder'},
         "splitalign+" => \$todo_list->{todo}{'Bio::Adventure::Align::Split_Align'},
+        "spring+" => \$todo_list->{todo}{'Bio::Adventure::Compress::Spring'},
         "sradownload+" => \$todo_list->{todo}{'Bio::Adventure::Prepare::Download_SRA_PRJNA'},
         "star+" => \$todo_list->{todo}{'Bio::Adventure::Map::STAR'},
         "suppa+" => \$todo_list->{todo}{'Bio::Adventure::Splicing::Suppa'},
