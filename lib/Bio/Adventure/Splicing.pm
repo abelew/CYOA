@@ -1386,7 +1386,7 @@ sub Write_SLData {
     my $gffio = $args{gffio};
     my $gffio_most = $args{gffio_most};
     my $gff_out = $args{gff_out};
-    my $gff_most_out = $args{$gff_most_out};
+    my $gff_most_out = $args{gff_most_out};
     if (!defined($observed->{$contig})) {
         return(undef);
     }
@@ -1495,7 +1495,7 @@ sub Write_SLData {
                     old_start => $gene_start,
                     old_end => $gene_end,
                 });
-            my $gff_most_string = $gffmost_io->gff_string($most_gene);
+            my $gff_most_string = $gffio_most->gff_string($most_gene);
             print $gff_most_out "${gff_most_string}\n";
             my $most_cds = Bio::SeqFeature::Generic->new(
                 -primary_tag => 'CDS',
@@ -1515,7 +1515,7 @@ sub Write_SLData {
                     $most_cds->add_tag_value($tag, $val);
                 }
             }
-            my $most_cds_string = $gffmost_io->gff_string($most_cds);
+            my $most_cds_string = $gffio_most->gff_string($most_cds);
             print $gff_most_out "${most_cds_string}\n";
         }
     }
