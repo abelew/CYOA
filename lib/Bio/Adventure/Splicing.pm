@@ -1678,7 +1678,7 @@ in the file(s): $options->{input}.\n";
                 $ind_search_result{sl_fwd_found}++;
                 $fwd_end = pos($read_seq);
                 my $new_read = $read_seq;
-                next FSA if (length($new_read < 12));
+                next FSA if (length($new_read) < 12);
                 $new_read =~ s/^.*$sl_fwd_search//g;
                 print $output_sl_reads ">${seq_id} fwd
 $new_read\n";
@@ -1688,7 +1688,7 @@ $new_read\n";
                 $fwd_end = pos($read_seq);
                 my $new_read = $read_seq;
                 $new_read =~ s/^.*$polya_fwd_search//g;
-                next FSA if (length($new_read < 12));
+                next FSA if (length($new_read) < 12);
                 print $output_polya_reads ">${seq_id} fwd
 $new_read\n";
             }
@@ -1699,7 +1699,7 @@ $new_read\n";
                 my $new_read = reverse($read_seq);
                 $new_read =~ tr/AGCTU/TCGAA/;
                 $new_read =~ s/^.*$sl_fwd_search//g;
-                next FSA if (length($new_read < 12));
+                next FSA if (length($new_read) < 12);
                 print $output_sl_reads ">${seq_id} rev
 ${new_read}\n";
             }
@@ -1709,7 +1709,7 @@ ${new_read}\n";
                 my $new_read = reverse($read_seq);
                 $new_read =~ tr/AGCTU/TCGAA/;
                 $new_read =~ s/^.*$polya_fwd_search//g;
-                next FSA if (length($new_read < 12));
+                next FSA if (length($new_read) < 12);
                 print $output_polya_reads ">${seq_id} rev
 ${new_read}\n";
             }
