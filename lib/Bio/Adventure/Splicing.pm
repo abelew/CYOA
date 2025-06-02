@@ -1548,11 +1548,10 @@ sub SL_UTR {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
-        required => ['input'],
+        required => ['input', 'species',],
         jmem => 24,
-        jprefix => '50',
-        search => 'AGTTTCTGTACTTTATTGG',);
-    my $output_dir =  qq"outputs/$options->{jprefix}SL_UTR";
+        jprefix => '50',);
+    my $output_dir =  qq"outputs/$options->{jprefix}SL_UTR_$options->{species}";
     my $output_made = make_path($output_dir);
     my $comment = '## Search for SL sub-sequences.';
     my $stdout = qq"${output_dir}/sl_utr.stdout";
@@ -1561,12 +1560,14 @@ sub SL_UTR {
 my \$result = \$h->Bio::Adventure::Splicing::SL_UTR_Worker(
   input => '$options->{input}',
   output => '${output_dir}',
+  species => '$options->{species}',
   jprefix => '$options->{jprefix}',
   jname => 'slsearch',);
 ?;
     my $sl_utr = $class->Submit(
         comment => $comment,
         input => $options->{input},
+        species => $options->{species},
         jcpu => 1,
         jdepends => $options->{jdepends},
         jmem => $options->{jmem},
@@ -1592,10 +1593,17 @@ sub SL_UTR_Worker {
     my $options = $class->Get_Vars(
         args => \%args,
         required => ['input', 'output'],
+        species => 'lpanamensis',
         jmem => 24,
         jprefix => '50',
-        polya_search => 'AAAAAAAAA',
-        sl_search => 'AGTTTCTGTACTATATTG',);
+        polya_search => 'AAAAAAAAA',);
+
+    my $observed_sl = {
+        tcruzi => 'ACGCTATTATTGATACAGTTTCTGTACTATATTG',
+        lmajor => 'ACGCTATATAAGTATCAGTTTCTGTACTTTATTG',
+        lpanamensis => 'AAGTATCAGTTTCTGTACTTTATTG',
+    };
+    my $search = $observed_sl->{$options->{species}};
     ## Ideally, I would like to run this function on the mapping
     ## directories and search the aligned/unaligned sequences
     ## separately.
@@ -1611,8 +1619,7 @@ sub SL_UTR_Worker {
         for my $i (@tmp_lst) {
             push (@input_lst, $i) if (-r $i);
         }
-    }
-    else {
+    } else {
         if (-r $options->{input}) {
             push(@input_lst, $options->{input});
         }
@@ -1621,7 +1628,7 @@ sub SL_UTR_Worker {
         return(undef);
     }
 
-    my $sl_fwd_search = $options->{sl_search};
+    my $sl_fwd_search = $search;
     my $sl_rc_search = reverse($sl_fwd_search);
     $sl_rc_search =~ tr/ATGCUatgcu/TACGAtacga/;
     my $search_length = length($sl_fwd_search);
