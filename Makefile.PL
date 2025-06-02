@@ -47,16 +47,19 @@ WriteMakefile(
         'IO::String' => '0',
         'IO::Uncompress::UnXz' => '0',
         'IPC::System::Simple' => '0',
+        'JSON' => '0',
         'List::MoreUtils' => '0',
         'Log::Log4perl' => '0',
+        'LWP::Protocol::https' => '0',
         'Math::Round' => '0',
         'Math::SigFigs' => '0',
         'Modern::Perl' => '0',
-        'LWP::Protocol::https' => '0',
         'Parse::CSV' => '0',
         'PerlIO' => '0',
         'PerlIO::gzip' => '0',
+        'Pod::Find' => '0',
         'Pod::Usage' => '0',
+        'Signal::StackTrace' => '0',
         'Spreadsheet::Read' => '0',
         'Spreadsheet::ParseODS' => '0',
         'Spreadsheet::ParseXLSX' => '0',
@@ -74,6 +77,7 @@ WriteMakefile(
         'Test::More' => '0',
         'Text::CSV' => '0',
         'Text::CSV_XS::TSV' => '0',
+        'Tie::Array::CSV' => '0',
         'WWW::Mechanize' => '0',
     },
     EXE_FILES => [
@@ -93,6 +97,6 @@ WriteMakefile(
             homepage => 'https://github.com/abelew/CYOA.git',
         },
     },);
-
+auto_install();
 package MY;
 use File::ShareDir::Install qw"postamble";

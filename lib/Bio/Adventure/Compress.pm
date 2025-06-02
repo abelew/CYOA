@@ -135,6 +135,16 @@ xz -9e -f ${in_full}
     return($compression);
 }
 
+=head2 C<Spring>
+
+ Using spring's lossless mode to recompress fastq archives.
+
+ https://doi.org/10.1093/bioinformatics/bty1015
+
+ I checked out spring recently and was pleased with its speed.  I am not sure how I feel
+ about lossy compression of the data; but the compression ratios were undeniably nice.
+
+=cut
 sub Spring {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
@@ -142,47 +152,144 @@ sub Spring {
         required => ['input'],
         comment => '## Recompressing files.',
         jname => 'spring',
-        jmem => 8,
+        jmem => 12,
         jprefix => '99',
         jwalltime => '12:00:00',);
     my $input_paths = $class->Get_Path_Info($options->{input});
     my $paths = $class->Bio::Adventure::Config::Get_Paths();
 
-    my $jstring = qq"mkdir -p $paths->{output_dir}";
-    my $output_string = '';
-    for my $in (@{$input_paths}) {
+    my @compression_jobs = ();
+    my $number_inputs = scalar(@{$input_paths});
+    my $jstring = '';
+    if ($number_inputs == 0) {
+        die("No input provided.");
+    } elsif ($number_inputs == 1) {
+        print "Assuming a single, single-ended sample.\n";
+        my $in = $input_paths->[0];
         my $in_dir = $in->{directory};
         my $in_base = $in->{filebase_compress};
+        $in_base = basename($in_base, ('.fastq'));
+        my $jname = qq"$options->{jname}_${in_base}";
         my $in_full = $in->{fullpath};
         my $output_file = qq"$paths->{output_dir}/${in_base}.spring";
         my $fc = $class->Get_FC(input => $in_full);
-        $output_string .= qq"${output_file}:";
+        my $in_fh = $in_full;
         if ($in_full =~ /\.xz|\.gz|\.bz2|\.zip/) {
-            $jstring .= qq!
-spring -c -i <(${fc}) -o ${output_file} \\
-  2>>$paths->{stderr} 1>>$paths->{stdout}
-!;
-        } else {
-            $jstring .= qq!
-spring -c -i ${in_full} -o ${output_file} \\
-  2>>$paths->{stderr} 1>>$paths->{stdout}
-!;
+            $in_fh = qq"<(${fc})";
         }
+        $jstring = qq!
+start=\$(du -sb ${in_full} | awk '{print \$1}')
+/usr/bin/time -v -o $paths->{stdout}.time -a \\
+  spring -c -i $in_fh \\
+    -o ${output_file} \\
+    2>>$paths->{stderr} 1>>$paths->{stdout}
+final=\$(du -sb ${output_file} | awk '{print \$1}')
+echo "" >> $paths->{stdout}
+echo "The input size is \${start}." >> $paths->{stdout}
+echo "The output size of ${in_base} is: \${final}." >> $paths->{stdout}
+echo "The ratio is: \$(perl -e \\"print \${final} / \${start}\\")." >> $paths->{stdout}"
+rm ${in_full}
+mv ${output_file} ${in_dir}/
+!;
+        my $compression = $class->Submit(
+            comment => $options->{comment},
+            jdepends => $options->{jdepends},
+            input => $options->{input},
+            jcpu => 1,
+            jmem => $options->{jmem},
+            jname => $jname,
+            jprefix => $options->{jprefix},
+            jstring => $jstring,
+            jwalltime => $options->{jwalltime},
+            output => $output_file,);
+        push(@compression_jobs, $compression);
+    } elsif ($number_inputs == 2) {
+        print "Assuming a single, paired-ended sample.\n";
+        my $r1 = $input_paths->[0];
+        my $r2 = $input_paths->[1];
+        my $in_dir = $r1->{directory};
+        my $in_base = $r1->{filebase_compress};
+        $in_base = basename($in_base, ('.fastq'));
+        my $r1_full = $r1->{fullpath};
+        my $r2_full = $r2->{fullpath};
+        my $jname = qq"$options->{jname}_${in_base}";
+        my $output_file = qq"$paths->{output_dir}/${in_base}.spring";
+        my $r1_fc = $class->Get_FC(input => $r1_full);
+        my $r2_fc = $class->Get_FC(input => $r2_full);
+        my $in_fh = qq"${r1_full} ${r2_full}";
+        if ($r1_full =~ /\.xz|\.gz|\.bz2|\.zip/) {
+            $in_fh = qq"<(${r1_fc}) <(${r2_fc})";
+        }
+        $jstring = qq!
+start=\$(( \$(du -sb ${r1_full} | awk '{print \$1}' | perl -pe 's/[a-zA-Z]\$//g') + \$(du -sb ${r1_full} | awk '{print \$1}' | perl -pe 's/[a-zA-Z]\$//g') ))
+/usr/bin/time -v -o $paths->{stdout}.time -a \\
+  spring -c -i ${in_fh} \\
+    -o ${output_file} \\
+    2>>$paths->{stderr} 1>>$paths->{stdout}
+final=\$(du -sb ${output_file} | awk '{print \$1}')
+echo "" >> $paths->{stdout}
+echo "The input size is \${start}." >> $paths->{stdout}
+echo "The output is: \${final}." >> $paths->{stdout}
+echo "The ratio is: \$(perl -e \\"print \${final} / \${start}\\")." >> $paths->{stdout}"
+rm ${r1_full} ${r2_full}
+mv ${output_file} ${in_dir}/
+!;
+        my $compression = $class->Submit(
+            comment => $options->{comment},
+            jdepends => $options->{jdepends},
+            input => $options->{input},
+            jcpu => 1,
+            jmem => $options->{jmem},
+            jname => $jname,
+            jprefix => $options->{jprefix},
+            jstring => $jstring,
+            jwalltime => $options->{jwalltime},
+            output => $output_file,);
+         push(@compression_jobs, $compression);
+    } else {
+        print "Assuming multiple single-ended samples.\n";
+        for my $in (@{$input_paths}) {
+            my $in_dir = $in->{directory};
+            my $in_base = $in->{filebase_compress};
+            $in_base = basename($in_base, ('.fastq'));
+            my $in_full = $in->{fullpath};
+            $in_base = basename($in_base, ('.fastq'));
+            my $jname = qq"$options->{jname}_${in_base}";
+            my $output_file = qq"$paths->{output_dir}/${in_base}.spring";
+            my $fc = $class->Get_FC(input => $in_full);
+            my $in_fh = $in_full;
+            if ($in_full =~ /\.xz|\.gz|\.bz2|\.zip/) {
+                $in_fh = qq"<(${fc})";
+            }
+            $jstring = qq!
+start=\$(du -sb ${in_full} | awk '{print \$1}')
+/usr/bin/time -v -o $paths->{stdout}.time -a \\
+  spring -c -i ${in_fh} \\
+    -o ${output_file} \\
+    2>>$paths->{stderr} 1>>$paths->{stdout}
+final=\$(du -sb ${output_file} | awk '{print \$1}')
+echo "" >> $paths->{stdout}
+echo "The input size is \${start}." >> $paths->{stdout}
+echo "The output size is \${final}." >> $paths->{stdout}
+echo "The ratio is: \$(perl -e \\"print \${final} / \${start}\\")." >> $paths->{stdout}"
+rm ${in_full}
+mv ${output_file} ${in_dir}/
+!;
+            my $compression = $class->Submit(
+                comment => $options->{comment},
+                jdepends => $options->{jdepends},
+                input => $options->{input},
+                jcpu => 1,
+                jmem => $options->{jmem},
+                jname => $jname,
+                jprefix => $options->{jprefix},
+                jstring => $jstring,
+                jwalltime => $options->{jwalltime},
+                output => $output_file,);
+             push(@compression_jobs, $compression);
+        } ## End iterating over input files.
     }
-    $output_string =~ s/:$//g;
-
-    my $compression = $class->Submit(
-        comment => $options->{comment},
-        jdepends => $options->{jdepends},
-        input => $options->{input},
-        jcpu => 1,
-        jmem => $options->{jmem},
-        jname => $options->{jname},
-        jprefix => $options->{jprefix},
-        jstring => $jstring,
-        jwalltime => $options->{jwalltime},
-        output => $output_string,);
-    return($compression);
+    return(\@compression_jobs);
 }
 
 =head1 AUTHOR - atb

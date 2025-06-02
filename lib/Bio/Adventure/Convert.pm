@@ -100,6 +100,38 @@ sub Extract_Subseq {
     $in_fh->close();
 }
 
+sub Extract_SeqIDs {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['input', 'seqid',],
+        direction => 'forward',
+        informat => 'fasta',
+        outformat => 'fasta',
+        jprefix => '78');
+    my $base = basename($options->{input}, ('.fasta', '.fsa', '.ffn', '.faa'));
+    (my $base_no_extension = $base) =~ s/\.[^.]+$//;
+    my $dir = dirname($options->{input});
+    my $output_file = qq"${dir}/${base}_extracted.$options->{outformat}";
+    my @ids = split(/$options->{delimiter}/, $options->{seqid});
+    my $in_fh = FileHandle->new("less $options->{input} |");
+    my $input_seq = Bio::SeqIO->new(-fh => $in_fh,
+                                    -format => $options->{informat},);
+    my $output_seq = Bio::SeqIO->new(-file   => ">${output_file}",
+                                     -format => $options->{outformat},);
+    my $seq_count = 0;
+    my $found_id = 0;
+  SEQ_LOOP: while (my $input_seq = $input_seq->next_seq) {
+        my $sequence_id = $input_seq->id;
+      WANTED: for my $wanted_id (@ids) {
+            if ($sequence_id =~ /$wanted_id/) {
+                $output_seq->write_seq($input_seq);
+            }
+        }
+    }
+    $in_fh->close();
+}
+
 =head2 C<GATK_Dedup>
 
  An invocation of GATK's mark duplicate function.

@@ -135,6 +135,7 @@ upon all the apparatus, and you’ve got to make it stop. Go to page 2025.',
                 '(gb2gff): Convert a genbank flat file to gff/fasta files.' => \&Bio::Adventure::Convert::Gb2Gff,
                 '(gff2fasta): Convert a gff file to a fasta file.' => \&Bio::Adventure::Convert::Gff2Fasta,
                 '(gatkdedup): Deduplicate an existing bam alignment with gatk.' => \&Bio::Adventure::Convert::GATK_Dedup,
+                '(extract_seqids): Extract arbitrary sequence IDs from a reference.' => \&Bio::Adventure::Convert::Extract_SeqIDs,
                 '(extract_subseq): Extract a subsequence from a reference genome.' => \&Bio::Adventure::Convert::Extract_Subseq,
             },
         },
@@ -1056,9 +1057,11 @@ sub Get_Paths {
         $paths->{output_all} = qq"${output_dir}/${output_base}_all.txt";
     }
     elsif ($subroutine eq 'Spring') {
+        my $input_name = basename($options->{input}, ('.gz', '.bz2', '.xz'));
+        $input_name = basename($input_name, ('.fastq'));
         $paths->{output_dir} = qq"${output_prefix}spring";
-        $paths->{stdout} = qq"$paths->{output_dir}/spring.stdout";
-        $paths->{stderr} = qq"$paths->{output_dir}/spring.stderr";
+        $paths->{stdout} = qq"$paths->{output_dir}/${input_name}_spring.stdout";
+        $paths->{stderr} = qq"$paths->{output_dir}/${input_name}_spring.stderr";
     }
     elsif ($subroutine eq 'STAR') {
         $paths->{index} = qq"$paths->{index_prefix}/star/$options->{species}";
@@ -1190,6 +1193,7 @@ sub Get_TODOs {
         "downsampleguess+" => \$todo_list->{todo}{'Bio::Adventure::Map::Downsample_Guess_Strand'},
         "essentialitytas+" => \$todo_list->{todo}{'Bio::Adventure::TNSeq::Essentiality_TAs'},
         "extendkraken+" => \$todo_list->{todo}{'Bio::Adventure::Index::Extend_Kraken_DB'},
+        "extractseqids+" => \$todo_list->{todo}{'Bio::Adventure::Convert::Extract_SeqIDs'},
         "extractsubseq+" => \$todo_list->{todo}{'Bio::Adventure::Convert::Extract_Subseq'},
         "extracttrinotate+" => \$todo_list->{todo}{'Bio::Adventure::Annotation::Extract_Trinotate'},
         "fastp+" => \$todo_list->{todo}{'Bio::Adventure::Trim::Fastp'},

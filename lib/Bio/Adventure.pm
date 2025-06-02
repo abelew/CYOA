@@ -308,6 +308,7 @@ has script_dir => (is => 'rw', default => 'scripts');
 has search_string => (is => 'rw', default => 'tail');
 has secondary => (is => 'rw', default => 'ignore');  ## Or ignore, use by htseq-count.
 has separation => (is => 'rw', default => '10');
+has seqid => (is => 'rw', default => undef);
 has shell => (is => 'rw', default => '/usr/bin/bash'); ## Default qsub shell
 has sort => (is => 'rw', default => 'pos'); ## Explicitly set the sorting type for htseq
 has species => (is => 'rw', default => undef); ## Primarily for getting libraries to search against
