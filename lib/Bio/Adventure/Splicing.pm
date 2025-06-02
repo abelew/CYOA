@@ -1638,9 +1638,12 @@ in the file(s): $options->{input}.\n";
     ## and for the per-input outputs.  Create a couple of global counters.
 
     my %global_search_result = (
-        found => 0,         ## The total number of observed SL.
-        fwd_found => 0, ## The number found in the forward orientation.
-        rc_found => 0,  ## The number of revcomp found.
+        sl_found => 0,
+        polya_found => 0,
+        sl_fwd_found => 0, ## The number found in the forward orientation.
+        polya_fwd_found => 0, ## The number found in the forward orientation.
+        sl_rc_found => 0,  ## The number of revcomp found.
+        polya_rc_found => 0,  ## The number of revcomp found.
         searched => 0); ## The total number of sequences searched.
     ## One may reasonably ask why all_found is not just the sum of the next two.
     ## I am thinking to catch the pathological case where a single input sequence
@@ -1659,7 +1662,8 @@ in the file(s): $options->{input}.\n";
         ## is too close to the beginning of the read.
         print $ind_result "ReadID\tposition\torientation\n";
         my %ind_search_result = (
-            found => 0,
+            sl_found => 0,
+            polya_found => 0,
             sl_fwd_found => 0,
             sl_rc_found => 0,
             polya_fwd_found => 0,
@@ -1672,11 +1676,14 @@ in the file(s): $options->{input}.\n";
             $global_search_result{searched}++;
             my $seq_id = $seq->id;
             my $read_seq = $seq->seq;
-            my $fwd_end = undef;
+            my $fwd_sl_end = undef;
+            my $fwd_polya_end = undef;
+            my $rc_sl_end = undef;
+            my $rc_polya_end = undef;
 
             if ($read_seq =~ m/$sl_fwd_search/g) {
                 $ind_search_result{sl_fwd_found}++;
-                $fwd_end = pos($read_seq);
+                $fwd_sl_end = pos($read_seq);
                 my $new_read = $read_seq;
                 next FSA if (length($new_read) < 12);
                 $new_read =~ s/^.*$sl_fwd_search//g;
@@ -1685,17 +1692,17 @@ $new_read\n";
             }
             elsif ($read_seq =~ m/$polya_fwd_search/g) {
                 $ind_search_result{polya_fwd_found}++;
-                $fwd_end = pos($read_seq);
+                $fwd_polya_end = pos($read_seq);
                 my $new_read = $read_seq;
                 $new_read =~ s/^.*$polya_fwd_search//g;
                 next FSA if (length($new_read) < 12);
                 print $output_polya_reads ">${seq_id} fwd
 $new_read\n";
             }
-            my $rc_end = undef;
+
             if ($read_seq =~ m/^.*$sl_rc_search/g) {
                 $ind_search_result{sl_rev_found}++;
-                $rc_end = pos($read_seq);
+                $rc_sl_end = pos($read_seq);
                 my $new_read = reverse($read_seq);
                 $new_read =~ tr/AGCTU/TCGAA/;
                 $new_read =~ s/^.*$sl_fwd_search//g;
@@ -1705,7 +1712,7 @@ ${new_read}\n";
             }
             elsif ($read_seq =~ m/^.*$polya_rc_search/g) {
                 $ind_search_result{polya_rev_found}++;
-                $rc_end = pos($read_seq);
+                $rc_polya_end = pos($read_seq);
                 my $new_read = reverse($read_seq);
                 $new_read =~ tr/AGCTU/TCGAA/;
                 $new_read =~ s/^.*$polya_fwd_search//g;
@@ -1714,38 +1721,59 @@ ${new_read}\n";
 ${new_read}\n";
             }
             ## Get out if we do not find the SL portion.
-            if (!defined($fwd_end) && !defined($rc_end)) {
+            if (!defined($fwd_sl_end) && !defined($rc_sl_end) &&
+                !defined($fwd_polya_end) && !defined($rc_polya_end)) {
                 next FSA;
             }
 
-            if ($fwd_end) {
+            if ($fwd_sl_end) {
                 my $fwd_start = $fwd_end - ($search_length - 1);
                 print $ind_result "${seq_id}\t${fwd_start}\tFWD\n";
-                $ind_search_result{found}++;
-                $ind_search_result{fwd_found}++;
-                $global_search_result{found}++;
-                $global_search_result{fwd_found}++;
+                $ind_search_result{sl_found}++;
+                $ind_search_result{sl_fwd_found}++;
+                $global_search_result{sl_found}++;
+                $global_search_result{sl_fwd_found}++;
+            }
+            if ($fwd_polya_end) {
+                my $fwd_start = $fwd_end - ($search_length - 1);
+                print $ind_result "${seq_id}\t${fwd_start}\tFWD\n";
+                $ind_search_result{polya_found}++;
+                $ind_search_result{polya_fwd_found}++;
+                $global_search_result{polya_found}++;
+                $global_search_result{polya_fwd_found}++;
             }
 
-            if ($rc_end) {
+            if ($rc_sl_end) {
                 my $rc_start = $rc_end - ($search_length - 1);
                 print $ind_result "${seq_id}\t${rc_start}\tRC\n";
-                $ind_search_result{found}++;
-                $ind_search_result{rc_found}++;
-                $global_search_result{found}++;
-                $global_search_result{rc_found}++;
+                $ind_search_result{sl_found}++;
+                $ind_search_result{sl_rc_found}++;
+                $global_search_result{sl_found}++;
+                $global_search_result{sl_rc_found}++;
             }
-        }                   ## End reading the input fastq/fasta file.
+            if ($rc_polya_end) {
+                my $rc_start = $rc_end - ($search_length - 1);
+                print $ind_result "${seq_id}\t${rc_start}\tRC\n";
+                $ind_search_result{polya_found}++;
+                $ind_search_result{polya_rc_found}++;
+                $global_search_result{polya_found}++;
+                $global_search_result{polya_rc_found}++;
+            }
+        } ## End reading the input fastq/fasta file.
 
         print $log_fh qq"
 ${ind_name} results:
   sequences searched: $ind_search_result{searched}
-  subsequences observed: $ind_search_result{found}
-  forward observed: $ind_search_result{fwd_found}
-  reverse-complement observed: $ind_search_result{rc_found}\n";
+  SL subsequences observed: $ind_search_result{sl_found}
+  SL forward observed: $ind_search_result{sl_fwd_found}
+  SL reverse-complement observed: $ind_search_result{sl_rc_found}
+  polyA subsequences observed: $ind_search_result{polya_found}
+  polyA forward observed: $ind_search_result{polya_fwd_found}
+  polyA reverse-complement observed: $ind_search_result{polya_rc_found}
+";
         $ind_result->close();
         $reader->close();
-    }                           ## End of the input loop
+    } ## End of the input loop
     print $log_fh qq"
 Total results:
   sequences searched: $global_search_result{searched}

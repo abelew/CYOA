@@ -184,10 +184,11 @@ start=\$(du -sb ${in_full} | awk '{print \$1}')
     -o ${output_file} \\
     2>>$paths->{stderr} 1>>$paths->{stdout}
 final=\$(du -sb ${output_file} | awk '{print \$1}')
+ratio=\$(perl -e "print \${final} / \${start}")
 echo "" >> $paths->{stdout}
 echo "The input size is \${start}." >> $paths->{stdout}
 echo "The output size of ${in_base} is: \${final}." >> $paths->{stdout}
-echo "The ratio is: \$(perl -e \\"print \${final} / \${start}\\")." >> $paths->{stdout}"
+echo "The ratio is: \${ratio}." >> $paths->{stdout}
 rm ${in_full}
 mv ${output_file} ${in_dir}/
 !;
