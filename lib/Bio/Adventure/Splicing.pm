@@ -1734,7 +1734,7 @@ ${new_read}\n";
             }
 
             if ($fwd_sl_end) {
-                my $fwd_start = $fwd_end - ($search_length - 1);
+                my $fwd_start = $fwd_sl_end - ($search_length - 1);
                 print $ind_result "${seq_id}\t${fwd_start}\tFWD\n";
                 $ind_search_result{sl_found}++;
                 $ind_search_result{sl_fwd_found}++;
@@ -1742,7 +1742,7 @@ ${new_read}\n";
                 $global_search_result{sl_fwd_found}++;
             }
             if ($fwd_polya_end) {
-                my $fwd_start = $fwd_end - ($search_length - 1);
+                my $fwd_start = $fwd_polya_end - ($search_length - 1);
                 print $ind_result "${seq_id}\t${fwd_start}\tFWD\n";
                 $ind_search_result{polya_found}++;
                 $ind_search_result{polya_fwd_found}++;
@@ -1751,7 +1751,7 @@ ${new_read}\n";
             }
 
             if ($rc_sl_end) {
-                my $rc_start = $rc_end - ($search_length - 1);
+                my $rc_start = $rc_sl_end - ($search_length - 1);
                 print $ind_result "${seq_id}\t${rc_start}\tRC\n";
                 $ind_search_result{sl_found}++;
                 $ind_search_result{sl_rc_found}++;
@@ -1759,7 +1759,7 @@ ${new_read}\n";
                 $global_search_result{sl_rc_found}++;
             }
             if ($rc_polya_end) {
-                my $rc_start = $rc_end - ($search_length - 1);
+                my $rc_start = $rc_polya_end - ($search_length - 1);
                 print $ind_result "${seq_id}\t${rc_start}\tRC\n";
                 $ind_search_result{polya_found}++;
                 $ind_search_result{polya_rc_found}++;
