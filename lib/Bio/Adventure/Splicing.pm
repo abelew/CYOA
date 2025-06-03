@@ -1639,7 +1639,7 @@ sub SL_UTR_Worker {
     $polya_rc_search =~ tr/ATGCUatgcu/TACGAtacga/;
 
     my $log_fh = FileHandle->new(">$options->{output}/slsearch_log.txt");
-    print $log_fh qq"Starting search for a portion of the SL sequence: $options->{search}
+    print $log_fh qq"Starting search for a portion of the SL sequence: ${search}
 in the file(s): $options->{input}.\n";
     ## Now start the main loop, open file handles for a main log
     ## and for the per-input outputs.  Create a couple of global counters.
@@ -1784,9 +1784,13 @@ ${ind_name} results:
     print $log_fh qq"
 Total results:
   sequences searched: $global_search_result{searched}
-  subsequences observed: $global_search_result{found}
-  forward observed: $global_search_result{fwd_found}
-  reverse-complement observed: $global_search_result{rc_found}\n";
+  SL subsequences observed: $global_search_result{sl_found}
+  SL forward observed: $global_search_result{sl_fwd_found}
+  SL reverse-complement observed: $global_search_result{sl_rc_found}
+  polyA subsequences observed: $global_search_result{polya_found}
+  polyA forward observed: $global_search_result{polya_fwd_found}
+  polyA reverse-complement observed: $global_search_result{polya_rc_found}
+";
     $log_fh->close();
 }
 

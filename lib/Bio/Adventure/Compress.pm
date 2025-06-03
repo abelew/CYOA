@@ -272,7 +272,7 @@ final=\$(du -sb ${output_file} | awk '{print \$1}')
 echo "" >> $paths->{stdout}
 echo "The input size is \${start}." >> $paths->{stdout}
 echo "The output size is \${final}." >> $paths->{stdout}
-echo "The ratio is: \$(perl -e \\"print \${final} / \${start}\\")." >> $paths->{stdout}"
+echo "The ratio is: \$(perl -e \\"print \${final} / \${start}\\")." >> $paths->{stdout}
 rm ${in_full}
 mv ${output_file} ${in_dir}/
 !;
