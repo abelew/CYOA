@@ -171,6 +171,10 @@ sub Spring {
         $in_base = basename($in_base, ('.fastq'));
         my $jname = qq"$options->{jname}_${in_base}";
         my $in_full = $in->{fullpath};
+        if (-l $in_full) {
+            print "The file: ${in_full} is a symlink, skipping it.\n";
+            return undef;
+        }
         my $output_file = qq"$paths->{output_dir}/${in_base}.spring";
         my $fc = $class->Get_FC(input => $in_full);
         my $in_fh = $in_full;
@@ -213,6 +217,10 @@ mv ${output_file} ${in_dir}/
         $in_base = basename($in_base, ('.fastq'));
         my $r1_full = $r1->{fullpath};
         my $r2_full = $r2->{fullpath};
+        if (-l $r1_full || -l $r2_full) {
+            print "The file: ${r1_full} or ${r2_full} is a symlink, skipping it.\n";
+            return undef;
+        }
         my $jname = qq"$options->{jname}_${in_base}";
         my $output_file = qq"$paths->{output_dir}/${in_base}.spring";
         my $r1_fc = $class->Get_FC(input => $r1_full);
@@ -249,11 +257,15 @@ mv ${output_file} ${in_dir}/
          push(@compression_jobs, $compression);
     } else {
         print "Assuming multiple single-ended samples.\n";
-        for my $in (@{$input_paths}) {
+      INPUTS: for my $in (@{$input_paths}) {
             my $in_dir = $in->{directory};
             my $in_base = $in->{filebase_compress};
             $in_base = basename($in_base, ('.fastq'));
             my $in_full = $in->{fullpath};
+            if (-l $in_full) {
+                print "The file: ${in_full} is a symlink, skipping it.\n";
+                next INPUTS;
+            }
             $in_base = basename($in_base, ('.fastq'));
             my $jname = qq"$options->{jname}_${in_base}";
             my $output_file = qq"$paths->{output_dir}/${in_base}.spring";

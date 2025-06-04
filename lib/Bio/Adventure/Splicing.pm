@@ -1601,7 +1601,8 @@ sub SL_UTR_Worker {
     my $observed_sl = {
         tcruzi => 'ACGCTATTATTGATACAGTTTCTGTACTATATTG',
         lmajor => 'ACGCTATATAAGTATCAGTTTCTGTACTTTATTG',
-        lpanamensis => 'AAGTATCAGTTTCTGTACTTTATTG',
+        ## lpanamensis => 'AAGTATCAGTTTCTGTACTTTATTG',
+        lpanamensis => 'AGTTTCTGTACTTTATTG',
     };
     my $search = $observed_sl->{$options->{species}};
     ## Ideally, I would like to run this function on the mapping
