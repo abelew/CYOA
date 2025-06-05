@@ -49,11 +49,22 @@ sub Compress {
     die('Could not find xz in your PATH.') unless($check);
     my $jstring = "";
     my $output_string = '';
-    for my $in (@{$input_paths}) {
+  INPUTS: for my $in (@{$input_paths}) {
         my $in_dir = $in->{directory};
         my $in_base = $in->{filebase_compress};
         my $in_full = $in->{fullpath};
         my $output_file = qq"${in_dir}/${in_base}.xz";
+                    my $in_full = $in->{fullpath};
+        my $size = (stat $in_full)[7];
+        ## Skip files less than 1Mb.
+        if ($size < 1000000) {
+            print "The file: ${in_full} is only ${size} bytes, skipping it.\n";
+            next INPUTS;
+        }
+        if (-l $in_full) {
+            print "The file: ${in_full} is a symlink, skipping it.\n";
+            next INPUTS;
+        }
         $output_string .= qq"${output_file}:";
         $jstring .= qq!
 ## Compressing ${in_full}
@@ -71,7 +82,7 @@ else
   echo "The input: ${in_full} does not exist." 1>>${stderr}
 fi
 !;
-    }
+    } ## End looping over input files.
     $output_string =~ s/:$//g;
 
     my $compression = $class->Submit(
@@ -175,6 +186,12 @@ sub Spring {
             print "The file: ${in_full} is a symlink, skipping it.\n";
             return undef;
         }
+        my $size = (stat $in_full)[7];
+        ## Skip files less than 1Mb.
+        if ($size < 1000000) {
+            print "The file: ${in_full} is only ${size} bytes, skipping it.\n";
+            return(undef);
+        }
         my $output_file = qq"$paths->{output_dir}/${in_base}.spring";
         my $fc = $class->Get_FC(input => $in_full);
         my $in_fh = $in_full;
@@ -221,6 +238,13 @@ mv ${output_file} ${in_dir}/
             print "The file: ${r1_full} or ${r2_full} is a symlink, skipping it.\n";
             return undef;
         }
+        my $r1_size = (stat $r1_full)[7];
+        my $r2_size = (stat $r2_full)[7];
+        ## Skip files less than 1Mb.
+        if (($r1_size + $f2_size) < 2000000) {
+            print "The file: ${r1_full} is only ${r1_size} bytes, skipping it.\n";
+            next INPUTS;
+        }
         my $jname = qq"$options->{jname}_${in_base}";
         my $output_file = qq"$paths->{output_dir}/${in_base}.spring";
         my $r1_fc = $class->Get_FC(input => $r1_full);
@@ -262,6 +286,12 @@ mv ${output_file} ${in_dir}/
             my $in_base = $in->{filebase_compress};
             $in_base = basename($in_base, ('.fastq'));
             my $in_full = $in->{fullpath};
+            my $size = (stat $in_full)[7];
+            ## Skip files less than 1Mb.
+            if ($size < 1000000) {
+                print "The file: ${in_full} is only ${size} bytes, skipping it.\n";
+                next INPUTS;
+            }
             if (-l $in_full) {
                 print "The file: ${in_full} is a symlink, skipping it.\n";
                 next INPUTS;
