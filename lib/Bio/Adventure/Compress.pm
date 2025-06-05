@@ -54,7 +54,6 @@ sub Compress {
         my $in_base = $in->{filebase_compress};
         my $in_full = $in->{fullpath};
         my $output_file = qq"${in_dir}/${in_base}.xz";
-                    my $in_full = $in->{fullpath};
         my $size = (stat $in_full)[7];
         ## Skip files less than 1Mb.
         if ($size < 1000000) {
@@ -241,7 +240,7 @@ mv ${output_file} ${in_dir}/
         my $r1_size = (stat $r1_full)[7];
         my $r2_size = (stat $r2_full)[7];
         ## Skip files less than 1Mb.
-        if (($r1_size + $f2_size) < 2000000) {
+        if (($r1_size + $r2_size) < 2000000) {
             print "The file: ${r1_full} is only ${r1_size} bytes, skipping it.\n";
             next INPUTS;
         }
