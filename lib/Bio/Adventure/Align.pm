@@ -51,8 +51,9 @@ sub Concatenate_Searches {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
-        workdir => '',
-        jmem => 8,);
+        jmem => 8,
+        jprefix => '90',
+        workdir => '',);
     my $finished = 0;
     my $output = qq"$options->{workdir}/split_search.txt";
     $output .= ".xz" unless ($output =~ /\.xz$/);
@@ -545,6 +546,8 @@ sub Map_Accession {
 
 =back
 
+=back
+
 =cut
 sub ProgressiveMauve {
     my ($class, %args) = @_;
@@ -670,6 +673,8 @@ location=\$(dirname Mauve)
 =item input(required)
 
 Directory name containing input fasta files.
+
+=back
 
 =back
 

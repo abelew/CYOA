@@ -56,11 +56,18 @@ sub Make_Fasta_Job {
     my $options = $class->Get_Vars(
         args => \%args,
         align_jobs => 1,
+        cluster => 'slurm',
+        fasta_tool => 'ggsearch36',
         fasta_format => '9',
-        output_type => undef,
-        jprefix => '90',
+        jdepends => '',
         jmem => 8,
-        modules => ['fasta', 'cyoa'],);
+        jprefix => '90',
+        modules => ['fasta', 'cyoa'],
+        output_type => undef,
+        split => 0,
+        type => 'protein',);
+    my $dep = $options->{jdepends};
+    my $split = $options->{split};
     my $output_type = $options->{output_type};
     my $fasta_args = $class->Passthrough_Args(arbitrary => $options->{fasta_args});
     my $library;
@@ -131,8 +138,8 @@ $options->{fasta_tool} -m $options->{fasta_format} \\
         jmem => $options->{jmem},
         jname => $job_basename,
         jstring => $jstring,
-        jprefix => $options->{jprefix},
         language => 'bash',
+        jprefix => qq"$options->{jprefix}_1",
         modules => $options->{modules},
         output => $output,
         stdout => $stdout,
