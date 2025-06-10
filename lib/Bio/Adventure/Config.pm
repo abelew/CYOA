@@ -339,6 +339,7 @@ upon all the apparatus, and you’ve got to make it stop. Go to page 2025.',
             name => 'structure',
             message => 'Intended for gene and RNA structure tools',
             choices => {
+                '(alphafold): Invoke alphafold on (currently) a peptide sequence.' => \&Bio::Adventure::Structure::AlphaFold,
                 '(vienna): Use the RNAfold method from vienna to examine potential RNA structures.' => \&Bio::Adventure::Structure::Vienna,
             },
         },
@@ -602,6 +603,7 @@ sub Get_Modules {
             modules => ['cyoa', 'any2fasta', 'abricate', 'blast', 'blastdb',],
             exe => 'abricate' },
         'Abyss' => { modules => 'abyss' },
+        'AlphaFold' => { modules => ['cyoa', 'alphafold3'] },
         'Angsd_Filter' => { modules => 'angsd' },
         'Any2Any' => { modules => 'cyoa' },
         'Aragorn' => { modules => 'aragorn', exe => 'aragorn' },
@@ -862,7 +864,9 @@ sub Get_Paths {
     ##    'Bowtie2' => {
     ##    },
     ##};
-    if ($subroutine eq 'Bowtie') {
+    if ($subroutine eq 'AlphaFold' || $subroutine eq 'AlphaFold_Worker') {
+        $paths->{output_dir} = qq"${output_prefix}alphafold";    }
+    elsif ($subroutine eq 'Bowtie') {
         $paths->{index} = qq"$paths->{index_prefix}/bt1/$options->{species}";
         $paths->{index_shell} = qq"$paths->{index_prefix_shell}/bt1/$options->{species}";
         $paths->{index_file} = qq"$paths->{index}.1.ebwt";
@@ -1142,6 +1146,7 @@ sub Get_TODOs {
         "abricate+" => \$todo_list->{todo}{'Bio::Adventure::Resistance::Abricate'},
         ## Create an assembly using Abyss.
         "abyss+" => \$todo_list->{todo}{'Bio::Adventure::Assembly::Abyss'},
+        "alphafold+" => \$todo_list->{todo}{'Bio::Adventure::Structure::AlphaFold'},
         ## Filter a population genetics dataset via Angsd
         "angsdfilter+" => \$todo_list->{todo}{'Bio::Adventure::PopGen::Angsd_Filter'},
         ## Use my phage pipeline to attempt to annotate a phage assembly.

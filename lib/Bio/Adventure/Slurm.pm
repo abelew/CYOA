@@ -1494,6 +1494,19 @@ sub Submit {
     }
 
     my $script_file = qq"$options->{basedir}/$options->{script_dir}/$options->{jprefix}$options->{jname}.sh";
+    my $exists_test = 0;
+    $exists_test = 1 if (-r $script_file);
+    my $exists_count = 0;
+    while ($exists_test) {
+        $exists_count++;
+        my $suffix_base = basename($options->{basedir});
+        my $suffix = qq"_${suffix_base}_${exists_count}_";
+        $script_file = qq"$options->{basedir}/$options->{script_dir}/$options->{jprefix}${suffix}$options->{jname}.sh";
+        unless (-r $script_file) {
+            $exists_test = 0;
+            print "Writing script to: ${script_file}\n";
+        }
+    } ## Add a counter to the suffix until we have a free filename.
     print "Slurm::Submit: Writing to script:
 ${script_file}\n" if ($options->{debug});
     my $sbatch_cmd_line = qq"${sbatch} ${depends_string} ${script_file}";
@@ -1507,6 +1520,19 @@ ${script_file}\n" if ($options->{debug});
     if ($options->{language} eq 'perl') {
         my $perl_base = qq"$options->{basedir}/$options->{script_dir}";
         my $perl_file = qq"${perl_base}/$options->{jprefix}$options->{jname}.pl";
+        my $exists_test = 0;
+        $exists_test = 1 if (-r $perl_file);
+        my $exists_count = 0;
+        while ($exists_test) {
+            $exists_count++;
+            my $suffix_base = basename($options->{basedir});
+            my $suffix = qq"_${suffix_base}_${exists_count}_";
+            $perl_file = qq"$options->{basedir}/$options->{script_dir}/$options->{jprefix}${suffix}$options->{jname}.pl";
+            unless (-r $perl_file) {
+                $exists_test = 0;
+                print "Writing script to: ${perl_file}\n";
+            }
+        }
         if (defined($options->{output_dir})) {
             $perl_base = $options->{output_dir};
         } elsif (defined($options->{output})) {

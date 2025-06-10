@@ -186,6 +186,10 @@ sub Spring {
             return undef;
         }
         my $size = (stat $in_full)[7];
+        unless(defined($size)) {
+            print "The size appears undefined for ${in_full}, skipping it.\n";
+            return(undef);
+        }
         ## Skip files less than 1Mb.
         if ($size < 1000000) {
             print "The file: ${in_full} is only ${size} bytes, skipping it.\n";

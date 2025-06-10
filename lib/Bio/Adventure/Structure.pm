@@ -18,8 +18,110 @@ use File::Path qw"make_path rmtree";
 use File::Which qw"which";
 use File::ShareDir qw":ALL";
 use IPC::Open2;
+use JSON;
 use Spreadsheet::Read;
 use Symbol qw"gensym";
+
+sub AlphaFold {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        jcpu => 1,
+        jprefix => 80,
+        jname => 'alphafold',
+        required => ['input']);
+    my $output_name = basename($options->{input}, ('.gbk', '.fsa', '.fasta',));
+    my $paths = $class->Bio::Adventure::Config::Get_Paths(output_name => $output_name);
+    my $comment = '## Iterate over a sequence with Alphafold.';
+    my $jstring = qq?
+use Bio::Adventure::Structure;
+\$h->Bio::Adventure::Structure::AlphaFold_Worker(
+  input => '$options->{input}',
+  output => '$paths->{output}',
+  output_dir => '$paths->{output_dir}',
+  jprefix => '$options->{jprefix}',
+  stdout => '$paths->{stdout}',
+  stderr => '$paths->{stderr}',);
+?;
+    my $folder = $class->Submit(
+        input => $options->{input},
+        output => $paths->{output},
+        jname => $options->{jname},
+        jprefix => $options->{jprefix},
+        jstring => $jstring,
+        comment => $comment,
+        output_dir => $paths->{output_dir},
+        language => 'perl',
+        stdout => $paths->{stdout},
+        stderr => $paths->{stderr},);
+    return($folder);
+}
+
+=head2 C<AlphaFold_Worker>
+
+ Does the actual work of submitting queries to alphafold.
+
+=cut
+sub AlphaFold_Worker {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        jname => 'alphafold',
+        jprefix => 80,
+        required => ['input']);
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $output_name = basename($options->{input}, ('.fasta', '.faa', '.fsa', '.ffn'));
+    my $log = qq"$paths->{output_dir}/${output_name}_runlog.txt";
+    my $log_fh = FileHandle->new(">${log}");
+    print $log_fh "Setting up an alphafold run using: $options->{input}.\n";
+
+    my @jobs;
+    my $in = Bio::Adventure::Get_FH(input => $options->{input});
+    my $seqio = Bio::SeqIO->new(-format => 'fasta', -fh => $in);
+  SEQ: while (my $seq = $seqio->next_seq) {
+        my $seqid = $seq->id;
+        my $sequence = $seq->seq;
+        my $json_filename = qq"$paths->{output_dir}/${seqid}.json";
+        my $json_fh = FileHandle->new(">${json_filename}");
+        my $peptide = {
+            protein => {
+                id => ['A'],
+                sequence => $sequence,
+            }
+        };
+        my @sequences = ($peptide);
+        my $datum = {
+            name => $seqid,
+            modelSeeds => [1],
+            sequences =>  \@sequences,
+            dialect => 'alphafold3',
+            version => 1,
+        };
+        my $pretty = JSON->new->pretty->encode($datum);
+        print $json_fh $pretty;
+        my $jstring = qq!
+run_alphafold.py \\
+  --json_path ${json_filename} \\
+  --model_dir \$ALPHA_HOME/models \\
+  --output_dir $paths->{output_dir} \\
+  2>$paths->{stderr} \\
+  1>$paths->{stdout}
+!;
+        my $job = $class->Submit(
+            jdepends => $options->{jdepends},
+            jname => $options->{jname},
+            jstring => $jstring,
+            jprefix => $options->{jprefix},
+            jmem => $options->{jmem},
+            jwalltime => '08:00:00',
+            language => 'bash',
+            stderr => $paths->{stderr},
+            stdout => $paths->{stdout},
+            output => $paths->{output_dir},);
+        push(@jobs, $job);
+    } ## End iterating over every sequence in the input file.
+    return(\@jobs);
+}
 
 =head2 C<RNAFold_Windows>
 
