@@ -1866,7 +1866,6 @@ sub GFF_Tree {
     my $gff_io = Bio::FeatureIO->new(-format => 'gff', -fh => $gff_in);
     my %id_types = ();
     my $counters = {};
-
     package GFFTree;
     sub new {
         my $class = shift;
@@ -1875,7 +1874,6 @@ sub GFF_Tree {
         $self->attributes($options);
         return $self;
     }
-
     sub ids {
         my $node = shift;
         my $val = shift;
@@ -1888,7 +1886,6 @@ sub GFF_Tree {
             return $node->attributes->{ids};
         }
     }
-
     sub num_ids {
         my $node = shift;
         my $val = shift;
@@ -1899,7 +1896,6 @@ sub GFF_Tree {
             return $node->attributes->{num_ids};
         }
     }
-
     sub print_num_ids {
         $_[0]->walk_down({callback=> sub {
                               my $node = shift;
@@ -1909,8 +1905,6 @@ sub GFF_Tree {
                                   $node->name, $node->attributes->{num_ids},
                               }, _depth => 0 });
     }
-
-
     sub by_name {
         my ($self, $name) = @_;
         my @found =();
@@ -1923,13 +1917,11 @@ sub GFF_Tree {
             1}});
         return wantarray? @found : @found ? $found[0] : undef;
     }
-
     package main;
     # my $gff_tree = GFFTree->new({ ids => undef });
     my $gff_tree = GFFTree->new({ num_ids => 1 });
     my $root_name = 'hg38_111';
     $gff_tree->name($root_name);
-
     my $last_chromosome = 'start';
     my $feat_count = 0;
   FEAT: while (my $feature = $gff_io->next_feature()) {
@@ -1960,12 +1952,10 @@ sub GFF_Tree {
             #print "This has no ID: $feat_count\n";
             $id = 'hg38_111';
         }
-
         unless (defined($id_types{$id})) {
             $id_types{$id} = $type;
         }
         $feat_count % 10000 == 0 and print "Tested id types: $feat_count\n";
-
         my $parent = $root_name;
         if (scalar(@parents) > 0) {
             $parent = $parents[0];
@@ -1986,7 +1976,6 @@ sub GFF_Tree {
         } else {
             $node = $gff_tree->by_name($type);
         }
-
         if (defined($node) && defined($parent_node)) {
             my $daughterp = $node->is_daughter_of($parent_node);
             if ($node->is_daughter_of($parent_node)) {
@@ -2014,7 +2003,6 @@ sub GFF_Tree {
             #print "Creating a new root child of type: ${type}\n";
         }
     }
-
     print map "$_\n", @{$gff_tree->draw_ascii_tree};
     $gff_tree->print_num_ids;
 }

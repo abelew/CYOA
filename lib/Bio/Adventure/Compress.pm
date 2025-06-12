@@ -170,6 +170,7 @@ sub Spring {
 
     my @compression_jobs = ();
     my $number_inputs = scalar(@{$input_paths});
+    print "TESTME: Input number: $number_inputs\n";
     my $jstring = '';
     if ($number_inputs == 0) {
         die("No input provided.");

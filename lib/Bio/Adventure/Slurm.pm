@@ -1612,6 +1612,7 @@ ${perl_file} \\
         $script_start .= qq?#SBATCH --qos=${qos_string}\n? if ($qos_string);
         ## FIXME: This should get smarter and be able to request multiple tasks and nodes.
         $script_start .= qq?#SBATCH --nodes=1 --ntasks=1 --cpus-per-task=$wanted->{cpu}\n? if (defined($wanted->{cpu}));
+        $script_start .= qq?#SBATCH --gpus-per-node=$wanted->{gpu}\n? if (defined($wanted->{gpu}));
         $script_start .= qq?#SBATCH --time=${walltime_string}\n? if (defined($wanted->{walltime}));
         $script_start .= qq?#SBATCH --mem=${mem_string}\n? if (defined(${mem_string}));
         $script_start .= qq"${array_string}\n" if ($array_string);

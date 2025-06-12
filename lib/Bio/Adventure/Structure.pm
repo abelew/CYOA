@@ -27,8 +27,11 @@ sub AlphaFold {
     my $options = $class->Get_Vars(
         args => \%args,
         jcpu => 1,
+        jgpu => 1,
         jprefix => 80,
         jname => 'alphafold',
+        libtype => 'protein',
+        mode => 'separate',
         required => ['input']);
     my $output_name = basename($options->{input}, ('.gbk', '.fsa', '.fasta',));
     my $paths = $class->Bio::Adventure::Config::Get_Paths(output_name => $output_name);
@@ -37,6 +40,8 @@ sub AlphaFold {
 use Bio::Adventure::Structure;
 \$h->Bio::Adventure::Structure::AlphaFold_Worker(
   input => '$options->{input}',
+  libtype => '$options->{libtype}',
+  mode => '$options->{mode}',
   output => '$paths->{output}',
   output_dir => '$paths->{output_dir}',
   jprefix => '$options->{jprefix}',
@@ -49,6 +54,8 @@ use Bio::Adventure::Structure;
         jname => $options->{jname},
         jprefix => $options->{jprefix},
         jstring => $jstring,
+        libtype => $options->{libtype},
+        mode => $options->{mode},
         comment => $comment,
         output_dir => $paths->{output_dir},
         language => 'perl',
@@ -68,23 +75,55 @@ sub AlphaFold_Worker {
         args => \%args,
         jname => 'alphafold',
         jprefix => 80,
+        mode => 'separate',
         required => ['input']);
     my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $output_name = basename($options->{input}, ('.fasta', '.faa', '.fsa', '.ffn'));
     my $log = qq"$paths->{output_dir}/${output_name}_runlog.txt";
     my $log_fh = FileHandle->new(">${log}");
     print $log_fh "Setting up an alphafold run using: $options->{input}.\n";
-
+    my @inputs = split(/$options->{delimiter}/, $options->{input});
+    my $num_inputs = scalar(@inputs);
     my @jobs;
+    ## 'separate' mode will submit a separate job for every sequence in the input fasta file.
+    if ($options->{mode} eq 'separate') {
+        @jobs = $class->Bio::Adventure::Structure::AlphaFold_JSON_Separate(
+            options => $options, paths => $paths);
+    } elsif ($options->{mode} eq 'together') {
+        @jobs = $class->Bio::Adventure::Structure::AlphaFold_JSON_Together(
+            options => $options, paths => $paths);
+    } elsif ($options->{mode} eq 'pairwise' && $num_inputs == 1) {
+        @jobs = $class->Bio::Adventure::Structure::AlphaFold_JSON_Pairwise_OneInput(
+            options => $options, paths => $paths);
+    } elsif ($options->{mode} eq 'pairwise' && $num_inputs == 2) {
+        @jobs = $class->Bio::Adventure::Structure::AlphaFold_JSON_Pairwise_TwoInput(
+            options => $options, first => $inputs[0], second => $inputs[1], paths => $paths);
+    } else {
+        die("I know not this option.\n");
+    }
+    return(\@jobs);
+}
+
+=head2 C<AlphaFold_JSON_Separate>
+
+  Submit a separate job for every sequence in a fasta input file.
+
+=cut
+sub AlphaFold_JSON_Separate {
+    my ($class, %args) = @_;
+    my $options = $args{options};
+    my $paths = $args{paths};
+    my $molecule_type = $options->{libtype};
     my $in = Bio::Adventure::Get_FH(input => $options->{input});
     my $seqio = Bio::SeqIO->new(-format => 'fasta', -fh => $in);
+    my @jobs = ();
   SEQ: while (my $seq = $seqio->next_seq) {
         my $seqid = $seq->id;
         my $sequence = $seq->seq;
         my $json_filename = qq"$paths->{output_dir}/${seqid}.json";
         my $json_fh = FileHandle->new(">${json_filename}");
         my $peptide = {
-            protein => {
+            $molecule_type => {
                 id => ['A'],
                 sequence => $sequence,
             }
@@ -99,6 +138,7 @@ sub AlphaFold_Worker {
         };
         my $pretty = JSON->new->pretty->encode($datum);
         print $json_fh $pretty;
+        $json_fh->close();
         my $jstring = qq!
 run_alphafold.py \\
   --json_path ${json_filename} \\
@@ -109,7 +149,7 @@ run_alphafold.py \\
 !;
         my $job = $class->Submit(
             jdepends => $options->{jdepends},
-            jname => $options->{jname},
+            jname => qq"$options->{jname}_${seqid}",
             jstring => $jstring,
             jprefix => $options->{jprefix},
             jmem => $options->{jmem},
@@ -120,7 +160,259 @@ run_alphafold.py \\
             output => $paths->{output_dir},);
         push(@jobs, $job);
     } ## End iterating over every sequence in the input file.
-    return(\@jobs);
+    return(@jobs);
+}
+
+=head2 C<AlphaFold_JSON_Separate>
+
+  Submit a single job comprised of every sequence in the input file(s).
+
+=cut
+sub AlphaFold_JSON_Together {
+    my ($class, %args) = @_;
+    my $options = $args{options};
+    my $paths = $args{paths};
+    my $molecule_type = $options->{libtype};
+    my $in = Bio::Adventure::Get_FH(input => $options->{input});
+    my $seqio = Bio::SeqIO->new(-format => 'fasta', -fh => $in);
+    my @jobs = ();
+    my $run_id = basename($options->{input});
+    my $json_filename = qq"$paths->{output_dir}/${run_id}.json";
+    my $json_fh = FileHandle->new(">${json_filename}");
+    my $datum = {
+        name => $run_id,
+        modelSeeds => [1],
+        sequences =>  [],
+        dialect => 'alphafold3',
+        version => 1,
+    };
+    my @input_sequences = ();
+    my $chain_id = 'A';
+  SEQ: while (my $seq = $seqio->next_seq) {
+        my $seqid = $seq->id;
+        my $sequence = $seq->seq;
+        my $peptide = {
+            $molecule_type => {
+                id => [$chain_id],
+                sequence => $sequence,
+            }
+        };
+        $chain_id++;
+        push(@input_sequences, $peptide);
+    } ## End iterating over the input sequences.
+    if (defined($options->{input_rna})) {
+        my $in_rna = Bio::Adventure::Get_FH(input => $options->{input_rna});
+        my $seqio_rna = Bio::SeqIO->new(-format => 'fasta', -fh => $in_rna);
+      SEQ: while (my $seq_rna = $seqio_rna->next_seq) {
+            my $seqid = $seq_rna->id;
+            my $sequence = $seq_rna->seq;
+            my $rna = {
+                rna => {
+                    id => [$chain_id],
+                    sequence => $sequence,
+                }
+            };
+            $chain_id++;
+            push(@input_sequences, $rna);
+        } ## End iterating over rna sequences
+    }
+    if (defined($options->{input_dna})) {
+        my $in_dna = Bio::Adventure::Get_FH(input => $options->{input_dna});
+        my $seqio_dna = Bio::SeqIO->new(-format => 'fasta', -fh => $in_dna);
+      SEQ: while (my $seq_dna = $seqio_dna->next_seq) {
+            my $seqid = $seq_dna->id;
+            my $sequence = $seq_dna->seq;
+            my $dna = {
+                dna => {
+                    id => [$chain_id],
+                    sequence => $sequence,
+                }
+            };
+            $chain_id++;
+            push(@input_sequences, $dna);
+        } ## End iterating over dna sequences
+    }
+    $datum->{sequences} = \@input_sequences;
+    my $pretty = JSON->new->pretty->encode($datum);
+    print $json_fh $pretty;
+    my $jstring = qq!
+run_alphafold.py \\
+  --json_path ${json_filename} \\
+  --model_dir \$ALPHA_HOME/models \\
+  --output_dir $paths->{output_dir} \\
+  2>$paths->{stderr} \\
+  1>$paths->{stdout}
+!;
+    my $job = $class->Submit(
+        jdepends => $options->{jdepends},
+        jname => qq"$options->{jname}_${run_id}",
+        jstring => $jstring,
+        jprefix => $options->{jprefix},
+        jmem => $options->{jmem},
+        jwalltime => '08:00:00',
+        language => 'bash',
+        stderr => $paths->{stderr},
+        stdout => $paths->{stdout},
+        output => $paths->{output_dir},);
+    push(@jobs, $job);
+    $json_fh->close();
+    return(@jobs);
+}
+
+=head2 C<AlphaFold_JSON_Separate>
+
+  Submit a single job for every pair of sequences in the input.
+
+=cut
+sub AlphaFold_JSON_Pairwise_OneInput {
+    my ($class, %args) = @_;
+    my $options = $args{options};
+    my $paths = $options->{paths};
+    my $molecule_type = $options->{libtype};
+    my $in = Bio::Adventure::Get_FH(input => $options->{input});
+    my $seqio = Bio::SeqIO->new(-format => 'fasta', -fh => $in);
+    my @seqs = ();
+  SEQ: while (my $seq = $seqio->next_seq) {
+        push(@seqs, $seq);
+    }
+    my @jobs = ();
+    for my $c (0 .. ($#seqs - 1)) {
+        my $first = $seqs[$c];
+        my $first_id = $first->id;
+        my $first_sequence = $first->seq;
+        for my $d (1 .. $#seqs) {
+            my $second = $seqs[$d];
+            my $second_id = $second->id;
+            my $second_sequence = $second->seq;
+            my $id_string = qq"${first_id}_${second_id}";
+            my $json_filename = qq"$paths->{output_dir}/${id_string}.json";
+            my $json_fh = FileHandle->new(">${json_filename}");
+            my $first_peptide = {
+                $molecule_type => {
+                    id => ['A'],
+                    sequence => $first_sequence,
+                },
+            };
+            my $second_peptide = {
+                $molecule_type => {
+                    id => ['B'],
+                    sequence => $second_sequence,
+                },
+            };
+            my @sequences = ($first_peptide, $second_peptide);
+            my $datum = {
+                name => $id_string,
+                modelSeeds => [1],
+                sequences =>  \@sequences,
+                dialect => 'alphafold3',
+                version => 1,
+            };
+            my $pretty = JSON->new->pretty->encode($datum);
+            print $json_fh $pretty;
+            $json_fh->close();
+            my $jstring = qq!
+run_alphafold.py \\
+  --json_path ${json_filename} \\
+  --model_dir \$ALPHA_HOME/models \\
+  --output_dir $paths->{output_dir} \\
+  2>$paths->{stderr} \\
+  1>$paths->{stdout}
+!;
+            my $job = $class->Submit(
+                jdepends => $options->{jdepends},
+                jname => qq"$options->{jname}_${id_string}",
+                jstring => $jstring,
+                jprefix => $options->{jprefix},
+                jmem => $options->{jmem},
+                jwalltime => '08:00:00',
+                language => 'bash',
+                stderr => $paths->{stderr},
+                stdout => $paths->{stdout},
+                output => $paths->{output_dir},);
+            push(@jobs, $job);
+        }
+    }
+    return(@jobs);
+}
+
+sub AlphaFold_JSON_Pairwise_TwoInput {
+    my ($class, %args) = @_;
+    my $options = $args{options};
+    my $molecule_type = $options->{libtype};
+    my $first = $args{first};
+    my $second = $args{second};
+    my $paths = $args{paths};
+    print "TESTME: First: $first second: $second\n";
+    my $first_in = Bio::Adventure::Get_FH(input => $first);
+    my $first_seqio = Bio::SeqIO->new(-format => 'fasta', -fh => $first_in);
+    my $second_in = Bio::Adventure::Get_FH(input => $second);
+    my $second_seqio = Bio::SeqIO->new(-format => 'fasta', -fh => $second_in);
+    my @jobs = ();
+    my @first_seqs = ();
+    my @second_seqs = ();
+    while (my $first_seq = $first_seqio->next_seq) {
+        push(@first_seqs, $first_seq);
+    }
+    while (my $second_seq = $second_seqio->next_seq) {
+        push(@second_seqs, $second_seq);
+    }
+  FIRST: for my $first_seq (@first_seqs) {
+      SECOND: for my $second_seq (@second_seqs) {
+            my $first_id = $first_seq->id;
+            my $first_sequence = $first_seq->seq;
+            my $second_id = $second_seq->id;
+            my $second_sequence = $second_seq->seq;
+            my $id_string = qq"${first_id}_${second_id}";
+            my $json_filename = qq"$paths->{output_dir}/${id_string}.json";
+            my $json_fh = FileHandle->new(">${json_filename}");
+            my $first_peptide = {
+                $molecule_type => {
+                    id => ['A'],
+                    sequence => $first_sequence,
+                }
+            };
+            my $second_peptide = {
+                $molecule_type => {
+                    id => ['B'],
+                    sequence => $second_sequence,
+                }
+            };
+            my @sequences = ($first_peptide, $second_peptide);
+            my $datum = {
+                name => $id_string,
+                modelSeeds => [1],
+                sequences =>  \@sequences,
+                dialect => 'alphafold3',
+                version => 1,
+            };
+            my $pretty = JSON->new->pretty->encode($datum);
+            print $json_fh $pretty;
+            $json_fh->close();
+            my $jstring = qq!
+run_alphafold.py \\
+  --json_path ${json_filename} \\
+  --model_dir \$ALPHA_HOME/models \\
+  --output_dir $paths->{output_dir} \\
+  2>$paths->{stderr} \\
+  1>$paths->{stdout}
+!;
+            my $job = $class->Submit(
+                jdepends => $options->{jdepends},
+                jname => qq"$options->{jname}_${id_string}",
+                jstring => $jstring,
+                jprefix => $options->{jprefix},
+                jmem => $options->{jmem},
+                jwalltime => '08:00:00',
+                language => 'bash',
+                stderr => $paths->{stderr},
+                stdout => $paths->{stdout},
+                output => $paths->{output_dir},);
+            push(@jobs, $job);
+        }
+    }
+    $first_in->close();
+    $second_in->close();
+    return(@jobs);
 }
 
 =head2 C<RNAFold_Windows>

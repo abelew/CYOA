@@ -865,7 +865,11 @@ sub Get_Paths {
     ##    },
     ##};
     if ($subroutine eq 'AlphaFold' || $subroutine eq 'AlphaFold_Worker') {
-        $paths->{output_dir} = qq"${output_prefix}alphafold";    }
+        my $output_suffix = basename($options->{input}, ('.fsa', '.faa', '.fasta', '.fa', '.ffn'));
+        $paths->{output_dir} = qq"${output_prefix}alphafold_${output_suffix}";
+        print "TESTME Config::Get_Paths(): $paths->{output_dir}\n";
+        $paths->{output} = qq"$paths->{output_dir}/alphafold.txt";
+    }
     elsif ($subroutine eq 'Bowtie') {
         $paths->{index} = qq"$paths->{index_prefix}/bt1/$options->{species}";
         $paths->{index_shell} = qq"$paths->{index_prefix_shell}/bt1/$options->{species}";
