@@ -197,15 +197,22 @@ sub Spring {
             return(undef);
         }
         my $output_file = qq"$paths->{output_dir}/${in_base}.spring";
-        my $fc = $class->Get_FC(input => $in_full);
-        my $in_fh = $in_full;
-        if ($in_full =~ /\.xz|\.gz|\.bz2|\.zip/) {
-            $in_fh = qq"<(${fc})";
+        my $fc = '';
+        my $gz_flag = '';
+        if ($in_full =~ /.gz$/) {
+            $gz_flag = ' -g';
+            $fc = { input => $in_full };
+        } else {
+            $fc = $class->Get_FC(input => $in_full, needs_seek => 1);
         }
-        $jstring = qq!
+        if ($fc->{decompress}) {
+            $jstring .= qq!$fc->{decompress}
+!;
+        }
+        $jstring .= qq!
 start=\$(du -sb ${in_full} | awk '{print \$1}')
 /usr/bin/time -v -o $paths->{stdout}.time -a \\
-  spring -c -i $in_fh \\
+  spring -c${gz_flag} -i $fc->{input} \\
     -o ${output_file} \\
     2>>$paths->{stderr} 1>>$paths->{stdout}
 final=\$(du -sb ${output_file} | awk '{print \$1}')
@@ -214,9 +221,15 @@ echo "" >> $paths->{stdout}
 echo "The input size is \${start}." >> $paths->{stdout}
 echo "The output size of ${in_base} is: \${final}." >> $paths->{stdout}
 echo "The ratio is: \${ratio}." >> $paths->{stdout}
-rm ${in_full}
 mv ${output_file} ${in_dir}/
 !;
+        if ($fc->{cleanup}) {
+            $jstring .= qq"$fc->{cleanup}
+";
+        } else {
+            $jstring .= qq"rm ${in_full}
+";
+        }
         my $compression = $class->Submit(
             comment => $options->{comment},
             jdepends => $options->{jdepends},
@@ -251,16 +264,27 @@ mv ${output_file} ${in_dir}/
         }
         my $jname = qq"$options->{jname}_${in_base}";
         my $output_file = qq"$paths->{output_dir}/${in_base}.spring";
-        my $r1_fc = $class->Get_FC(input => $r1_full);
-        my $r2_fc = $class->Get_FC(input => $r2_full);
-        my $in_fh = qq"${r1_full} ${r2_full}";
-        if ($r1_full =~ /\.xz|\.gz|\.bz2|\.zip/) {
-            $in_fh = qq"<(${r1_fc}) <(${r2_fc})";
+        my $r1_fc = '';
+        my $r2_fc = '';
+        my $gz_flag = '';
+        if ($r1_full =~ /.gz$/) {
+            $gz_flag = ' -g';
+            $r1_fc = { input => $r1_full };
+            $r2_fc = { input => $r2_full };
+        } else {
+            $r1_fc = $class->Get_FC(input => $r1_full, needs_seek => 1);
+            $r2_fc = $class->Get_FC(input => $r2_full, needs_seek => 1);
         }
-        $jstring = qq!
+
+        if ($r1_fc->{decompress}) {
+            $jstring .= qq!$r1_fc->{decompress}
+$r2_fc->{decompress}
+!;
+        }
+        $jstring .= qq!
 start=\$(( \$(du -sb ${r1_full} | awk '{print \$1}' | perl -pe 's/[a-zA-Z]\$//g') + \$(du -sb ${r1_full} | awk '{print \$1}' | perl -pe 's/[a-zA-Z]\$//g') ))
 /usr/bin/time -v -o $paths->{stdout}.time -a \\
-  spring -c -i ${in_fh} \\
+  spring -c${gz_flag} -i $r1_fc->{input} $r2_fc->{input} \\
     -o ${output_file} \\
     2>>$paths->{stderr} 1>>$paths->{stdout}
 final=\$(du -sb ${output_file} | awk '{print \$1}')
@@ -268,9 +292,17 @@ echo "" >> $paths->{stdout}
 echo "The input size is \${start}." >> $paths->{stdout}
 echo "The output is: \${final}." >> $paths->{stdout}
 echo "The ratio is: \$(perl -e \\"print \${final} / \${start}\\")." >> $paths->{stdout}"
-rm ${r1_full} ${r2_full}
 mv ${output_file} ${in_dir}/
 !;
+        if ($r1_fc->{cleanup}) {
+            $jstring .= qq"$r1_fc->{cleanup}
+$r2_fc->{cleanup}
+";
+        } else {
+            $jstring .= qq"rm ${r1_full}
+rm ${r2_full}
+";
+        }
         my $compression = $class->Submit(
             comment => $options->{comment},
             jdepends => $options->{jdepends},
@@ -303,15 +335,22 @@ mv ${output_file} ${in_dir}/
             $in_base = basename($in_base, ('.fastq'));
             my $jname = qq"$options->{jname}_${in_base}";
             my $output_file = qq"$paths->{output_dir}/${in_base}.spring";
-            my $fc = $class->Get_FC(input => $in_full);
-            my $in_fh = $in_full;
-            if ($in_full =~ /\.xz|\.gz|\.bz2|\.zip/) {
-                $in_fh = qq"<(${fc})";
+            my $fc = '';
+            my $gz_flag = '';
+            if ($in_full =~ /.gz$/) {
+                $gz_flag = ' -g';
+                $fc = { input => $in_full };
+            } else {
+                $fc = $class->Get_FC(input => $in_full, needs_seek => 1);
             }
-            $jstring = qq!
+            if ($fc->{decompress}) {
+                $jstring .= qq!$fc->{decompress}
+!;
+            }
+            $jstring .= qq!
 start=\$(du -sb ${in_full} | awk '{print \$1}')
 /usr/bin/time -v -o $paths->{stdout}.time -a \\
-  spring -c -i ${in_fh} \\
+  spring -c${gz_flag} -i $fc->{input} \\
     -o ${output_file} \\
     2>>$paths->{stderr} 1>>$paths->{stdout}
 final=\$(du -sb ${output_file} | awk '{print \$1}')
@@ -319,9 +358,15 @@ echo "" >> $paths->{stdout}
 echo "The input size is \${start}." >> $paths->{stdout}
 echo "The output size is \${final}." >> $paths->{stdout}
 echo "The ratio is: \$(perl -e \\"print \${final} / \${start}\\")." >> $paths->{stdout}
-rm ${in_full}
 mv ${output_file} ${in_dir}/
 !;
+            if ($fc->{cleanup}) {
+                $jstring .= qq"$fc->{cleanup}
+";
+            } else {
+                $jstring .= qq"rm ${in_full}
+";
+            }
             my $compression = $class->Submit(
                 comment => $options->{comment},
                 jdepends => $options->{jdepends},

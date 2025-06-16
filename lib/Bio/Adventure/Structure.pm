@@ -22,7 +22,34 @@ use JSON;
 use Spreadsheet::Read;
 use Symbol qw"gensym";
 
-sub AlphaFold {
+sub Check_Pair {
+    my ($class, %args) = @_;
+    my $first_id = $args{first};
+    my $second_id = $args{second};
+    my $root_dir = $args{root_dir};
+    my $finished_file = qq"${root_dir}/finished.txt";
+    print "Checking for ${first_id}, ${second_id} in ${finished_file}.\n";
+    my $found = 0;
+    if (-r $finished_file) {
+        my $finished_fh = FileHandle->new("<${finished_file}");
+        my $check_string = qq"${first_id},${second_id}";
+      LOOP: while (my $line = <$finished_fh>) {
+            chomp $line;
+            if ($line eq $check_string) {
+                $found++;
+                last LOOP;
+            }
+        }
+        $finished_fh->close();
+    } else {
+        print "Unable to read: $finished_file\n";
+    }
+    my $ret = undef;
+    $ret = $found if ($found);
+    return($ret);
+}
+
+sub ProteinFold {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
@@ -38,7 +65,7 @@ sub AlphaFold {
     my $comment = '## Iterate over a sequence with Alphafold.';
     my $jstring = qq?
 use Bio::Adventure::Structure;
-\$h->Bio::Adventure::Structure::AlphaFold_Worker(
+\$h->Bio::Adventure::Structure::ProteinFold_Worker(
   input => '$options->{input}',
   libtype => '$options->{libtype}',
   mode => '$options->{mode}',
@@ -64,12 +91,156 @@ use Bio::Adventure::Structure;
     return($folder);
 }
 
-=head2 C<AlphaFold_Worker>
+=head2 C<ProteinFold_PairIDs>
 
- Does the actual work of submitting queries to alphafold.
+There are a few different things this should do:
+ 1. Read the txt file of IDs and extract the appropriate amino acid sequence from the database.
+ 2. Check that this specific pair has not already been done or is currently running.
+ 3. Assuminmg #2 is false, submit a pairwise job with the appropriate json entry
+ 4. Make an entry stating that this job is currently running.
+ 5. Upon completion, move that entry to the set of completed entries
+ Ideally, I would want to store this queue in a SQL database which I could query from multiple
+ clusters around campus, but I do not think that is currently possible due to the vpn constraints.
+
+
+ These two files, hg_top3.txt and lm_top3.txt comprise the 3 genes most differentially expressed
+ in hg38 and lmajor across the corpus of all samples we have which are infected/uninfected.
+ Thus, I want to submit 9 jobs: hg1:lm1, hg1:lm2, hg1:lm3, hg2:lm1 ....
+
+cyoa --method proteinpair --input hg_top3.txt:lm_top3.txt --species hg38_114:lmajor_v68
 
 =cut
-sub AlphaFold_Worker {
+sub ProteinFold_PairIDs {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        jcpu => 1,
+        jgpu => 1,
+        jprefix => 80,
+        jname => 'proteinpair',
+        libtype => 'protein',
+        keys => 'transcript:gene',
+        species => 'hg38_111:lmajor_v68',
+        input => 'hs_top3.txt:lm_top3.txt',);
+    my ($sp1, $sp2) = split(/$options->{delimiter}/, $options->{species});
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $comment = '## Iterate over pairs of seqids with proteinfold.';
+    my $jstring = qq?
+use Bio::Adventure::Structure;
+\$h->Bio::Adventure::Structure::ProteinFold_PairIDs_Worker(
+  input => '$options->{input}',
+  libtype => '$options->{libtype}',
+  output => '$paths->{output}',
+  output_dir => '$paths->{output_dir}',
+  jname => '$options->{jname}',
+  jprefix => '$options->{jprefix}',
+  species => '$options->{species}',
+  stdout => '$paths->{stdout}',
+  stderr => '$paths->{stderr}',);
+?;
+    my $folder = $class->Submit(
+        input => $options->{input},
+        output => $paths->{output},
+        jname => $options->{jname},
+        jprefix => $options->{jprefix},
+        jstring => $jstring,
+        libtype => $options->{libtype},
+        mode => $options->{mode},
+        comment => $comment,
+        output_dir => $paths->{output_dir},
+        language => 'perl',
+        species => $options->{species},
+        stdout => $paths->{stdout},
+        stderr => $paths->{stderr},);
+    return($folder);
+}
+
+sub ProteinFold_PairIDs_Worker {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        jname => 'proteinpair',
+        jprefix => 80,
+        jmem => 20,
+        jwalltime => '03:00:00',
+        keys => 'transcript:gene',
+        species => 'hg38_111:lmajor_v68',
+        input => 'hs_top3.txt:lm_top3.txt',);
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my ($sp1, $sp2) = split(/$options->{delimiter}/, $options->{species});
+    my $species1_aa = qq"$options->{libpath}/$options->{libtype}/fasta/${sp1}.fasta";
+    my $species2_aa = qq"$options->{libpath}/$options->{libtype}/fasta/${sp2}.fasta";
+    print "Full amino acid sequence files:
+$species1_aa
+$species2_aa
+";
+    if (!-r $species1_aa) {
+        die("Could not open the first species amino acid file: ${species1_aa}.\n");
+    }
+    if (!-r $species2_aa) {
+        die("Could not open the first species amino acid file: ${species2_aa}.\n");
+    }
+    my ($key1, $key2) = split(/$options->{delimiter}/, $options->{keys});
+    ## Read the two amino acid sequence database into a pair of hashes.
+    my $sp1_hash = $class->Bio::Adventure::Fa_to_Hash(input => $species1_aa, key => $key1);
+    my $sp2_hash = $class->Bio::Adventure::Fa_to_Hash(input => $species2_aa, key => $key2);
+    ## These two input files should be 1 entry/line with some ID I can find in the hash keys
+    my ($idfile1, $idfile2) = split(/$options->{delimiter}/, $options->{input});
+    print "Input files with sequence IDs:
+${idfile1}
+${idfile2}
+";
+    if (!-r $idfile1) {
+        die("Could not open the first id file: ${idfile1}.\n");
+    }
+    if (!-r $idfile2) {
+        die("Could not open the first id file: ${idfile2}.\n");
+    }
+
+    my $id1 = FileHandle->new("<${idfile1}");
+    my $id2 = FileHandle->new("<${idfile2}");
+    my @ids1 = ();
+    my @ids2 = ();
+    while (my $l = <$id1>) {
+        chomp $l;
+        push(@ids1, $l);
+    }
+    $id1->close();
+    while (my $l = <$id2>) {
+        chomp $l;
+        push(@ids2, $l);
+    }
+    $id2->close();
+
+    ## Now we have two hashes of sequence information and two arrays of IDs
+  FIRST: for my $first (@ids1) {
+      SECOND: for my $second (@ids2) {
+            ## 1.  Check that this has not been finished
+            my $finishedp = $class->Bio::Adventure::Structure::Check_Pair(
+                first => $first, second => $second, root_dir => $paths->{output_dir},);
+            if (defined($finishedp)) {
+                print "This pair has been started already.\n";
+                next SECOND;
+            }
+            print "Looking for $first and $second sequences.\n";
+            my $sp1_seq = $sp1_hash->{$first};
+            my $sp2_seq = $sp2_hash->{$second};
+            my $result = $class->Bio::Adventure::Structure::ProteinFold_JSON_Pairwise_TwoSeq(
+                first => $sp1_seq, second => $sp2_seq, paths => $paths,);
+        }
+    }
+    print "Finished Iterating over the pairs of IDs.\n";
+}
+
+=head2 C<ProteinFold_Worker>
+
+ Does the actual work of submitting queries to alphafold.
+ I renamed this to 'ProteinFold' because I want to generalize it to use Boltz2/Rosetta/etc.
+ Which in turn suggests it should not have the prefix 'Protein' because I want to also try
+ RNA:Protein folds; but for now, whatever
+
+=cut
+sub ProteinFold_Worker {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
@@ -87,16 +258,16 @@ sub AlphaFold_Worker {
     my @jobs;
     ## 'separate' mode will submit a separate job for every sequence in the input fasta file.
     if ($options->{mode} eq 'separate') {
-        @jobs = $class->Bio::Adventure::Structure::AlphaFold_JSON_Separate(
+        @jobs = $class->Bio::Adventure::Structure::ProteinFold_JSON_Separate(
             options => $options, paths => $paths);
     } elsif ($options->{mode} eq 'together') {
-        @jobs = $class->Bio::Adventure::Structure::AlphaFold_JSON_Together(
+        @jobs = $class->Bio::Adventure::Structure::ProteinFold_JSON_Together(
             options => $options, paths => $paths);
     } elsif ($options->{mode} eq 'pairwise' && $num_inputs == 1) {
-        @jobs = $class->Bio::Adventure::Structure::AlphaFold_JSON_Pairwise_OneInput(
+        @jobs = $class->Bio::Adventure::Structure::ProteinFold_JSON_Pairwise_OneInput(
             options => $options, paths => $paths);
     } elsif ($options->{mode} eq 'pairwise' && $num_inputs == 2) {
-        @jobs = $class->Bio::Adventure::Structure::AlphaFold_JSON_Pairwise_TwoInput(
+        @jobs = $class->Bio::Adventure::Structure::ProteinFold_JSON_Pairwise_TwoInput(
             options => $options, first => $inputs[0], second => $inputs[1], paths => $paths);
     } else {
         die("I know not this option.\n");
@@ -104,12 +275,12 @@ sub AlphaFold_Worker {
     return(\@jobs);
 }
 
-=head2 C<AlphaFold_JSON_Separate>
+=head2 C<ProteinFold_JSON_Separate>
 
   Submit a separate job for every sequence in a fasta input file.
 
 =cut
-sub AlphaFold_JSON_Separate {
+sub ProteinFold_JSON_Separate {
     my ($class, %args) = @_;
     my $options = $args{options};
     my $paths = $args{paths};
@@ -163,12 +334,12 @@ run_alphafold.py \\
     return(@jobs);
 }
 
-=head2 C<AlphaFold_JSON_Separate>
+=head2 C<ProteinFold_JSON_Separate>
 
   Submit a single job comprised of every sequence in the input file(s).
 
 =cut
-sub AlphaFold_JSON_Together {
+sub ProteinFold_JSON_Together {
     my ($class, %args) = @_;
     my $options = $args{options};
     my $paths = $args{paths};
@@ -259,12 +430,12 @@ run_alphafold.py \\
     return(@jobs);
 }
 
-=head2 C<AlphaFold_JSON_Separate>
+=head2 C<ProteinFold_JSON_Separate>
 
   Submit a single job for every pair of sequences in the input.
 
 =cut
-sub AlphaFold_JSON_Pairwise_OneInput {
+sub ProteinFold_JSON_Pairwise_OneInput {
     my ($class, %args) = @_;
     my $options = $args{options};
     my $paths = $options->{paths};
@@ -335,14 +506,81 @@ run_alphafold.py \\
     return(@jobs);
 }
 
-sub AlphaFold_JSON_Pairwise_TwoInput {
+sub ProteinFold_JSON_Pairwise_TwoSeq {
+    my ($class, %args) = @_;
+    my $options = $args{options};
+    my $molecule_type = $options->{libtype};
+    $molecule_type = 'protein' unless(defined($molecule_type));
+    my $first = $args{first};
+    my $second = $args{second};
+    my $paths = $args{paths};
+    my $first_id = $first->id;
+    my $first_sequence = $first->seq;
+    my $second_id = $second->id;
+    my $second_sequence = $second->seq;
+    $first_id =~ s/\.\d{1,2}$//;
+    $first_id =~ s/:.*$//;
+    $second_id =~ s/\.\d{1,2}$//;
+    $second_id =~ s/:.*$//;
+    my $id_string = qq"${first_id}_${second_id}";
+    my $final_dir = qq"$paths->{output_dir}/${id_string}";
+    make_path($final_dir) unless (-d $final_dir);
+    my $json_filename = qq"${final_dir}/${id_string}.json";
+    my $json_fh = FileHandle->new(">${json_filename}");
+    my $first_peptide = {
+        $molecule_type => {
+            id => ['A'],
+            sequence => $first_sequence,
+        }
+    };
+    my $second_peptide = {
+        $molecule_type => {
+            id => ['B'],
+            sequence => $second_sequence,
+        }
+    };
+    my @sequences = ($first_peptide, $second_peptide);
+    my $datum = {
+        name => $id_string,
+        modelSeeds => [1],
+        sequences =>  \@sequences,
+        dialect => 'alphafold3',
+        version => 1,
+    };
+    my $pretty = JSON->new->pretty->encode($datum);
+    print $json_fh $pretty;
+    $json_fh->close();
+    my $jstring = qq!
+run_alphafold.py \\
+  --json_path ${json_filename} \\
+  --model_dir \$ALPHA_HOME/models \\
+  --output_dir ${final_dir} \\
+  2>${final_dir}/stderr \\
+  1>${final_dir}/stdout
+echo "${first_id},${second_id}" >> $paths->{output_dir}/finished.txt
+!;
+    my $job = $class->Submit(
+        jdepends => $options->{jdepends},
+        jname => qq"proteinfold_twoseq_${id_string}",
+        jstring => $jstring,
+        jprefix => $options->{jprefix},
+        jmem => $options->{jmem},
+        jwalltime => '08:00:00',
+        language => 'bash',
+        stderr => $paths->{stderr},
+        stdout => $paths->{stdout},
+        output_dir => $paths->{output_dir},
+        output => $json_filename,);
+    return($job);
+}
+
+sub ProteinFold_JSON_Pairwise_TwoInput {
     my ($class, %args) = @_;
     my $options = $args{options};
     my $molecule_type = $options->{libtype};
     my $first = $args{first};
     my $second = $args{second};
     my $paths = $args{paths};
-    print "TESTME: First: $first second: $second\n";
     my $first_in = Bio::Adventure::Get_FH(input => $first);
     my $first_seqio = Bio::SeqIO->new(-format => 'fasta', -fh => $first_in);
     my $second_in = Bio::Adventure::Get_FH(input => $second);

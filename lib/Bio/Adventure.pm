@@ -228,6 +228,7 @@ has jsleep => (is => 'rw', default => '0.5'); ## Set a sleep between jobs
 has jstring => (is => 'rw', default => undef); ## String of the job
 has jtemplate => (is => 'rw', default => undef);
 has jwalltime => (is => 'rw', default => '10:00:00'); ## Default time to request
+has keys => (is => 'rw', default => undef);
 has kingdom => (is => 'rw', default => undef); ## Taxonomic kingdom, prokka/kraken
 has language => (is => 'rw', default => 'bash'); ## What kind of script is this?
 has last_job => (is => 'rw', default => ''); ## Last job in a chain.
@@ -639,29 +640,110 @@ sub Check_Libpath {
     return($ret);
 }
 
+sub Fa_to_Hash {
+    my ($class, %args) = @_;
+    my $in = Bio::Adventure::Get_FH(input => $args{input});
+    my $seqio = Bio::SeqIO->new(-format => 'fasta', -fh => $in);
+    my $key = $args{key};
+    my $output = {};
+  SEQ: while (my $seq = $seqio->next_seq) {
+        my $seqid;
+        if (defined($key)) {
+            $seqid = $seq->desc;
+        } else {
+            $seqid = $seq->id;
+        }
+        my $short_id = $seqid;
+        if ($seqid =~ m/${key}\s*[:|=](\S+)/) {
+            $short_id = $1;
+            $short_id =~ s/\.\d{1,2}$//; ## Get rid of terminal ID numbers (assume it doesn't pass 99)
+        }
+        my $sequence = $seq->seq;
+        $output->{$short_id} = $seq;
+    }
+    $in->close();
+    return($output);
+}
+
+=head2 C<Get_FC>
+
+  Returns an arbitrary command used to send a file to STDOUT.  Note that if a program requires
+  O_SEEK, then this will not work.
+
+=cut
 sub Get_FC {
     my ($class, %args);
     if ((scalar(@_) % 2) == 1) {
         ($class, %args) = @_;
-    }
-    else {
+    } else {
         %args = @_;
     }
+    if (defined($args{needs_seek})) {
+        my $opener = $class->Get_FC_Seekable(%args);
+        return($opener);
+    }
     my $opener = $args{input};
+    my $input_dir = dirname($args{input});
     if ($args{input} =~ /\.xz$/) {
         $opener = qq"xz -dc $args{input}";
-    }
-    elsif ($args{input} =~ /\.bz2$/) {
+    } elsif ($args{input} =~ /\.bz2$/) {
         $opener = qq"bunzip2 -c $args{input}";
-    }
-    elsif ($args{input} =~ /\.gz$/) {
+    } elsif ($args{input} =~ /\.gz$/) {
         $opener = qq"gunzip -c $args{input}";
-    }
-    else {
-        $opener = qq"cat $args{input}";
+    } else {
+        $opener = qq"less $args{input}";
     }
     return($opener);
 }
+
+=head2 C<Get_FC_Seekable>
+
+  Returns an arbitrary command used to send a file to STDOUT.  Use this if the downstream
+  command requires the ability to SEEK the input; this will provide a command to preprocess
+  the file (decompress) to its seekable format, a new filename resulting from that process, and
+  a command to cleanup the resulting mess.
+
+=cut
+sub Get_FC_Seekable {
+    my %args = @_;
+    my $opener = $args{input};
+    my $input_dir = dirname($args{input});
+    if ($args{input} =~ /\.xz$/) {
+        my $new_input = qq"${input_dir}/" . basename($args{input}, ('.xz'));
+        $opener = {
+            decompress => qq"xz -d $args{input}",
+            input => $new_input,
+            cleanup => qq"rm $args{input}"
+        };
+    } elsif ($args{input} =~ /\.bz2$/) {
+        my $new_input = qq"${input_dir}/" . basename($args{input}, ('.bz2'));
+        $opener = {
+            decompress => qq"bunzip2 $args{input}",
+            input => $new_input,
+            cleanup => qq"rm $args{input}"
+        };
+    } elsif ($args{input} =~ /\.gz$/) {
+        my $new_input = qq"${input_dir}/" . basename($args{input}, ('.gz'));
+        $opener = {
+            decompress => qq"gunzip $args{input}",
+            input => $new_input,
+            cleanup => qq"rm $args{input}"
+        };
+    } else {
+        my $new_input = $args{input};
+        $opener = {
+            input => $new_input,
+        };
+    }
+    return($opener);
+}
+
+=head2 C<Get_FD>
+
+  Returns an arbitrary command in a process substitution which may be used instead of a filename.
+  Unfortunately, if the command requires  O_SEEK, then this will not work.
+
+=cut
 
 sub Get_FD {
     my ($class, %args);

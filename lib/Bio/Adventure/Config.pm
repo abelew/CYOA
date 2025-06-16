@@ -603,7 +603,6 @@ sub Get_Modules {
             modules => ['cyoa', 'any2fasta', 'abricate', 'blast', 'blastdb',],
             exe => 'abricate' },
         'Abyss' => { modules => 'abyss' },
-        'AlphaFold' => { modules => ['cyoa', 'alphafold3'] },
         'Angsd_Filter' => { modules => 'angsd' },
         'Any2Any' => { modules => 'cyoa' },
         'Aragorn' => { modules => 'aragorn', exe => 'aragorn' },
@@ -693,6 +692,8 @@ sub Get_Modules {
         'ProgressiveMauve' => { modules => 'mauve' },
         'Prokka' => { ## Prokka should not need cyoa; it is getting requisite perl module from it for now
             modules => ['cyoa', 'prokka', 'blast'], exe => 'prokka'},
+        'ProteinFold' => { modules => ['cyoa', 'alphafold3'] },
+        'ProteinFold_PairIDs' => { modules => ['cyoa', 'alphafold3'] },
         'Racer' => { modules => ['hitec'], exe => ['RACER'], },
         'Resfinder' => { modules => 'resfinder', exe => 'run_resfinder.py' },
         'Restriction_Catalog' => { modules => 'cyoa' },
@@ -864,11 +865,9 @@ sub Get_Paths {
     ##    'Bowtie2' => {
     ##    },
     ##};
-    if ($subroutine eq 'AlphaFold' || $subroutine eq 'AlphaFold_Worker') {
+    if ($subroutine eq 'aaa') {
         my $output_suffix = basename($options->{input}, ('.fsa', '.faa', '.fasta', '.fa', '.ffn'));
         $paths->{output_dir} = qq"${output_prefix}alphafold_${output_suffix}";
-        print "TESTME Config::Get_Paths(): $paths->{output_dir}\n";
-        $paths->{output} = qq"$paths->{output_dir}/alphafold.txt";
     }
     elsif ($subroutine eq 'Bowtie') {
         $paths->{index} = qq"$paths->{index_prefix}/bt1/$options->{species}";
@@ -1011,6 +1010,18 @@ sub Get_Paths {
     }
     elsif ($subroutine eq 'ProgressiveMauve') {
         $paths->{output_dir} = qq"${output_prefix}/pmauve";
+    }
+    elsif ($subroutine eq 'ProteinFold' || $subroutine eq 'ProteinFold_Worker') {
+        my $output_suffix = basename($options->{input}, ('.fsa', '.faa', '.fasta', '.fa', '.ffn'));
+        $paths->{output_dir} = qq"${output_prefix}proteinfold_${output_suffix}";
+        $paths->{output} = qq"$paths->{output_dir}/proteinfold.txt";
+    }
+    elsif ($subroutine eq 'ProteinFold_PairIDs' || $subroutine eq 'ProteinFold_PairIDs_Worker') {
+        my ($in1, $in2) = split(/$options->{delimiter}/, $options->{input});
+        my $output_suffix_first = basename($in1, ('.txt', '.fsa', '.faa', '.fasta', '.fa', '.ffn'));
+        my $output_suffix_second = basename($in2, ('.txt', '.fsa', '.faa', '.fasta', '.fa', '.ffn'));
+        $paths->{output_dir} = qq"${output_prefix}proteinfold_pairs_${output_suffix_first}_${output_suffix_second}";
+        $paths->{output} = qq"$paths->{output_dir}/proteinfold.txt";
     }
     elsif ($subroutine eq 'RNAFold_Windows' || $subroutine eq 'RNAFold_Windows_Worker') {
         $paths->{output_dir} = qq"${output_prefix}rnafold";
@@ -1271,6 +1282,8 @@ sub Get_TODOs {
         "posttrinity+" => \$todo_list->{todo}{'Bio::Adventure::Assembly::Trinity_Post'},
         "pmauve+" => \$todo_list->{todo}{'Bio::Adventure::Align::ProgressiveMauve'},
         "prokka+" => \$todo_list->{todo}{'Bio::Adventure::Annotation::Prokka'},
+        "proteinfold+" => \$todo_list->{todo}{'Bio::Adventure::Structure::ProteinFold'},
+        "proteinpair+" => \$todo_list->{todo}{'Bio::Adventure::Structure::ProteinFold_PairIDs'},
         "queryjob+" => \$todo_list->{todo}{'Bio::Adventure::Slurm::Query_Job'},
         "racer+" => \$todo_list->{todo}{'Bio::Adventure::Trim::Racer'},
         "readsample+" => \$todo_list->{todo}{'Bio::Adventure::Prepare::Read_Samples'},
