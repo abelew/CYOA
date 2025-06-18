@@ -172,8 +172,6 @@ $options->{fasta_tool} -m $options->{fasta_format} \\
 =cut
 sub Parse_Fasta {
     my ($class, %args) = @_;
-    my $check = which('fasta36');
-    die("Could not find fasta in your PATH.") unless($check);
     my $options = $class->Get_Vars(
         args => \%args,
         required => ['input'],
@@ -664,7 +662,9 @@ my \$result = \$h->Bio::Adventure::Align_Fasta::Split_Align_Fasta_Worker(
         output_many => $paths->{output_many},
         output_zero => $paths->{output_zero},
         output_all => $paths->{output_all},
-        type => $options->{type},);
+        type => $options->{type},
+        stdout => $paths->{stdout},
+        stderr => $paths->{stderr});
     return($align);
 }
 
@@ -692,7 +692,6 @@ sub Split_Align_Fasta_Worker {
         $search_function = 'Parse_Fasta_Global';
 
     }
-    print "Starting Split_Align_Fasta with tool: $options->{fasta_tool}\n";
     my $job_basename = $class->Get_Job_Name();
     my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $lib = basename($options->{library}, $class->{suffixes});
@@ -708,6 +707,8 @@ sub Split_Align_Fasta_Worker {
     print "Actually used ${actual} directories to write files.\n";
     my $alignment = $class->Bio::Adventure::Align_Fasta::Make_Fasta_Job(
         align_jobs => $actual,
+        cluster => $options->{cluster},
+        fasta_tool => $options->{fasta_tool},
         input => abs_path($options->{input}),
         library => abs_path($options->{library}),
         jdepends => $options->{jdepends},
@@ -716,6 +717,7 @@ sub Split_Align_Fasta_Worker {
         type => $options->{type},
         workdir => $outdir,);
     my $concat_job = $class->Bio::Adventure::Align::Concatenate_Searches(
+        cluster => $options->{cluster},
         input => $alignment->{output},
         jdepends => $alignment->{job_id},
         jname => qq"${job_basename}_concatfasta",
@@ -745,6 +747,7 @@ my \$result = \$h->Bio::Adventure::Align_Fasta::${search_function}(
     my $parse_job = $class->Submit(
         best_only => $options->{best_only},
         comment => $comment_string,
+        cluster => $options->{cluster},
         input => $parse_input,
         jdepends => $concat_job->{job_id},
         jmem => $options->{jmem},

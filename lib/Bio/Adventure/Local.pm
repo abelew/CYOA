@@ -158,7 +158,9 @@ ${perl_file} \\
         $tt->process($options->{jtemplate}, $options) || die $tt->error();
     } else {
         my $script_start = qq?#!$options->{shell}
-cd $options->{basedir}
+?;
+        $script_start .= qq"set -x\n" if ($options->{debug});
+        $script_start .= qq?cd $options->{basedir}
 set -o errexit
 set -o errtrace
 set -o pipefail
@@ -198,7 +200,6 @@ echo " \$(hostname) Finished ${script_base} at \$(date), it took \$(( SECONDS / 
     }
     chmod(0755, $script_file);
     my $job_text = '';
-
     my $handle;
     my $bash_pid = open($handle, '-|', ${script_file}) or
         die("The script: ${script_file}
@@ -210,12 +211,13 @@ failed with error: $!.\n");
     print "\n";
     while (my $line = <$handle>) {
         $job_text = $job_text . $line;
+        print $line if ($options->{debug});
     }
     my $closed;
     try {
         $closed = close($handle);
     } catch ($e) {
-        warn "Unabled to close script filehandle return: $? error: $!\n";
+        warn "Unable to close script filehandle return: $? error: $!\n";
     }
     print "Finished running, outputs should be in $options->{output}.\n\n";
     if (!defined($bash_pid)) {

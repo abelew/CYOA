@@ -53,8 +53,10 @@ sub ProteinFold {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
-        jcpu => 1,
+        jcpu => 8,
         jgpu => 1,
+        jmem => 24,
+        jwalltime => '08:00:00',
         jprefix => 80,
         jname => 'alphafold',
         libtype => 'protein',
@@ -114,8 +116,10 @@ sub ProteinFold_PairIDs {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
-        jcpu => 1,
+        jcpu => 8,
         jgpu => 1,
+        jmem => 24,
+        jwalltime => '08:00:00',
         jprefix => 80,
         jname => 'proteinpair',
         libtype => 'protein',
@@ -132,8 +136,6 @@ use Bio::Adventure::Structure;
   libtype => '$options->{libtype}',
   output => '$paths->{output}',
   output_dir => '$paths->{output_dir}',
-  jname => '$options->{jname}',
-  jprefix => '$options->{jprefix}',
   species => '$options->{species}',
   stdout => '$paths->{stdout}',
   stderr => '$paths->{stderr}',);
@@ -143,6 +145,10 @@ use Bio::Adventure::Structure;
         output => $paths->{output},
         jname => $options->{jname},
         jprefix => $options->{jprefix},
+        jwalltime => $options->{jwalltime},
+        jcpu => $options->{jcpu},
+        jgpu => $options->{jgpu},
+        jmem => $options->{jmem},
         jstring => $jstring,
         libtype => $options->{libtype},
         mode => $options->{mode},
@@ -161,8 +167,10 @@ sub ProteinFold_PairIDs_Worker {
         args => \%args,
         jname => 'proteinpair',
         jprefix => 80,
-        jmem => 20,
-        jwalltime => '03:00:00',
+        jcpu => 8,
+        jgpu => 1,
+        jmem => 24,
+        jwalltime => '08:00:00',
         keys => 'transcript:gene',
         species => 'hg38_111:lmajor_v68',
         input => 'hs_top3.txt:lm_top3.txt',);
@@ -226,7 +234,7 @@ ${idfile2}
             my $sp1_seq = $sp1_hash->{$first};
             my $sp2_seq = $sp2_hash->{$second};
             my $result = $class->Bio::Adventure::Structure::ProteinFold_JSON_Pairwise_TwoSeq(
-                first => $sp1_seq, second => $sp2_seq, paths => $paths,);
+                options => $options, first => $sp1_seq, second => $sp2_seq, paths => $paths,);
         }
     }
     print "Finished Iterating over the pairs of IDs.\n";
@@ -565,7 +573,9 @@ echo "${first_id},${second_id}" >> $paths->{output_dir}/finished.txt
         jstring => $jstring,
         jprefix => $options->{jprefix},
         jmem => $options->{jmem},
-        jwalltime => '08:00:00',
+        jcpu => $options->{jcpu},
+        jgpu => $options->{jgpu},
+        jwalltime => $options->{jwalltime},
         language => 'bash',
         stderr => $paths->{stderr},
         stdout => $paths->{stdout},
@@ -640,7 +650,9 @@ run_alphafold.py \\
                 jstring => $jstring,
                 jprefix => $options->{jprefix},
                 jmem => $options->{jmem},
-                jwalltime => '08:00:00',
+                jcpu => $options->{jcpu},
+                jgpu => $options->{jgpu},
+                jwalltime => $options->{jwalltime},
                 language => 'bash',
                 stderr => $paths->{stderr},
                 stdout => $paths->{stdout},

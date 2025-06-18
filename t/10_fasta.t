@@ -57,6 +57,7 @@ ok(-r $aa_local, 'Created nucleotide amino acid file.');
 ok(mv($aa_local, $aa_genome), 'Moved phix cds file.');
 
 my $run_fasta = $cyoa->Bio::Adventure::Align_Fasta::Split_Align_Fasta(
+    cluster => 0,
     align_jobs => 1,
     fasta_tool => 'fasta36',
     input => $cds_genome,

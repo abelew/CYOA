@@ -1141,17 +1141,6 @@ sync
         unaligned_dis => $unaligned_discordant_filename,
         unaligned_comp => $unaligned_xz,);
     my $new_jprefix = qq"$options->{jprefix}_1";
-    if ($options->{compress}) {
-        my $comp = $class->Bio::Adventure::Compress::Compress(
-            jname => $xz_jname,
-            jprefix => $new_jprefix,
-            input => qq"${aligned_filenames}:${unaligned_filenames}",
-            jdepends => $hisat_job->{job_id});
-        $hisat_job->{compression} = $comp;
-        ## Sneak the compression job's ID in place as hisat's.
-        ## No, I changed my mind, let the samtools jump ahead.
-        ## $hisat_job->{job_id} = $comp->{job_id};
-    }
     ## HT1_Stats also reads the trimomatic output, which perhaps it should not.
     ## my $trim_output_file = qq"outputs/$options->{jbasename}-trimomatic.out";
     my $sam_jprefix = qq"$options->{jprefix}_2";
@@ -1164,6 +1153,18 @@ sync
         paired => $paired,
         species => $options->{species},);
     $hisat_job->{samtools} = $sam_job;
+    if ($options->{compress}) {
+        my $comp = $class->Bio::Adventure::Compress::Compress(
+            jname => $xz_jname,
+            jprefix => $new_jprefix,
+            input => qq"${aligned_filenames}:${unaligned_filenames}",
+            jdepends => $sam_job->{job_id});
+        $hisat_job->{compression} = $comp;
+        ## Sneak the compression job's ID in place as hisat's.
+        ## No, I changed my mind, let the samtools jump ahead.
+        ## $hisat_job->{job_id} = $comp->{job_id};
+    }
+
     if ($options->{get_insertsize}) {
         my $sizes = $class->Bio::Adventure::Count::Insert_Size(
             input => $sam_job->{output},
@@ -1187,7 +1188,6 @@ sync
     }
     my $counter_out = '';
     my $counter;
-    my $stats;
     if ($options->{count} && $options->{counter} eq 'htseq') {
         if ($options->{libtype} eq 'rRNA') {
             $counter = $class->Bio::Adventure::Count::HTSeq(
@@ -1216,18 +1216,9 @@ sync
         } else {
             $counter_out = $hisat_job->{htseq}->{output};
         }
-        $stats = $class->Bio::Adventure::Metadata::HT2_Stats(
-            input => $stderr,
-            count_table => $counter_out,
-            jdepends => $hisat_job->{job_id},
-            jname => $stat_jname,
-            jprefix => $new_jprefix,
-            output_dir => $paths->{output_dir},);
-        $hisat_job->{stats} = $stats;
         ## If this is not the final job in a chain, then make sure
         ## that any jobs queued after it do not start until
         ## samtools/htseq/etc are finished.
-        $hisat_job->{job_id} = $stats->{job_id};
     } elsif ($options->{count} && $options->{counter} eq 'featureCounts') {
         $counter = $class->Bio::Adventure::Count::Feature_Counts(
             input => $counter_input,
@@ -1244,6 +1235,16 @@ sync
         $hisat_job->{job_id} = $counter->{job_id};
     }
     $hisat_job->{counter} = $counter;
+    my $stats = $class->Bio::Adventure::Metadata::HT2_Stats(
+        input => $stderr,
+        count_table => $counter_out,
+        jdepends => $hisat_job->{job_id},
+        jname => $stat_jname,
+        jprefix => $new_jprefix,
+        output_dir => $paths->{output_dir},);
+    $hisat_job->{stats} = $stats;
+    $hisat_job->{job_id} = $stats->{job_id};
+
     return($hisat_job);
 }
 
@@ -1665,7 +1666,6 @@ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
                 if ($relative_position < -10000) {
                     $feature_start++;
                 }
-                print "TESTME: Start at $read_start, Relative position: $relative_position vs. $current_name\n";
                 if ($read_end < $next_start) {
                     $counters->{quantified_reads}++;
                     ## print "Got a +1 hit: $counters->{quantified_reads}\n";
@@ -1683,7 +1683,6 @@ There are $aligns[2] aligned reads and $unaligns[3] unaligned reads.\n";
                 }
             } elsif ($current_strand eq '-1') {
                 my $relative_position = $current_start - $read_start;
-                print "TESTME: End at $read_end, Relative position: $relative_position vs. $current_name\n";
                 if ($read_end < $current_start) {
                     $counters->{quantified_reads}++;
                     if (defined($observed->{$read_seqid}[$c]->{observed}->{$relative_position})) {

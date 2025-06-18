@@ -54,15 +54,17 @@ sub Compress {
         my $in_base = $in->{filebase_compress};
         my $in_full = $in->{fullpath};
         my $output_file = qq"${in_dir}/${in_base}.xz";
-        my $size = (stat $in_full)[7];
-        ## Skip files less than 1Mb.
-        if ($size < 1000000) {
-            print "The file: ${in_full} is only ${size} bytes, skipping it.\n";
-            next INPUTS;
-        }
-        if (-l $in_full) {
-            print "The file: ${in_full} is a symlink, skipping it.\n";
-            next INPUTS;
+        if (-r $in_full) {
+            my $size = (stat $in_full)[7];
+            ## Skip files less than 1Mb.
+            if ($size < 1000000) {
+                print "The file: ${in_full} is only ${size} bytes, skipping it.\n";
+                next INPUTS;
+            }
+            if (-l $in_full) {
+                print "The file: ${in_full} is a symlink, skipping it.\n";
+                next INPUTS;
+            }
         }
         $output_string .= qq"${output_file}:";
         $jstring .= qq!

@@ -25,6 +25,8 @@ WriteMakefile(
         'Bio::DB::Sam' => '0',
         'Bio::FeatureIO' => '0',
         'Bio::SeqIO' => '0',
+        'Bio::SearchIO::blastxml' => 0,
+        'Bio::SearchIO::fasta' => 0,
         'Bio::Tools::Run::StandAloneBlast' => '0',
         'Bio::Tools::Run::WrapperBase' => '0',
         'Cwd' => '0',

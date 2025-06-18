@@ -52,11 +52,11 @@ ok($hisat, 'Submit hisat2 jobs to the cluster.');
 my $status = $cyoa->Wait(job => $hisat);
 ok($status->{State} eq 'COMPLETED', 'The hisat2 jobs completed.');
 my $sam_file = $hisat->{samtools}->{output};
-my $htseq_file = $hisat->{htseq}->[0]->{output};
+my $count_file = $hisat->{counter}->{output};
 my $stats_file = $hisat->{stats}->{output};
 
 ok(-f $sam_file, qq"The sorted bamfile was created: ${sam_file}.");
-ok(-f $htseq_file, qq"The count table was created: ${htseq_file}.");
+ok(-f $count_file, qq"The count table was created: ${count_file}.");
 ok(-f $stats_file, qq"The hisat stats were recorded: ${stats_file}.");
 
 my $actual = $cyoa->Last_Stat(input => $stats_file);
@@ -68,25 +68,22 @@ unless(ok($expected eq $actual, 'Are the hisat stats as expected?')) {
     diag("--Expected--\n${old}\n--Actual--\n${new}\n");
 }
 
-$expected = qq"phiX174p01\t5
-phiX174p02\t0
-phiX174p03\t0
-phiX174p04\t0
-phiX174p05\t0
-phiX174p06\t13
-phiX174p07\t0
-phiX174p08\t0
-phiX174p09\t0
-phiX174p10\t0
-phiX174p11\t0
-__no_feature\t0
-__ambiguous\t31
-__too_low_aQual\t0
-__not_aligned\t9951
-__alignment_not_unique\t0
-";
+$expected = qq!# "-J"
+Geneid outputs/24hisat_phix/phix_genome.bam
+phiX174p01 5
+phiX174p02 0
+phiX174p03 0
+phiX174p04 0
+phiX174p05 0
+phiX174p06 13
+phiX174p07 0
+phiX174p08 0
+phiX174p09 0
+phiX174p10 0
+phiX174p11 0
+!;
 
-$actual = qx"less ${htseq_file}";
+$actual = qx!less ${count_file} | awk '{printf("%s %s\\n", \$1, \$7)}'!;
 unless(ok($expected eq $actual, 'Is the resulting count table as expected?')) {
     my($old, $new) = diff($expected, $actual);
     diag("--Expected--\n${old}\n--Actual--\n${new}\n");

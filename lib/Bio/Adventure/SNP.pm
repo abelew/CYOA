@@ -754,14 +754,31 @@ sub SNP_Ratio_Worker {
       my $chromosome_length = length($initial_search_seq);
       ## Search a little bit of context, create a new copy of the contig to
       ## replace the nucleotide of interest.
-      my $found_nt = substr($original_seq, $report_pos - 2, 5);
+      my $found_nt = 'X';
+      if ($report_pos >= length($original_seq)) {
+          warn("The report position: ${report_pos} is too large.\n");
+      } else {
+          $found_nt = substr($original_seq, $report_pos - 2, 5);
+      }
       my $replace_seq = $starting_seq;
       ## Note that freebayes and friends also give back indels which are confusing.
       ## So, for the moment at least, only replace transitions/transversions.
       $points++;
-      my $replaced = substr($replace_seq, $relative_pos - 1, $orig_length, $alt);
+      my $relative = $relative_pos - 1;
+      my $replaced = 'X';
+      if ($relative >= length($replace_seq)) {
+          warn("The relative position: $relative is too large.\n");
+      } else {
+          $replaced = substr($replace_seq, $relative_pos - 1, $orig_length, $alt);
+      }
       my $final_test_seq = $replace_seq;
-      my $test_nt = substr($final_test_seq, $relative_pos - 2, 5);
+      my $test_nt = 'X';
+      $relative = $relative_pos - 2;
+      if ($relative >= length($replace_seq)) {
+          warn("The relative position: $relative is too large.\n");
+      } else {
+          $test_nt = substr($final_test_seq, $relative_pos - 2, 5);
+      }
       $total_delta = $total_delta + $delta_length;
       ## Swap out the reference with the alt, $replace_seq gets the new data.
       ## Make a new variable so we can see the change, and
