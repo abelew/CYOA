@@ -439,6 +439,7 @@ sub SNP_Ratio_Worker {
         gff_type => 'gene',
         min_value => 0.8,
         max_value => undef,
+        only_point => 1,
         output => 'all.txt',
         output_genome => 'new_genome.fasta',
         output_by_gene => 'counts_by_gene.txt',
@@ -607,6 +608,13 @@ sub SNP_Ratio_Worker {
               next READER;
           }
       }
+      ## I think something is wrong in my complex substitution/indel logic.
+      if ($options->{only_point}) {
+          ## Only accept the simplest non-indel mutations.
+          next READER unless ($alt eq 'A' or $alt eq 'a' or $alt eq 'T' or $alt eq 't' or
+                              $alt eq 'G' or $alt eq 'g' or $alt eq 'C' or $alt eq 'c');
+      }
+
       ## I do not know if indels are here anymore, we will see.
       my @info_list = split(/;/, $info);
       my $snp_id = qq"chr_${chr}_pos_${pos}_ref_${ref}_alt_${alt}";
