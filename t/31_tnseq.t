@@ -41,11 +41,11 @@ if (!-r qq"genome/${genome}.fasta") {
 my $groupb_convert = $cyoa->Bio::Adventure::Convert::Gb2Gff(
     input => qq"genome/${genome}.gb.xz", jprefix => '31', output_dir => 'genome',);
 ok($groupb_convert, 'Converted the group B strep genbank to fasta/gff/etc.');
-ok(-r $groupb_convert->{output_all_gff}, 'Found the newly created gff.');
+ok(-r $groupb_convert->{output_gff_all}, 'Found the newly created gff.');
 ok(-r $groupb_convert->{output_fasta}, 'Found the newly created fsa.');
 my $moved = move($groupb_convert->{output_fasta}, $paths->{fasta});
 ok($moved, qq"Moved the ${genome}.fsa to $paths->{fasta}.");
-$moved = move($groupb_convert->{output_all_gff}, $paths->{gff});
+$moved = move($groupb_convert->{output_gff_all}, $paths->{gff});
 ok($moved, qq"Moved ${genome}_all.gff to $paths->{gff}.");
 
 my $tpp = $cyoa->Bio::Adventure::TNSeq::Transit_TPP(

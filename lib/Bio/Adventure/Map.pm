@@ -1976,7 +1976,7 @@ sub Salmon {
     my $jstring = qq!mkdir -p ${outdir}
 mapped=1
 {
-  /usr/bin/time -v -o ${stdout}.time -a \
+  /usr/bin/time -v -o ${stdout}.time -a \\
     salmon quant -i ${sa_reflib} \\
       -l A --gcBias --validateMappings  \\
       ${sa_args} \\
@@ -2000,6 +2000,7 @@ mapped=1
     my $stats = $class->Bio::Adventure::Metadata::Salmon_Stats(
         input => qq"${outdir}/lib_format_counts.json",
         jdepends => $salmon->{job_id},
+        jprefix => $options->{jprefix} + 1,
         jname => qq"sastats_$options->{species}",
     );
     $salmon->{stats} = $stats;

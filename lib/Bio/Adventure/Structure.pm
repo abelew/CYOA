@@ -318,11 +318,30 @@ sub ProteinFold_JSON_Separate {
         my $pretty = JSON->new->pretty->encode($datum);
         print $json_fh $pretty;
         $json_fh->close();
+        my $final_full = abs_path($paths->{output_dir});
+        ## Note the following which applies to our cluster: CUDA
+        ## Capability 7.x GPUs For all CUDA Capability 7.x GPUs
+        ## (e.g. V100) the environment variable XLA_FLAGS must be
+        ## changed to include
+        ## --xla_disable_hlo_passes=custom-kernel-fusion-rewriter. Disabling
+        ## the Tritron GEMM kernels is not necessary as they are not
+        ## supported for such GPUs.  I can find the capability of our
+        ## nodes via the deviceQuery which resides in the examples/
+        ## directory within the cuda module tree.  For the moment,
+        ## though, it appears all of the nodes are version 7, thus I
+        ## am going to set the custom-kernel-fusion-rewriter globally.
         my $jstring = qq!
+export TMPDIR=${final_full}
+export XLA_PYTHON_CLIENT_PREALLOCATE=false
+export TF_FORCE_UNIFIED_MEMORY=true
+export XLA_CLIENT_MEM_FRACTION=3.2
+export XLA_FLAGS="${XLA_FLAGS} --xla_disable_hlo_passes=custom-kernel-fusion-rewriter --xla_gpu_enable_triton_gemm=false"
+mkdir $paths->{output_dir}/jax
 run_alphafold.py \\
   --json_path ${json_filename} \\
   --model_dir \$ALPHA_HOME/models \\
   --output_dir $paths->{output_dir} \\
+  --jax_compilation_cache_dir $paths->{output_dir}/jax \\
   2>$paths->{stderr} \\
   1>$paths->{stdout}
 !;
@@ -414,11 +433,19 @@ sub ProteinFold_JSON_Together {
     $datum->{sequences} = \@input_sequences;
     my $pretty = JSON->new->pretty->encode($datum);
     print $json_fh $pretty;
+    my $final_full = abs_path($paths->{output_dir});
     my $jstring = qq!
+export TMPDIR=${final_full}
+export XLA_PYTHON_CLIENT_PREALLOCATE=false
+export TF_FORCE_UNIFIED_MEMORY=true
+export XLA_CLIENT_MEM_FRACTION=3.2
+export XLA_FLAGS="${XLA_FLAGS} --xla_disable_hlo_passes=custom-kernel-fusion-rewriter --xla_gpu_enable_triton_gemm=false"
+mkdir $paths->{output_dir}/jax
 run_alphafold.py \\
   --json_path ${json_filename} \\
   --model_dir \$ALPHA_HOME/models \\
   --output_dir $paths->{output_dir} \\
+  --jax_compilation_cache_dir $paths->{output_dir}/jax \\
   2>$paths->{stderr} \\
   1>$paths->{stdout}
 !;
@@ -489,11 +516,19 @@ sub ProteinFold_JSON_Pairwise_OneInput {
             my $pretty = JSON->new->pretty->encode($datum);
             print $json_fh $pretty;
             $json_fh->close();
+            my $final_full = abs_path($paths->{output_dir});
             my $jstring = qq!
+export TMPDIR=${final_full}
+export XLA_PYTHON_CLIENT_PREALLOCATE=false
+export TF_FORCE_UNIFIED_MEMORY=true
+export XLA_CLIENT_MEM_FRACTION=3.2
+export XLA_FLAGS="${XLA_FLAGS} --xla_disable_hlo_passes=custom-kernel-fusion-rewriter --xla_gpu_enable_triton_gemm=false"
+mkdir $paths->{output_dir}/jax
 run_alphafold.py \\
   --json_path ${json_filename} \\
   --model_dir \$ALPHA_HOME/models \\
   --output_dir $paths->{output_dir} \\
+  --jax_compilation_cache_dir $paths->{output_dir}/jax \\
   2>$paths->{stderr} \\
   1>$paths->{stdout}
 !;
@@ -533,6 +568,7 @@ sub ProteinFold_JSON_Pairwise_TwoSeq {
     my $id_string = qq"${first_id}_${second_id}";
     my $final_dir = qq"$paths->{output_dir}/${id_string}";
     make_path($final_dir) unless (-d $final_dir);
+    my $final_full = abs_path($final_dir);
     my $json_filename = qq"${final_dir}/${id_string}.json";
     my $json_fh = FileHandle->new(">${json_filename}");
     my $first_peptide = {
@@ -558,11 +594,24 @@ sub ProteinFold_JSON_Pairwise_TwoSeq {
     my $pretty = JSON->new->pretty->encode($datum);
     print $json_fh $pretty;
     $json_fh->close();
+    my $xla_flag = '';
+    my $needs_xla = 1;
+    if ($needs_xla) {
+        $xla_flag = '--flash_attention_implementation xla';
+    }
+    my $final_full = abs_path($final_dir);
     my $jstring = qq!
-run_alphafold.py \\
+export TMPDIR=${final_dir}
+export XLA_PYTHON_CLIENT_PREALLOCATE=false
+export TF_FORCE_UNIFIED_MEMORY=true
+export XLA_CLIENT_MEM_FRACTION=3.2
+export XLA_FLAGS="${XLA_FLAGS} --xla_disable_hlo_passes=custom-kernel-fusion-rewriter --xla_gpu_enable_triton_gemm=false"
+mkdir $paths->{output_dir}/jax
+run_alphafold.py ${xla_flag} \\
   --json_path ${json_filename} \\
   --model_dir \$ALPHA_HOME/models \\
   --output_dir ${final_dir} \\
+  --jax_compilation_cache_dir $paths->{output_dir}/jax \\
   2>${final_dir}/stderr \\
   1>${final_dir}/stdout
 echo "${first_id},${second_id}" >> $paths->{output_dir}/finished.txt
@@ -636,11 +685,19 @@ sub ProteinFold_JSON_Pairwise_TwoInput {
             my $pretty = JSON->new->pretty->encode($datum);
             print $json_fh $pretty;
             $json_fh->close();
+            my $final_dir = abs_path($paths->{output_dir});
             my $jstring = qq!
+export TMPDIR=${final_dir}
+export XLA_PYTHON_CLIENT_PREALLOCATE=false
+export TF_FORCE_UNIFIED_MEMORY=true
+export XLA_CLIENT_MEM_FRACTION=3.2
+export XLA_FLAGS="${XLA_FLAGS} --xla_disable_hlo_passes=custom-kernel-fusion-rewriter --xla_gpu_enable_triton_gemm=false"
+mkdir $paths->{output_dir}/jax
 run_alphafold.py \\
   --json_path ${json_filename} \\
   --model_dir \$ALPHA_HOME/models \\
   --output_dir $paths->{output_dir} \\
+  --jax_compilation_cache_dir $paths->{output_dir}/jax \\
   2>$paths->{stderr} \\
   1>$paths->{stdout}
 !;

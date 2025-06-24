@@ -41,7 +41,7 @@ my $cyoa = Bio::Adventure->new(
     libdir => cwd(),
     stranded => 'no',
     gff_type => 'gene',
-    gff_id => 'gene_id',
+    gff_tag => 'gene_id',
     species => 'phix',);
 
 my $index = $cyoa->Bio::Adventure::Index::BWA_Index(

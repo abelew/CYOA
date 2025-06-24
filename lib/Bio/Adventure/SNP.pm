@@ -64,12 +64,100 @@ sub Align_SNP_Search {
     return($search);
 }
 
+sub Dantools_RNASeq {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['species', 'input',],
+        chosen_tag => 'PAIRED',
+        coverage_tag => 'DP',
+        gff_tag => 'ID',
+        gff_type => 'gene',
+        gff_cds_parent_type => 'mRNA',
+        gff_cds_type => 'CDS',
+        introns => 1,
+        qual => 10,
+        max_value => undef,
+        min_value => 0.8,
+        vcf_cutoff => 5,
+        jmem => 36,
+        jcpu => 4,
+        jprefix => '50',
+        jwalltime => '48:00:00',);
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $input_fasta = $paths->{fasta};
+    my $dantools_dir = $paths->{output_dir};
+    my $stdout = qq"${dantools_dir}/$options->{species}.stdout";
+    my $stderr = qq"${dantools_dir}/$options->{species}.stderr";
+
+    my $dt_input = $options->{input};
+    my $dt_input_args = '';
+    my $input_name = $dt_input;
+    if ($dt_input =~ /$options->{delimiter}/) {
+        my @pair_listing = split(/$options->{delimiter}/, $dt_input);
+        $dt_input_args .= qq" -1 $pair_listing[0] -2 $pair_listing[1] ";
+        $input_name = $pair_listing[0];
+    } else {
+        $dt_input_args .= qq" --reads-u ${dt_input} ";
+    }
+    my $input_base = basename($dt_input, ('.xz', '.gz', '.bz2'));
+    $input_base = basename($dt_input, ('.fastq'));
+    my $shift_input_filename = qq"$paths->{output_dir}/outputs/${input_base}_on_$options->{species}";
+    my $comment = qq!## This is a dantools search for variant against $options->{species}!;
+    my $jstring = qq!
+mkdir -p ${dantools_dir}
+dantools pseudogen \\
+  --outdir $paths->{output_dir} \\
+  -r ${input_fasta} \\
+  ${dt_input_args} \\
+  1>>$paths->{output_dir}/pseudogen.stdout \\
+  2>>$paths->{output_dir}/pseudogen.stderr
+dantools shift \\
+  -o $paths->{output_dir}/shifted.gff \\
+  -v $shift_input_filename \\
+  -f $paths->{gff} \\
+  1>>$paths->{output_dir}/shift.stdout \\
+  2>>$paths->{output_dir}/shift.stderr
+dantools summarize-depth --outdir $paths->{output_dir} \\
+  -f shifted.gff -d depth.tsv --feature gene \\
+  1>>$paths->{output_dir}/summarize.stdout \\
+  2>>$paths->{output_dir}/summarize.stderr
+dantools label --outdir $paths->{output_dir} \\
+  -v variants.vcf -f $paths->{gff} \\
+  --features five_prime_UTR,CDS,three_prime_UTR \\
+  1>>$paths->{output_dir}/label.stdout \\
+  2>>$paths->{output_dir}/label.stderr
+dantools summarize-nuc --outdir $paths->{output_dir} \\
+  labeled_nucleotides.tsv \\
+  1>>$paths->{output_dir}/summarize_nuc.stdout \\
+  2>>$paths->{output_dir}/summarize_nuc.stderr
+dantools summarize-aa --outdir $paths->{output_dir} \\
+  labeled_aaleotides.tsv \\
+  1>>$paths->{output_dir}/summarize_aa.stdout \\
+  2>>$paths->{output_dir}/summarize_aa.stderr
+!;
+
+    my $comment_string = '## Use dantools to examine RNASeq data vs a reference.';
+    my $dantools = $class->Submit(
+        comment => $comment_string,
+        jdepends => $options->{jdepends},
+        jname => "dantools_$options->{species}",
+        jprefix => $options->{jprefix},
+        jstring => $jstring,
+        stderr => $stderr,
+        stdout => $stdout,);
+    return($dantools);
+}
+
 =head2 C<Freebayes_SNP_Search>
 
  Invoke freebayes to create and filter a set of variant positions
  after using GATK to limit the duplicate sequence effect.
  GATK: 10.1186/s40104-019-0359-0
  freebayes: arXiv:1207.3907
+
+ cyoa --method freebayes --species lpanamensis_v68 \
+      --input outputs/hisat_lpanamensis_v68/lpanamensis-paired.bam
 
 =cut
 sub Freebayes_SNP_Search {
@@ -149,7 +237,6 @@ rm ${output_file}
         jdepends => $options->{jdepends},
         jname => "freebayes_$options->{species}",
         jprefix => $options->{jprefix},
-        job_type => 'snpsearch',
         jstring => $jstring,
         stderr => $stderr,
         stdout => $stdout,
@@ -294,7 +381,6 @@ echo "Successfully finished." >> ${vcfutils_dir}/vcfutils_$options->{species}.ou
         jmem => 48,
         jname => qq"mpileup_${query_base}",
         jprefix => qq"$options->{jprefix}",
-        job_type => 'snpsearch',
         jstring => $jstring,
         jwalltime => '10:00:00',
         output_call => $call_output,
@@ -1565,7 +1651,6 @@ snippy --force \\
         jdepends => $options->{jdepends},
         jname => $snippy_name,
         jprefix => $options->{jprefix},
-        job_type => 'snippy',
         jstring => $jstring,
         jwalltime => '10:00:00',
         jmem => 48,

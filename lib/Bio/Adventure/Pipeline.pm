@@ -624,9 +624,11 @@ sub Process_DNASeq {
     my $options = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species'],
+        compress => 0,
         coverage => 1,
+        fastp => 0,
+        filter => 0,
         freebayes => 1,
-        host_filter => 0,
         input_paired => undef,
         library => 'bacteria',
         mapper => 'hisat2',
@@ -660,6 +662,7 @@ sub Process_DNASeq {
         $prefix = sprintf("%02d", ($prefix + 1));
         print "\n${prefix}: Starting trimmer.\n";
         $trim = $class->Bio::Adventure::Trim::Trimomatic(
+            compress => $options->{compress},
             input => $options->{input},
             input_paired => $options->{input_paired},
             jprefix => $prefix,
@@ -670,6 +673,34 @@ sub Process_DNASeq {
         sleep($options->{jsleep});
         $last_job = $trim->{job_id};
         $map_prereq = $last_job;
+    }
+
+    $prefix = sprintf("%02d", ($prefix + 1));
+    my $do_fastp = 1;
+    my $fastp;
+    print "\nJust checking, what is fastp: $options->{fastp}\n";
+    if ($options->{fastp} eq 'check') {
+        my $expected_dir = qq"outputs/${prefix}fastp";
+        print "Checking for: ${expected_dir}\n";
+        if (-d $expected_dir) {
+            print "Skipping fastp, the output directory already exists.\n";
+            $do_fastp = 0;
+        }
+    } elsif ($options->{fastp} eq '0') {
+        $do_fastp = 0;
+    }
+
+    if ($do_fastp) {
+        print "${prefix}: Starting fastp.\n";
+        $fastp = $class->Bio::Adventure::Trim::Fastp(
+            input => $options->{input},
+            jdepends => $last_job,
+            jnice => 100,
+            jprefix => $prefix,);
+        $jobid = qq"${prefix}fastp";
+        $ret->{$jobid} = $fastp;
+        $last_job = $fastp->{job_id};
+        sleep($options->{jsleep});
     }
 
     $prefix = sprintf("%02d", ($prefix + 1));
@@ -706,6 +737,14 @@ sub Process_DNASeq {
     my @species_list = split(/:/, $options->{species});
     my @type_list = split(/:/, $options->{gff_type});
     my @id_list = split(/:/, $options->{gff_tag});
+    my @intron_list = (1);
+    if (defined($options->{introns})) {
+        if ($options->{introns} =~ /:/) {
+            @intron_list = split(/:/, $options->{introns});
+        } else {
+            @intron_list = ($options->{introns});
+        }
+    }
 
     my $first_species = shift @species_list;
     my $first_type = shift @type_list;
@@ -715,10 +754,12 @@ sub Process_DNASeq {
     my $last_sam_job;
     my $nth_map;
     my $nth_species;
+    my $hisat_compress_input = '';
     $prefix = sprintf("%02d", ($prefix + 1));
     if ($options->{mapper} eq 'hisat2') {
         print "\n${prefix}: Starting hisat2 with $map_input.\n";
         $first_map = $class->Bio::Adventure::Map::Hisat2(
+            compress => $options->{compress},
             gff_type => $first_type,
             gff_tag => $first_id,
             input => $map_input,
@@ -730,6 +771,7 @@ sub Process_DNASeq {
             jprefix => $prefix,
             jdepends => $map_prereq,
             stranded => $options->{stranded});
+        $hisat_compress_input .= qq"$first_map->{unaligned}:$first_map->{aligned}:";
         $last_job = $first_map->{job_id};
         $jobid = qq"${prefix}hisat";
         $ret->{$jobid} = $first_map;
@@ -739,12 +781,13 @@ sub Process_DNASeq {
         if ($options->{coverage}) {
             $prefix = sprintf("%02d", ($prefix + 1));
             print "\n${prefix}: Printing coverage/base with bbmap.\n";
-            my $bbmap_cov = $class->Bio::Adventure::Convert::Bam2Coverage(
+            my $coverage = $class->Bio::Adventure::Assembly::Assembly_Coverage(
                 jdepends => $last_sam_job,
-                input => $first_map->{samtools}->{paired_output},
-                jprefix => $prefix);
+                input => $trim->{output},
+                jprefix => $prefix,
+                library => $first_species,);
             $jobid = qq"${prefix}bam2cov";
-            $ret->{$jobid} = $bbmap_cov;
+            $ret->{$jobid} = $coverage;
             sleep($options->{jsleep});
         }
 
@@ -757,7 +800,7 @@ sub Process_DNASeq {
                 species => $first_species,
                 gff_type => $first_type,
                 gff_tag => $first_id,
-                introns => $options->{introns},
+                introns => $first_intron,
                 jprefix => $prefix,);
             $jobid = qq"${prefix}freebayes";
             $ret->{$jobid} = $first_snp;
@@ -793,8 +836,10 @@ sub Process_DNASeq {
             if ($options->{host_filter}) {
                 print "\n${prefix}: Performing additional mapping against ${nth_species} with filtering.\n";
                 $nth_map = $class->Bio::Adventure::Map::Hisat2(
+                    compress => 0,
                     jdepends => $last_job,
                     input => $first_map->{unaligned},  ## Not unaligned_comp
+                    introns => 0,
                     ## because compression is at the end.
                     species => $nth_species,
                     stranded => $options->{stranded},
@@ -809,13 +854,16 @@ sub Process_DNASeq {
                 print "\n${prefix}: Performing additional mapping against ${nth_species} without filtering.\n";
                 if ($options->{mapper} eq 'hisat2') {
                     $nth_map = $class->Bio::Adventure::Map::Hisat2(
+                        compress => 0,
                         jdepends => $last_sam_job,
                         input => $map_input,
                         species => $nth_species,
+                        introns => 0,
                         stranded => $options->{stranded},
                         gff_type => $nth_type,
                         gff_tag => $nth_id,
                         jprefix => $prefix,);
+                    $hisat_compress_input .= qq"$nth_map->{unaligned}:$nth_map->{aligned}:";
                     $jobid = qq"${prefix}hisat";
                     $ret->{$jobid} = $nth_map;
                     $last_sam_job = $nth_map->{samtools}->{job_id};
@@ -844,13 +892,25 @@ sub Process_DNASeq {
             $c++;
         } ## End iterating over extra species
     } ## End checking for extra species
+
+    $prefix = sprintf("%02d", ($prefix + 1));
     unless ($options->{compress}) {
-        $prefix = sprintf("%02d", ($prefix + 1));
+        my $compress_files = qq"${map_input}:";
+        if (defined($trim)) {
+            $compress_files .= qq"$trim->{output_unpaired}:";
+        }
+        if ($do_fastp) {
+            $compress_files .= qq"$fastp->{output}:";
+        }
+        my @compress_arr = split(/:/, $compress_files);
+        my $num_files = scalar(@compress_arr);
+        my $hours_guess = 12 * $num_files;
         my $compress_input = $class->Bio::Adventure::Compress::Compress(
-            input => $map_input,
+            input => $compress_files,
             jdepends => $last_job,
             jname => 'comp_trimmed',
-            jprefix => $prefix,);
+            jprefix => $prefix,
+            jwalltime => $hours_guess,);
         $last_job = $compress_input->{job_id};
         $prefix = sprintf("%02d", ($prefix + 1));
         $jobid = qq"${prefix}comptrim";
@@ -1027,6 +1087,19 @@ sub Process_RNAseq {
         sleep($options->{jsleep});
         $last_sam_job = $first_map->{samtools}->{job_id};
 
+        if ($options->{coverage}) {
+            $prefix = sprintf("%02d", ($prefix + 1));
+            print "\n${prefix}: Printing coverage/base with bbmap.\n";
+            my $coverage = $class->Bio::Adventure::Assembly::Assembly_Coverage(
+                jdepends => $last_sam_job,
+                input => $trim->{output},
+                jprefix => $prefix,
+                library => $first_species,);
+            $jobid = qq"${prefix}bam2cov";
+            $ret->{$jobid} = $coverage;
+            sleep($options->{jsleep});
+        }
+
         $prefix = sprintf("%02d", ($prefix + 1));
         if ($options->{freebayes}) {
             print "\n${prefix}: Performing freebayes search against ${first_species}.\n";
@@ -1082,7 +1155,7 @@ sub Process_RNAseq {
             if ($options->{filter}) {
                 print "\n${prefix}: Performing additional mapping against ${nth_species} with filtering.\n";
                 $nth_map = $class->Bio::Adventure::Map::Hisat2(
-                    compress => $options->{compress},
+                    compress => 0,
                     jdepends => $last_job,
                     input => $first_map->{unaligned},  ## Not unaligned_comp
                     introns => $nth_intron,
@@ -1101,7 +1174,7 @@ sub Process_RNAseq {
                 print "\n${prefix}: Performing additional mapping against ${nth_species} without filtering.\n";
                 if ($options->{mapper} eq 'hisat2') {
                     $nth_map = $class->Bio::Adventure::Map::Hisat2(
-                        compress => $options->{compress},
+                        compress => 0,
                         jdepends => $last_sam_job,
                         input => $map_input,
                         introns => $nth_intron,
@@ -1167,7 +1240,7 @@ sub Process_RNAseq {
             jdepends => $last_job,
             jname => 'comp_trimmed',
             jprefix => $prefix,
-            jwalltime => $hours_guess);
+            jwalltime => $hours_guess,);
         $last_job = $compress_input->{job_id};
         $prefix = sprintf("%02d", ($prefix + 1));
         $jobid = qq"${prefix}comptrim";

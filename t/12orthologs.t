@@ -32,7 +32,7 @@ ok($groupb_convert, 'Converted the group B strep genbank to fasta/gff/etc.');
 
 ## Now invoke orthofinder
 my $orthos = $cyoa->Bio::Adventure::Align::OrthoFinder(
-    input => qq"$groupa_convert->{pep_fasta}:$groupb_convert->{pep_fasta}",
+    input => qq"$groupa_convert->{output_pep_fasta}:$groupb_convert->{output_pep_fasta}",
     jprefix => '12',);
 
 ok(-r $orthos->{named_out}, 'Created tsv of named orthologs.');

@@ -1827,6 +1827,7 @@ sub Salmon_Stats {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
+        jprefix => '16',
         jmem => 1,);
     my $jname = 'stats';
     $jname = $options->{jname} if ($options->{jname});

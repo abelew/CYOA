@@ -58,7 +58,7 @@ ok(-f $stats_file, qq"The stats file was created: ${stats_file}");
 
 my $actual = $cyoa->Last_Stat(input => $stats_file);
 ok($actual, 'Collect Bowtie1 Statistics');
-my $expected = qq"test_output_async-v0M1.stderr,v0M1,0,10000,0,9970,0,outputs/23bowtie_phix/test_output_async-v0M1_rpos_sno_gene_gene_id.count.xz";
+my $expected = qq"test_output_async-v0M1.stderr,v0M1,0,10000,0,9970,0,outputs/23bowtie_phix/test_output_async-v0M1_rpos_sno_gene_gene_id.csv.xz";
 unless(ok($expected eq $actual, 'Are the bowtie stats as expected?')) {
     my ($old, $new) = diff($expected, $actual);
     print "--Expected--\n${old}\n--Actual--\n${new}\n";

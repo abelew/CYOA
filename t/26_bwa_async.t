@@ -38,7 +38,7 @@ my $cyoa = Bio::Adventure->new(
     libdir => cwd(),
     stranded => 'no',
     gff_type => 'gene',
-    gff_id => 'gene_id',
+    gff_tag => 'gene_id',
     species => 'phix',);
 
 ## Note that when using a cluster for this, one must remember to use a locally copied file for indexing/input.

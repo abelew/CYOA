@@ -549,6 +549,7 @@ sub HT_Multi {
 
  Guess about most appropriate flags for htseq-count.
 
+ B
  This function reads the first 100k lines of a gff file and use that
  to guess at the most likely type of feature when invoking htseq.
 
@@ -568,7 +569,7 @@ sub HT_Types {
         args => \%args,);
     my $my_type = $options->{gff_type};
     my $my_id = $options->{gff_tag};
-    print "Calling htseq with options for type: ${my_type} and tag: ${my_id}.\n";
+    print "Examining $options->{annotation} for type: ${my_type} and tag: ${my_id}.\n";
     $my_type = '' unless($my_type);
     $my_type = '' unless($my_id);
     my $gff_out = {};
@@ -853,7 +854,6 @@ gatk CollectInsertSizeMetrics \\
         jmem => 12,
         jname => qq"insertsize_${output_base}",
         jprefix => $options->{jprefix},
-        job_type => 'insertsize',
         jstring => $jstring,
         jwalltime => '2:00:00',
         output => $output_file,

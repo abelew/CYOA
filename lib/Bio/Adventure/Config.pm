@@ -299,6 +299,7 @@ upon all the apparatus, and you’ve got to make it stop. Go to page 2025.',
                 '(bwa): Map reads with bwa and count with htseq.' => \&Bio::Adventure::Map::BWA,
                 '(bowtie): Map trimmed reads with bowtie1 and count with htseq.' => \&Bio::Adventure::Map::Bowtie,
                 '(bt2): Map trimmed reads with bowtie2 and count with htseq.' => \&Bio::Adventure::Map::Bowtie2,
+                '(dantools_rnseq): Invoke dantools using RNASeq data as input.' => \&Bio::Adventure::SNP::Dantools_RNASeq,
                 '(freebayes): Use freebayes to create a vcf file and filter it.' => \&Bio::Adventure::SNP::Freebayes_SNP_Search,
                 '(hisat): Map trimmed reads with hisat2 and count with htseq.' => \&Bio::Adventure::Map::Hisat2,
                 '(parsnp): Parse an existing bcf file and print some fun tables.' => \&Bio::Adventure::SNP::SNP_Ratio,
@@ -339,7 +340,7 @@ upon all the apparatus, and you’ve got to make it stop. Go to page 2025.',
             name => 'structure',
             message => 'Intended for gene and RNA structure tools',
             choices => {
-                '(alphafold): Invoke alphafold on (currently) a peptide sequence.' => \&Bio::Adventure::Structure::AlphaFold,
+                '(alphafold): Invoke alphafold on (currently) a peptide sequence.' => \&Bio::Adventure::Structure::ProteinFold,
                 '(vienna): Use the RNAfold method from vienna to examine potential RNA structures.' => \&Bio::Adventure::Structure::Vienna,
             },
         },
@@ -629,6 +630,7 @@ sub Get_Modules {
         'Collect_Assembly' => { modules => 'cyoa' },
         'Consolidate_TAs' => { modules => 'cyoa', },
         'Cutadapt' => { modules => ['cyoa', 'cutadapt'], exe => 'cutadapt'},
+        'Dantools_RNASeq' => { modules => ['dantools'] },
         'Downsample_Guess_Strand' => { modules => ['salmon'] },
         'Essentiality_TAs' => { modules => 'cyoa', },
         'Extend_Kraken_DB' => { modules => ['kraken'], exe => ['kraken2'] },
@@ -692,7 +694,7 @@ sub Get_Modules {
         'ProgressiveMauve' => { modules => 'mauve' },
         'Prokka' => { ## Prokka should not need cyoa; it is getting requisite perl module from it for now
             modules => ['cyoa', 'prokka', 'blast'], exe => 'prokka'},
-        'ProteinFold' => { modules => ['cyoa', 'alphafold3'] },
+        'ProteinFold' => { modules => ['cyoa', 'alphafold3', 'cuda'] },
         'ProteinFold_PairIDs' => { modules => ['cyoa', 'alphafold3'] },
         'Racer' => { modules => ['hitec'], exe => ['RACER'], },
         'Resfinder' => { modules => 'resfinder', exe => 'run_resfinder.py' },
@@ -900,6 +902,10 @@ sub Get_Paths {
     elsif ($subroutine eq 'Classify_Phage' || $subroutine eq 'Classify_Phage_Worker') {
         $paths->{output_dir} = qq"${output_prefix}classify_phage";
         $paths->{log} = qq"$paths->{output_dir}/classify_phage.log";
+    }
+    elsif ($subroutine =~ /^Dantools/) {
+        $paths->{output_dir} = qq"${output_prefix}dantools_rna";
+        $paths->{log} = qq"$paths->{output_dir}/dantools_rnaseq.log";
     }
     elsif ($subroutine eq 'Download_NCBI_Assembly') {
         $paths->{output_dir} = qq"${output_prefix}download_assembly";
@@ -1161,7 +1167,7 @@ sub Get_TODOs {
         "abricate+" => \$todo_list->{todo}{'Bio::Adventure::Resistance::Abricate'},
         ## Create an assembly using Abyss.
         "abyss+" => \$todo_list->{todo}{'Bio::Adventure::Assembly::Abyss'},
-        "alphafold+" => \$todo_list->{todo}{'Bio::Adventure::Structure::AlphaFold'},
+        "alphafold+" => \$todo_list->{todo}{'Bio::Adventure::Structure::ProteinFold'},
         ## Filter a population genetics dataset via Angsd
         "angsdfilter+" => \$todo_list->{todo}{'Bio::Adventure::PopGen::Angsd_Filter'},
         ## Use my phage pipeline to attempt to annotate a phage assembly.
@@ -1207,6 +1213,7 @@ sub Get_TODOs {
         "countstates+" => \$todo_list->{todo}{'Bio::Adventure::Riboseq::Count_States'},
         "concat+" => \$todo_list->{todo}{'Bio::Adventure::Align::Concatenate_Searches'},
         "cutadapt+" => \$todo_list->{todo}{'Bio::Adventure::Trim::Cutadapt'},
+        "dantools_rnaseq+" => \$todo_list->{todo}{'Bio::Adventure::SNP::Dantools_RNASeq'},
         "dedupgatk+" => \$todo_list->{todo}{'Bio::Adventure::Convert::GATK_Dedup'},
         "ncbidownload+" => \$todo_list->{todo}{'Bio::Adventure::Prepare::Download_NCBI_Accession'},
         "downloadassembly+" => \$todo_list->{todo}{'Bio::Adventure::Prepare::Download_NCBI_Assembly'},
