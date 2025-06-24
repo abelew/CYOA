@@ -599,7 +599,6 @@ sub ProteinFold_JSON_Pairwise_TwoSeq {
     if ($needs_xla) {
         $xla_flag = '--flash_attention_implementation xla';
     }
-    my $final_full = abs_path($final_dir);
     my $jstring = qq!
 export TMPDIR=${final_dir}
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
