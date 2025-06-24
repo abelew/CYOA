@@ -337,11 +337,17 @@ export TF_FORCE_UNIFIED_MEMORY=true
 export XLA_CLIENT_MEM_FRACTION=3.2
 export XLA_FLAGS="\${XLA_FLAGS} --xla_disable_hlo_passes=custom-kernel-fusion-rewriter --xla_gpu_enable_triton_gemm=false"
 mkdir $paths->{output_dir}/jax
+cuda_location=\$(dirname \$(dirname \$(command -v nvcc)))
+query_location=query_location="\${cuda_location}/extras/demo_suite/deviceQuery"
+if [[ -x "\$query_location" ]]; then
+  \$query_location >> $paths->{output_dir}/queryDevice.stdout
+fi
 run_alphafold.py \\
   --json_path ${json_filename} \\
   --model_dir \$ALPHA_HOME/models \\
   --output_dir $paths->{output_dir} \\
   --jax_compilation_cache_dir $paths->{output_dir}/jax \\
+  --flash_attention_implementation=xla \\
   2>$paths->{stderr} \\
   1>$paths->{stdout}
 !;
@@ -441,11 +447,17 @@ export TF_FORCE_UNIFIED_MEMORY=true
 export XLA_CLIENT_MEM_FRACTION=3.2
 export XLA_FLAGS="\${XLA_FLAGS} --xla_disable_hlo_passes=custom-kernel-fusion-rewriter --xla_gpu_enable_triton_gemm=false"
 mkdir $paths->{output_dir}/jax
+cuda_location=\$(dirname \$(dirname \$(command -v nvcc)))
+query_location=query_location="\${cuda_location}/extras/demo_suite/deviceQuery"
+if [[ -x "\$query_location" ]]; then
+  \$query_location >> $paths->{output_dir}/queryDevice.stdout
+fi
 run_alphafold.py \\
   --json_path ${json_filename} \\
   --model_dir \$ALPHA_HOME/models \\
   --output_dir $paths->{output_dir} \\
   --jax_compilation_cache_dir $paths->{output_dir}/jax \\
+  --flash_attention_implementation=xla \\
   2>$paths->{stderr} \\
   1>$paths->{stdout}
 !;
@@ -524,11 +536,17 @@ export TF_FORCE_UNIFIED_MEMORY=true
 export XLA_CLIENT_MEM_FRACTION=3.2
 export XLA_FLAGS="\${XLA_FLAGS} --xla_disable_hlo_passes=custom-kernel-fusion-rewriter --xla_gpu_enable_triton_gemm=false"
 mkdir $paths->{output_dir}/jax
+cuda_location=\$(dirname \$(dirname \$(command -v nvcc)))
+query_location=query_location="\${cuda_location}/extras/demo_suite/deviceQuery"
+if [[ -x "\$query_location" ]]; then
+  \$query_location >> $paths->{output_dir}/queryDevice.stdout
+fi
 run_alphafold.py \\
   --json_path ${json_filename} \\
   --model_dir \$ALPHA_HOME/models \\
   --output_dir $paths->{output_dir} \\
   --jax_compilation_cache_dir $paths->{output_dir}/jax \\
+  --flash_attention_implementation=xla \\
   2>$paths->{stderr} \\
   1>$paths->{stdout}
 !;
@@ -606,11 +624,17 @@ export TF_FORCE_UNIFIED_MEMORY=true
 export XLA_CLIENT_MEM_FRACTION=3.2
 export XLA_FLAGS="\${XLA_FLAGS} --xla_disable_hlo_passes=custom-kernel-fusion-rewriter --xla_gpu_enable_triton_gemm=false"
 mkdir $paths->{output_dir}/jax
+cuda_location=\$(dirname \$(dirname \$(command -v nvcc)))
+query_location=query_location="\${cuda_location}/extras/demo_suite/deviceQuery"
+if [[ -x "\$query_location" ]]; then
+  \$query_location >> $paths->{output_dir}/queryDevice.stdout
+fi
 run_alphafold.py ${xla_flag} \\
   --json_path ${json_filename} \\
   --model_dir \$ALPHA_HOME/models \\
   --output_dir ${final_dir} \\
   --jax_compilation_cache_dir $paths->{output_dir}/jax \\
+  --flash_attention_implementation=xla \\
   2>${final_dir}/stderr \\
   1>${final_dir}/stdout
 echo "${first_id},${second_id}" >> $paths->{output_dir}/finished.txt
@@ -692,11 +716,17 @@ export TF_FORCE_UNIFIED_MEMORY=true
 export XLA_CLIENT_MEM_FRACTION=3.2
 export XLA_FLAGS="\${XLA_FLAGS} --xla_disable_hlo_passes=custom-kernel-fusion-rewriter --xla_gpu_enable_triton_gemm=false"
 mkdir $paths->{output_dir}/jax
+cuda_location=\$(dirname \$(dirname \$(command -v nvcc)))
+query_location=query_location="\${cuda_location}/extras/demo_suite/deviceQuery"
+if [[ -x "\$query_location" ]]; then
+  \$query_location >> $paths->{output_dir}/queryDevice.stdout
+fi
 run_alphafold.py \\
   --json_path ${json_filename} \\
   --model_dir \$ALPHA_HOME/models \\
   --output_dir $paths->{output_dir} \\
   --jax_compilation_cache_dir $paths->{output_dir}/jax \\
+  --flash_attention_implementation=xla \\
   2>$paths->{stderr} \\
   1>$paths->{stdout}
 !;
