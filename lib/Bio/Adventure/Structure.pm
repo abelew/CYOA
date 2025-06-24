@@ -715,7 +715,7 @@ export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export TF_FORCE_UNIFIED_MEMORY=true
 export XLA_CLIENT_MEM_FRACTION=3.2
 export XLA_FLAGS="\${XLA_FLAGS} --xla_disable_hlo_passes=custom-kernel-fusion-rewriter --xla_gpu_enable_triton_gemm=false"
-mkdir $paths->{output_dir}/jax
+mkdir -p $paths->{output_dir}/jax
 cuda_location=\$(dirname \$(dirname \$(command -v nvcc)))
 query_location=query_location="\${cuda_location}/extras/demo_suite/deviceQuery"
 if [[ -x "\$query_location" ]]; then
