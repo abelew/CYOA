@@ -800,7 +800,7 @@ sub Process_DNASeq {
                 species => $first_species,
                 gff_type => $first_type,
                 gff_tag => $first_id,
-                introns => $first_intron,
+                introns => $options->{introns},
                 jprefix => $prefix,);
             $jobid = qq"${prefix}freebayes";
             $ret->{$jobid} = $first_snp;
