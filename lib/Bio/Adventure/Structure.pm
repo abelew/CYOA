@@ -104,7 +104,6 @@ There are a few different things this should do:
  Ideally, I would want to store this queue in a SQL database which I could query from multiple
  clusters around campus, but I do not think that is currently possible due to the vpn constraints.
 
-
  These two files, hg_top3.txt and lm_top3.txt comprise the 3 genes most differentially expressed
  in hg38 and lmajor across the corpus of all samples we have which are infected/uninfected.
  Thus, I want to submit 9 jobs: hg1:lm1, hg1:lm2, hg1:lm3, hg2:lm1 ....
@@ -169,8 +168,8 @@ sub ProteinFold_PairIDs_Worker {
         jprefix => 80,
         jcpu => 8,
         jgpu => 1,
-        jmem => 24,
-        jwalltime => '08:00:00',
+        jmem => 36,
+        jwalltime => '12:00:00',
         keys => 'transcript:gene',
         species => 'hg38_111:lmajor_v68',
         input => 'hs_top3.txt:lm_top3.txt',);
@@ -336,7 +335,7 @@ export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export TF_FORCE_UNIFIED_MEMORY=true
 export XLA_CLIENT_MEM_FRACTION=3.2
 export XLA_FLAGS="\${XLA_FLAGS} --xla_disable_hlo_passes=custom-kernel-fusion-rewriter --xla_gpu_enable_triton_gemm=false"
-mkdir $paths->{output_dir}/jax
+mkdir -p $paths->{output_dir}/jax
 cuda_location=\$(dirname \$(dirname \$(command -v nvcc)))
 query_location=query_location="\${cuda_location}/extras/demo_suite/deviceQuery"
 if [[ -x "\$query_location" ]]; then
@@ -446,7 +445,7 @@ export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export TF_FORCE_UNIFIED_MEMORY=true
 export XLA_CLIENT_MEM_FRACTION=3.2
 export XLA_FLAGS="\${XLA_FLAGS} --xla_disable_hlo_passes=custom-kernel-fusion-rewriter --xla_gpu_enable_triton_gemm=false"
-mkdir $paths->{output_dir}/jax
+mkdir -p $paths->{output_dir}/jax
 cuda_location=\$(dirname \$(dirname \$(command -v nvcc)))
 query_location=query_location="\${cuda_location}/extras/demo_suite/deviceQuery"
 if [[ -x "\$query_location" ]]; then
@@ -535,7 +534,7 @@ export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export TF_FORCE_UNIFIED_MEMORY=true
 export XLA_CLIENT_MEM_FRACTION=3.2
 export XLA_FLAGS="\${XLA_FLAGS} --xla_disable_hlo_passes=custom-kernel-fusion-rewriter --xla_gpu_enable_triton_gemm=false"
-mkdir $paths->{output_dir}/jax
+mkdir -p $paths->{output_dir}/jax
 cuda_location=\$(dirname \$(dirname \$(command -v nvcc)))
 query_location=query_location="\${cuda_location}/extras/demo_suite/deviceQuery"
 if [[ -x "\$query_location" ]]; then
@@ -623,7 +622,7 @@ export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export TF_FORCE_UNIFIED_MEMORY=true
 export XLA_CLIENT_MEM_FRACTION=3.2
 export XLA_FLAGS="\${XLA_FLAGS} --xla_disable_hlo_passes=custom-kernel-fusion-rewriter --xla_gpu_enable_triton_gemm=false"
-mkdir $paths->{output_dir}/jax
+mkdir -p $paths->{output_dir}/jax
 cuda_location=\$(dirname \$(dirname \$(command -v nvcc)))
 query_location=query_location="\${cuda_location}/extras/demo_suite/deviceQuery"
 if [[ -x "\$query_location" ]]; then
