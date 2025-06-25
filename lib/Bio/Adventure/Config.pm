@@ -695,7 +695,7 @@ sub Get_Modules {
         'Prokka' => { ## Prokka should not need cyoa; it is getting requisite perl module from it for now
             modules => ['cyoa', 'prokka', 'blast'], exe => 'prokka'},
         'ProteinFold' => { modules => ['cyoa', 'alphafold3', 'cuda'] },
-        'ProteinFold_PairIDs' => { modules => ['cyoa', 'alphafold3'] },
+        'ProteinFold_PairIDs' => { modules => ['cyoa', 'alphafold3', 'cuda'] },
         'Racer' => { modules => ['hitec'], exe => ['RACER'], },
         'Resfinder' => { modules => 'resfinder', exe => 'run_resfinder.py' },
         'Restriction_Catalog' => { modules => 'cyoa' },

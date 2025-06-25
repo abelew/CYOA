@@ -32,6 +32,7 @@ use File::Temp;
 use FileHandle;
 use Getopt::Long qw"GetOptionsFromArray";
 use IO::String;
+use List::MoreUtils qw"uniq";
 use Log::Log4perl;
 use PerlIO;
 use Pod::Usage;
@@ -1626,7 +1627,7 @@ if [[ -z "${mod}" ]]; then
   export -f module
 fi
 module add ';
-        for my $m (@module_lst) {
+        for my $m (uniq @module_lst) {
             $module_string .= qq"${m} " if (defined($m));
         }
         $module_string .= '2>/dev/null 1>&2';
