@@ -41,7 +41,8 @@ sub Check_Pair {
             }
         }
         $finished_fh->close();
-    } else {
+    }
+    else {
         print "Unable to read: $finished_file\n";
     }
     my $ret = undef;
@@ -57,7 +58,7 @@ sub ProteinFold {
         jgpu => 1,
         jmem => 24,
         jwalltime => '08:00:00',
-        jprefix => 80,
+        jprefix => 79,
         jname => 'alphafold',
         libtype => 'protein',
         mode => 'separate',
@@ -117,8 +118,8 @@ sub ProteinFold_PairIDs {
         args => \%args,
         jcpu => 8,
         jgpu => 1,
-        jmem => 24,
-        jwalltime => '08:00:00',
+        jmem => 36,
+        jwalltime => '12:00:00',
         jprefix => 80,
         jname => 'proteinpair',
         libtype => 'protein',
@@ -267,16 +268,20 @@ sub ProteinFold_Worker {
     if ($options->{mode} eq 'separate') {
         @jobs = $class->Bio::Adventure::Structure::ProteinFold_JSON_Separate(
             options => $options, paths => $paths);
-    } elsif ($options->{mode} eq 'together') {
+    }
+    elsif ($options->{mode} eq 'together') {
         @jobs = $class->Bio::Adventure::Structure::ProteinFold_JSON_Together(
             options => $options, paths => $paths);
-    } elsif ($options->{mode} eq 'pairwise' && $num_inputs == 1) {
+    }
+    elsif ($options->{mode} eq 'pairwise' && $num_inputs == 1) {
         @jobs = $class->Bio::Adventure::Structure::ProteinFold_JSON_Pairwise_OneInput(
             options => $options, paths => $paths);
-    } elsif ($options->{mode} eq 'pairwise' && $num_inputs == 2) {
+    }
+    elsif ($options->{mode} eq 'pairwise' && $num_inputs == 2) {
         @jobs = $class->Bio::Adventure::Structure::ProteinFold_JSON_Pairwise_TwoInput(
             options => $options, first => $inputs[0], second => $inputs[1], paths => $paths);
-    } else {
+    }
+    else {
         die("I know not this option.\n");
     }
     return(\@jobs);
@@ -356,13 +361,13 @@ run_alphafold.py \\
             jstring => $jstring,
             jprefix => $options->{jprefix},
             jmem => $options->{jmem},
-            jwalltime => '08:00:00',
+            jwalltime => $options->{jwalltime},
             language => 'bash',
             stderr => $paths->{stderr},
             stdout => $paths->{stdout},
             output => $paths->{output_dir},);
         push(@jobs, $job);
-    } ## End iterating over every sequence in the input file.
+    }          ## End iterating over every sequence in the input file.
     return(@jobs);
 }
 
@@ -402,7 +407,7 @@ sub ProteinFold_JSON_Together {
         };
         $chain_id++;
         push(@input_sequences, $peptide);
-    } ## End iterating over the input sequences.
+    }                       ## End iterating over the input sequences.
     if (defined($options->{input_rna})) {
         my $in_rna = Bio::Adventure::Get_FH(input => $options->{input_rna});
         my $seqio_rna = Bio::SeqIO->new(-format => 'fasta', -fh => $in_rna);
@@ -417,7 +422,7 @@ sub ProteinFold_JSON_Together {
             };
             $chain_id++;
             push(@input_sequences, $rna);
-        } ## End iterating over rna sequences
+        }                       ## End iterating over rna sequences
     }
     if (defined($options->{input_dna})) {
         my $in_dna = Bio::Adventure::Get_FH(input => $options->{input_dna});
@@ -433,7 +438,7 @@ sub ProteinFold_JSON_Together {
             };
             $chain_id++;
             push(@input_sequences, $dna);
-        } ## End iterating over dna sequences
+        }                       ## End iterating over dna sequences
     }
     $datum->{sequences} = \@input_sequences;
     my $pretty = JSON->new->pretty->encode($datum);
@@ -466,7 +471,7 @@ run_alphafold.py \\
         jstring => $jstring,
         jprefix => $options->{jprefix},
         jmem => $options->{jmem},
-        jwalltime => '08:00:00',
+        jwalltime => $options->{jwalltime},
         language => 'bash',
         stderr => $paths->{stderr},
         stdout => $paths->{stdout},
@@ -493,12 +498,14 @@ sub ProteinFold_JSON_Pairwise_OneInput {
         push(@seqs, $seq);
     }
     my @jobs = ();
-    for my $c (0 .. ($#seqs - 1)) {
+  FST: for my $c (0 .. ($#seqs - 1)) {
         my $first = $seqs[$c];
+        next FST unless (defined($first));
         my $first_id = $first->id;
         my $first_sequence = $first->seq;
-        for my $d (1 .. $#seqs) {
+      SCD: for my $d (1 .. $#seqs) {
             my $second = $seqs[$d];
+            next SCD unless (defined($second));
             my $second_id = $second->id;
             my $second_sequence = $second->seq;
             my $id_string = qq"${first_id}_${second_id}";
@@ -555,7 +562,7 @@ run_alphafold.py \\
                 jstring => $jstring,
                 jprefix => $options->{jprefix},
                 jmem => $options->{jmem},
-                jwalltime => '08:00:00',
+                jwalltime => $options->{jwalltime},
                 language => 'bash',
                 stderr => $paths->{stderr},
                 stdout => $paths->{stdout},
@@ -574,6 +581,7 @@ sub ProteinFold_JSON_Pairwise_TwoSeq {
     my $first = $args{first};
     my $second = $args{second};
     my $paths = $args{paths};
+    return(undef) unless (defined($first) and defined($second));
     my $first_id = $first->id;
     my $first_sequence = $first->seq;
     my $second_id = $second->id;
@@ -670,10 +678,10 @@ sub ProteinFold_JSON_Pairwise_TwoInput {
     my @first_seqs = ();
     my @second_seqs = ();
     while (my $first_seq = $first_seqio->next_seq) {
-        push(@first_seqs, $first_seq);
+        push(@first_seqs, $first_seq) if (defined($first_seq));
     }
     while (my $second_seq = $second_seqio->next_seq) {
-        push(@second_seqs, $second_seq);
+        push(@second_seqs, $second_seq) if (defined($second_seq));
     }
   FIRST: for my $first_seq (@first_seqs) {
       SECOND: for my $second_seq (@second_seqs) {
@@ -831,9 +839,11 @@ sub RNAFold_Windows_Worker {
     my $seqio;
     if ($options->{input} =~ /\.fasta|\.fsa/) {
         $seqio = Bio::SeqIO->new(-format => 'fasta', -fh => $in);
-    } elsif ($options->{input} =~ /\.gb|\.gbff|\.gbk|\.gbf/) {
+    }
+    elsif ($options->{input} =~ /\.gb|\.gbff|\.gbk|\.gbf/) {
         $seqio = Bio::SeqIO->new(-format => 'genbank', -fh => $in);
-    } else {
+    }
+    else {
         die("I do not understand the format for $options->{input}");
     }
     my $results = {};
@@ -842,97 +852,101 @@ sub RNAFold_Windows_Worker {
     my $pid = open2($reader, $writer, 'RNAfold -t 4 --noPS');
     my $output_line;
   CONTIGS: while (my $seq = $seqio->next_seq) {
-      ## Set up the first sequence and the stepper
-      my $seq_length = $seq->length;
-      my $circular = $seq;
-      my $id = $seq->id;
-      my $make_circular = $circular->is_circular(1);
-      ## Make the sequence length divisible by 3 to simplify logic later
-      if (($seq_length % 3) == 1) {
-          $circular = $circular->trunc(1, ($seq_length - 1));
-      } elsif (($seq_length % 3) == 2) {
-          $circular = $circular->trunc(1, ($seq_length - 2));
-      }
-      my $post_length = $circular->length;
-      ## Start the iterator a little bit before the beginning of the sequence.
-      my $start = (1 - $length) + $step;
-      my $end = $start + $length;
-      my $continue = 1;
-      my %nt_counts = (A => 0, U => 0, G => 0, C => 0);
-      my $gc_content = 0;
-      my $bp_count = 0;
-      my $bp_percent = 0;
-      my $key = qq"${id}_${start}_${end}";
-    STEP: while ($continue) {
-        if ($end > $post_length) {
-            $start = $start - $post_length;
-            $end = $end - $post_length;
+        ## Set up the first sequence and the stepper
+        my $seq_length = $seq->length;
+        my $circular = $seq;
+        my $id = $seq->id;
+        my $make_circular = $circular->is_circular(1);
+        ## Make the sequence length divisible by 3 to simplify logic later
+        if (($seq_length % 3) == 1) {
+            $circular = $circular->trunc(1, ($seq_length - 1));
         }
-
-        my $sub_sequence = '';
-        if ($start <= 0 && $end <= 0) {
-            ## This should not happen, but we can handle it easily enough
-            print "Somehow got a zero on start or end, this should not happen\n";
-        } elsif ($start <= 0) {
-            my $pre_start = $post_length + $start;
-            my $pre_end = $post_length;
-            my $remaining = ($length + $start);
-            my $post_start = 1;
-            my $post_end = $post_start + $remaining;
-            my $pre = $circular->subseq($pre_start, $pre_end);
-            my $post = $circular->subseq($post_start, $post_end);
-            $sub_sequence = $pre . $post;
-        }   elsif ($end <= 0) {
-            ## This really shouldn't happen.
-            print "end is less than zero, that is weird.\n";
-        } else  {
-            $sub_sequence = $circular->subseq($start, $end);
+        elsif (($seq_length % 3) == 2) {
+            $circular = $circular->trunc(1, ($seq_length - 2));
         }
+        my $post_length = $circular->length;
+        ## Start the iterator a little bit before the beginning of the sequence.
+        my $start = (1 - $length) + $step;
+        my $end = $start + $length;
+        my $continue = 1;
+        my %nt_counts = (A => 0, U => 0, G => 0, C => 0);
+        my $gc_content = 0;
+        my $bp_count = 0;
+        my $bp_percent = 0;
+        my $key = qq"${id}_${start}_${end}";
+      STEP: while ($continue) {
+            if ($end > $post_length) {
+                $start = $start - $post_length;
+                $end = $end - $post_length;
+            }
 
-        ## Make sure to send a return character to RNAfold
-        $sub_sequence .= "\n";
-        ## Send the subsequence of interest to RNAfold.
-        print $writer $sub_sequence;
-        ## And read its first line of output.
-        $output_line = <$reader>;
-        ## If the line is comprised entirely of word characters, then it is printing the sequence.
-        if ($output_line =~ /^\w+$/) {
-            my $seq_line = $output_line;
-            ## Count up the nucleotides.
-            $nt_counts{A} = $seq_line =~ tr/A//;
-            $nt_counts{U} = $seq_line =~ tr/U//;
-            $nt_counts{G} = $seq_line =~ tr/G//;
-            $nt_counts{C} = $seq_line =~ tr/C//;
-            $gc_content = sprintf("%0.4f", ($nt_counts{G} + $nt_counts{C}) / $options->{length});
-            ## Now skip down to the next line of output from RNAfold.
+            my $sub_sequence = '';
+            if ($start <= 0 && $end <= 0) {
+                ## This should not happen, but we can handle it easily enough
+                print "Somehow got a zero on start or end, this should not happen\n";
+            }
+            elsif ($start <= 0) {
+                my $pre_start = $post_length + $start;
+                my $pre_end = $post_length;
+                my $remaining = ($length + $start);
+                my $post_start = 1;
+                my $post_end = $post_start + $remaining;
+                my $pre = $circular->subseq($pre_start, $pre_end);
+                my $post = $circular->subseq($post_start, $post_end);
+                $sub_sequence = $pre . $post;
+            }
+            elsif ($end <= 0) {
+                ## This really shouldn't happen.
+                print "end is less than zero, that is weird.\n";
+            }
+            else {
+                $sub_sequence = $circular->subseq($start, $end);
+            }
+
+            ## Make sure to send a return character to RNAfold
+            $sub_sequence .= "\n";
+            ## Send the subsequence of interest to RNAfold.
+            print $writer $sub_sequence;
+            ## And read its first line of output.
             $output_line = <$reader>;
-        }
+            ## If the line is comprised entirely of word characters, then it is printing the sequence.
+            if ($output_line =~ /^\w+$/) {
+                my $seq_line = $output_line;
+                ## Count up the nucleotides.
+                $nt_counts{A} = $seq_line =~ tr/A//;
+                $nt_counts{U} = $seq_line =~ tr/U//;
+                $nt_counts{G} = $seq_line =~ tr/G//;
+                $nt_counts{C} = $seq_line =~ tr/C//;
+                $gc_content = sprintf("%0.4f", ($nt_counts{G} + $nt_counts{C}) / $options->{length});
+                ## Now skip down to the next line of output from RNAfold.
+                $output_line = <$reader>;
+            }
 
-        ## Pick out the basepairs and calculated MFE value.
-        my ($structure, $mfe) = split(/\s+/, $output_line);
-        ## Count up the base pairs
-        my $structure_string = $structure;
-        $bp_count = $structure_string =~ tr/\.//;
-        $bp_percent = sprintf("%0.4f", $bp_count / $options->{length});
+            ## Pick out the basepairs and calculated MFE value.
+            my ($structure, $mfe) = split(/\s+/, $output_line);
+            ## Count up the base pairs
+            my $structure_string = $structure;
+            $bp_count = $structure_string =~ tr/\.//;
+            $bp_percent = sprintf("%0.4f", $bp_count / $options->{length});
 
-        $mfe =~ s/\(|\)//g;
-        my $normalized_mfe_bp = sprintf("%0.4f", $mfe / $bp_count);
-        my $normalized_mfe_gc = sprintf("%0.4f", $mfe / ($nt_counts{G} + $nt_counts{C}));
-        my $txt_string = qq"${id}\t${start}\t${end}\t$nt_counts{A}\t$nt_counts{U}\t$nt_counts{G}\t$nt_counts{C}\t$gc_content\t$bp_count\t$bp_percent\t${mfe}\t${normalized_mfe_bp}\t${normalized_mfe_gc}\t${structure}\n";
-        print $txt_writer $txt_string;
-        ## print $txt_string;
-        ## Make a record of the contig/start/end so we can tell when we are finished.
-        $results->{$key} = 1;
+            $mfe =~ s/\(|\)//g;
+            my $normalized_mfe_bp = sprintf("%0.4f", $mfe / $bp_count);
+            my $normalized_mfe_gc = sprintf("%0.4f", $mfe / ($nt_counts{G} + $nt_counts{C}));
+            my $txt_string = qq"${id}\t${start}\t${end}\t$nt_counts{A}\t$nt_counts{U}\t$nt_counts{G}\t$nt_counts{C}\t$gc_content\t$bp_count\t$bp_percent\t${mfe}\t${normalized_mfe_bp}\t${normalized_mfe_gc}\t${structure}\n";
+            print $txt_writer $txt_string;
+            ## print $txt_string;
+            ## Make a record of the contig/start/end so we can tell when we are finished.
+            $results->{$key} = 1;
 
-        ## Done with the step, set new start/end/key and check to see if we are done.
-        $start = $start + $step;
-        $end = $end + $step;
-        $key = qq"${id}_${start}_${end}";
-        if (defined($results->{$key})) {
-            last STEP;
+            ## Done with the step, set new start/end/key and check to see if we are done.
+            $start = $start + $step;
+            $end = $end + $step;
+            $key = qq"${id}_${start}_${end}";
+            if (defined($results->{$key})) {
+                last STEP;
+            }
         }
     }
-  }
     $writer->close();
     my $compressed = qx"xz -9e -f ${out_txt_path}";
     return($results);
