@@ -56,8 +56,8 @@ sub ProteinFold {
         args => \%args,
         jcpu => 8,
         jgpu => 1,
-        jmem => 24,
-        jwalltime => '08:00:00',
+        jmem => 20,
+        jwalltime => '4:00:00',
         jprefix => 79,
         jname => 'alphafold',
         libtype => 'protein',
@@ -120,7 +120,7 @@ sub ProteinFold_PairIDs {
         jgpu => 1,
         jmem => 36,
         jwalltime => '12:00:00',
-        jprefix => 80,
+        jprefix => 79,
         jname => 'proteinpair',
         libtype => 'protein',
         keys => 'transcript:gene',
@@ -174,6 +174,7 @@ sub ProteinFold_PairIDs_Worker {
         keys => 'transcript:gene',
         species => 'hg38_111:lmajor_v68',
         input => 'hs_top3.txt:lm_top3.txt',);
+    $options->{jprefix}++;
     my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my ($sp1, $sp2) = split(/$options->{delimiter}/, $options->{species});
     my $species1_aa = qq"$options->{libpath}/$options->{libtype}/fasta/${sp1}.fasta";
@@ -256,6 +257,7 @@ sub ProteinFold_Worker {
         jprefix => 80,
         mode => 'separate',
         required => ['input']);
+    $options->{jprefix}++;
     my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $output_name = basename($options->{input}, ('.fasta', '.faa', '.fsa', '.ffn'));
     my $log = qq"$paths->{output_dir}/${output_name}_runlog.txt";
@@ -349,14 +351,14 @@ if [[ \! -z "\${nvcc_location}" ]]; then
     \$query_location >> $paths->{output_dir}/queryDevice.stdout
   fi
 fi
-run_alphafold.py \\
-  --json_path ${json_filename} \\
-  --model_dir \$ALPHA_HOME/models \\
-  --output_dir $paths->{output_dir} \\
-  --jax_compilation_cache_dir $paths->{output_dir}/jax \\
-  --flash_attention_implementation=xla \\
-  2>$paths->{stderr} \\
-  1>$paths->{stdout}
+/usr/bin/time -v -o ${stdout.time} -a \\
+  run_alphafold.py \\
+    --json_path ${json_filename} \\
+    --model_dir \$ALPHA_HOME/models \\
+    --output_dir $paths->{output_dir} \\
+    --jax_compilation_cache_dir $paths->{output_dir}/jax \\
+    --flash_attention_implementation=xla \\
+    1>$paths->{stdout} 2>&1
 !;
         my $job = $class->Submit(
             jdepends => $options->{jdepends},
@@ -462,14 +464,14 @@ if [[ \! -z "\${nvcc_location}" ]]; then
     \$query_location >> $paths->{output_dir}/queryDevice.stdout
   fi
 fi
-run_alphafold.py \\
-  --json_path ${json_filename} \\
-  --model_dir \$ALPHA_HOME/models \\
-  --output_dir $paths->{output_dir} \\
-  --jax_compilation_cache_dir $paths->{output_dir}/jax \\
-  --flash_attention_implementation=xla \\
-  2>$paths->{stderr} \\
-  1>$paths->{stdout}
+/usr/bin/time -v -o ${stdout.time} -a \\
+  run_alphafold.py \\
+    --json_path ${json_filename} \\
+    --model_dir \$ALPHA_HOME/models \\
+    --output_dir $paths->{output_dir} \\
+    --jax_compilation_cache_dir $paths->{output_dir}/jax \\
+    --flash_attention_implementation=xla \\
+    1>$paths->{stdout} 2>&1
 !;
     my $job = $class->Submit(
         jdepends => $options->{jdepends},
@@ -556,14 +558,14 @@ if [[ \! -z "\${nvcc_location}" ]]; then
     \$query_location >> $paths->{output_dir}/queryDevice.stdout
   fi
 fi
-run_alphafold.py \\
-  --json_path ${json_filename} \\
-  --model_dir \$ALPHA_HOME/models \\
-  --output_dir $paths->{output_dir} \\
-  --jax_compilation_cache_dir $paths->{output_dir}/jax \\
-  --flash_attention_implementation=xla \\
-  2>$paths->{stderr} \\
-  1>$paths->{stdout}
+/usr/bin/time -v -o ${stdout.time} -a \\
+  run_alphafold.py \\
+    --json_path ${json_filename} \\
+    --model_dir \$ALPHA_HOME/models \\
+    --output_dir $paths->{output_dir} \\
+    --jax_compilation_cache_dir $paths->{output_dir}/jax \\
+    --flash_attention_implementation=xla \\
+    1>$paths->{stdout} 2>&1
 !;
             my $job = $class->Submit(
                 jdepends => $options->{jdepends},
@@ -648,14 +650,14 @@ if [[ \! -z "\${nvcc_location}" ]]; then
     \$query_location >> $paths->{output_dir}/queryDevice.stdout
   fi
 fi
-run_alphafold.py ${xla_flag} \\
-  --json_path ${json_filename} \\
-  --model_dir \$ALPHA_HOME/models \\
-  --output_dir ${final_dir} \\
-  --jax_compilation_cache_dir $paths->{output_dir}/jax \\
-  --flash_attention_implementation=xla \\
-  2>${final_dir}/stderr \\
-  1>${final_dir}/stdout
+/usr/bin/time -v -o ${stdout.time} -a \\
+  run_alphafold.py ${xla_flag} \\
+    --json_path ${json_filename} \\
+    --model_dir \$ALPHA_HOME/models \\
+    --output_dir ${final_dir} \\
+    --jax_compilation_cache_dir $paths->{output_dir}/jax \\
+    --flash_attention_implementation=xla \\
+    1>${final_dir}/paths->{stdout} 2>&1
 echo "${first_id},${second_id}" >> $paths->{output_dir}/finished.txt
 !;
     my $job = $class->Submit(
@@ -743,14 +745,14 @@ if [[ \! -z "\${nvcc_location}" ]]; then
     \$query_location >> $paths->{output_dir}/queryDevice.stdout
   fi
 fi
-run_alphafold.py \\
-  --json_path ${json_filename} \\
-  --model_dir \$ALPHA_HOME/models \\
-  --output_dir $paths->{output_dir} \\
-  --jax_compilation_cache_dir $paths->{output_dir}/jax \\
-  --flash_attention_implementation=xla \\
-  2>$paths->{stderr} \\
-  1>$paths->{stdout}
+/usr/bin/time -v -o ${stdout.time} -a \\
+  run_alphafold.py \\
+    --json_path ${json_filename} \\
+    --model_dir \$ALPHA_HOME/models \\
+    --output_dir $paths->{output_dir} \\
+    --jax_compilation_cache_dir $paths->{output_dir}/jax \\
+    --flash_attention_implementation=xla \\
+    1>$paths->{stdout} 2>&1
 !;
             my $job = $class->Submit(
                 jdepends => $options->{jdepends},
