@@ -417,7 +417,7 @@ sub BUILD {
     ## There are a few default variables which we cannot fill in with MOO defaults.
     ## Make a hash of the defaults in order to make pulling command line arguments easier
     my %defaults;
-
+    print "TESTME: Looking for inappropriate ioctl at beginning of BUILD.\n";
     ## The modulecmd comand is kind of a hard-prerequisite for this to work.
     my $check = which('modulecmd');
     die("Could not find environment modules in your PATH:
@@ -533,6 +533,7 @@ $ENV{PATH}.") unless($check);
     }
     $modulecmd_handle->close();
     $class->{modulecmd} = $modulecmd_text;
+    print "TESTME: Looking for inappropriate ioctl at end of BUILD.\n";
     return($args);
 }
 
@@ -1707,7 +1708,9 @@ module add ';
     for my $k (keys %{$options}) {
         $runner->{$k} = $options->{$k};
     }
+    print "TESTME: Adventure.pm looking for inappropriate ioctl before Submit.\n";
     my $result = $runner->Submit($class, %args);
+    print "TESTME: Adventure.pm looking for inappropriate ioctl after Submit.\n";
     my $unloaded = $class->Module_Reset(env => $loaded);
     $class = $class->Reset_Vars();
     if (!defined($class->{jobnames}) || $class->{jobnames} eq '') {

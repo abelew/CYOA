@@ -1624,20 +1624,19 @@ set -o pipefail
 echo "## Started ${script_file} at \$(date) on \$(hostname) with id \${SLURM_JOBID}." >> ${sbatch_log}
 function get_sigterm {
   cd "\${startdir}"
-  echo "A SIGTERM was sent to ${jname}: \${SLURM_JOBID}, perhaps due to excessive time usage." >> ${sbatch_log}
+  echo "A SIGTERM was sent to ${jname}: \${SLURM_JOBID}." >> ${sbatch_log}
   exit 1
 }
 trap get_sigterm SIGTERM
 function get_sigerr {
   cd "\${startdir}"
-  echo "A ERR was sent to ${jname}: \${SLURM_JOBID}, perhaps due to excessive memory usage." >> ${sbatch_log}
+  echo "A SIGERR was sent to ${jname}: \${SLURM_JOBID}." >> ${sbatch_log}
   exit 1
 }
 trap get_sigerr ERR
 ?;
         $script_start .= $options->{module_string} if ($options->{module_string});
         $script_start .= $options->{conda_string} if ($options->{conda_string});
-
         ## Note, the 'echo "Job status: $? " >> ${sbatch_log}'
         ## really is not necessary now because I have errexit on.
         my $script_end = qq!
@@ -1672,7 +1671,9 @@ fi
     }
     my $job_id = undef;
     my $handle = IO::Handle->new;
+    print "TESTME Checking for inappropriate ioctl before slurm submission.\n";
     my $sbatch_pid = open($handle, qq"${sbatch_cmd_line} |");
+    print "TESTME Checking for inappropriate ioctl after slurm submission.\n";
     while (my $line = <$handle>) {
         chomp($line);
         next unless($line =~ /Submitted/);
