@@ -212,7 +212,7 @@ sub Gb2Gff {
     my $output_rrna_gff = qq"${dir}/${base}_rrna.gff";
     my $output_rrna_fasta = qq"${dir}/${base}_rrna.fasta";
 
-    my $stderr = qq"${base}_convert.stderr";
+    my $stderr = qq"\&1";
     my $stdout = qq"${base}_convert.stdout";
     my $comment = '## Convert from genbank to other formats.';
     my $jname = qq"${base}_convert";
