@@ -351,7 +351,7 @@ if [[ \! -z "\${nvcc_location}" ]]; then
     \$query_location >> $paths->{output_dir}/queryDevice.stdout
   fi
 fi
-/usr/bin/time -v -o ${stdout.time} -a \\
+/usr/bin/time -v -o $paths->{stdout}.time -a \\
   run_alphafold.py \\
     --json_path ${json_filename} \\
     --model_dir \$ALPHA_HOME/models \\
@@ -464,7 +464,7 @@ if [[ \! -z "\${nvcc_location}" ]]; then
     \$query_location >> $paths->{output_dir}/queryDevice.stdout
   fi
 fi
-/usr/bin/time -v -o ${stdout.time} -a \\
+/usr/bin/time -v -o $paths->{stdout}.time -a \\
   run_alphafold.py \\
     --json_path ${json_filename} \\
     --model_dir \$ALPHA_HOME/models \\
@@ -558,7 +558,7 @@ if [[ \! -z "\${nvcc_location}" ]]; then
     \$query_location >> $paths->{output_dir}/queryDevice.stdout
   fi
 fi
-/usr/bin/time -v -o ${stdout.time} -a \\
+/usr/bin/time -v -o $paths->{stdout}.time -a \\
   run_alphafold.py \\
     --json_path ${json_filename} \\
     --model_dir \$ALPHA_HOME/models \\
@@ -650,7 +650,7 @@ if [[ \! -z "\${nvcc_location}" ]]; then
     \$query_location >> $paths->{output_dir}/queryDevice.stdout
   fi
 fi
-/usr/bin/time -v -o ${stdout.time} -a \\
+/usr/bin/time -v -o $paths->{stdout}.time -a \\
   run_alphafold.py ${xla_flag} \\
     --json_path ${json_filename} \\
     --model_dir \$ALPHA_HOME/models \\
@@ -745,7 +745,7 @@ if [[ \! -z "\${nvcc_location}" ]]; then
     \$query_location >> $paths->{output_dir}/queryDevice.stdout
   fi
 fi
-/usr/bin/time -v -o ${stdout.time} -a \\
+/usr/bin/time -v -o $paths->{stdout}.time -a \\
   run_alphafold.py \\
     --json_path ${json_filename} \\
     --model_dir \$ALPHA_HOME/models \\
