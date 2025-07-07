@@ -71,6 +71,7 @@ sub Dantools_RNASeq {
         required => ['species', 'input',],
         chosen_tag => 'PAIRED',
         coverage_tag => 'DP',
+        flank => 0,
         gff_tag => 'ID',
         gff_type => 'gene',
         gff_cds_parent_type => 'mRNA',
@@ -93,48 +94,73 @@ sub Dantools_RNASeq {
     my $dt_input = $options->{input};
     my $dt_input_args = '';
     my $input_name = $dt_input;
+    my $first_read_file = '';
     if ($dt_input =~ /$options->{delimiter}/) {
         my @pair_listing = split(/$options->{delimiter}/, $dt_input);
         $dt_input_args .= qq" -1 $pair_listing[0] -2 $pair_listing[1] ";
         $input_name = $pair_listing[0];
+        $first_read_file = $pair_listing[0];
     } else {
         $dt_input_args .= qq" --reads-u ${dt_input} ";
+        $first_read_file = $dt_input;
     }
-    my $input_base = basename($dt_input, ('.xz', '.gz', '.bz2'));
-    $input_base = basename($dt_input, ('.fastq'));
-    my $shift_input_filename = qq"$paths->{output_dir}/outputs/${input_base}_on_$options->{species}";
+    my $label_args = ' --translate -all ';
+    if ($options->{flank}) {
+        $label_args .= qq" --add-flanks ";
+    }
+    my $label_types = 'five_prime_UTR,CDS,three_prime_UTR';
+    my $input_base = basename($first_read_file);
+    my $shift_input_basename = qq"$paths->{output_dir}/output/${input_base}_on_$options->{species}";
+    my $shift_input_filename = qq"${shift_input_basename}.vcf";
+    my $label_input_fasta = qq"${shift_input_basename}.fasta";
     my $comment = qq!## This is a dantools search for variant against $options->{species}!;
     my $jstring = qq!
 mkdir -p ${dantools_dir}
+echo "Starting pseudogen using the ${input_fasta} genome."
 dantools pseudogen \\
   --outdir $paths->{output_dir} \\
   -r ${input_fasta} \\
   ${dt_input_args} \\
   1>>$paths->{output_dir}/pseudogen.stdout \\
   2>>$paths->{output_dir}/pseudogen.stderr
+echo "Starting shift to create $paths->{output_dir}/shifted.gff from ${shift_input_filename}."
 dantools shift \\
   -o $paths->{output_dir}/shifted.gff \\
-  -v $shift_input_filename \\
+  -v ${shift_input_filename} \\
   -f $paths->{gff} \\
   1>>$paths->{output_dir}/shift.stdout \\
   2>>$paths->{output_dir}/shift.stderr
-dantools summarize-depth --outdir $paths->{output_dir} \\
-  -f shifted.gff -d depth.tsv --feature gene \\
+echo "Starting summarize-depth of CDS feature type: $options->{gff_cds_type}"
+dantools summarize-depth \\
+  -f $paths->{output_dir}/shifted.gff \\
+  -d $paths->{output_dir}/output/depth.tsv \\
+  -o $paths->{output_dir}/depth_summary.tsv \\
+  --feature $options->{gff_cds_type} \\
   1>>$paths->{output_dir}/summarize.stdout \\
   2>>$paths->{output_dir}/summarize.stderr
-dantools label --outdir $paths->{output_dir} \\
-  -v variants.vcf -f $paths->{gff} \\
-  --features five_prime_UTR,CDS,three_prime_UTR \\
+echo "Starting label with ${shift_input_filename}"
+dantools label ${label_args} \\
+  -v ${shift_input_filename} \\
+  -f $paths->{gff} \\
+  -b ${label_input_fasta} \\
+  --features ${label_types} \\
+  --output-aa $paths->{output_dir}/modified_aa.tsv \\
+  --output-nuc $paths->{output_dir}/modified_nt.tsv \\
   1>>$paths->{output_dir}/label.stdout \\
   2>>$paths->{output_dir}/label.stderr
-dantools summarize-nuc --outdir $paths->{output_dir} \\
-  labeled_nucleotides.tsv \\
+echo "Starting summarize-num with $paths->{output_dir}/modified_nt.tsv"
+dantools summarize-nuc \\
+  $paths->{output_dir}/modified_nt.tsv \\
+  --output $paths->{output_dir}/summarized_nt.tsv \\
   1>>$paths->{output_dir}/summarize_nuc.stdout \\
   2>>$paths->{output_dir}/summarize_nuc.stderr
-dantools summarize-aa --outdir $paths->{output_dir} \\
-  labeled_aaleotides.tsv \\
+echo "Starting summarize-aa with $paths->{output_dir}/modified_aa.tsv"
+dantools summarize-aa \\
+  $paths->{output_dir}/modified_aa.tsv \\
+  --output $paths->{output_dir}/summarized_aa.tsv \\
   1>>$paths->{output_dir}/summarize_aa.stdout \\
   2>>$paths->{output_dir}/summarize_aa.stderr
+echo "Starting transloc?"
 !;
 
     my $comment_string = '## Use dantools to examine RNASeq data vs a reference.';

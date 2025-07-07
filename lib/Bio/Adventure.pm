@@ -1627,11 +1627,11 @@ if [[ -z "${mod}" ]]; then
   }
   export -f module
 fi
-module add ';
+{ module add ';
         for my $m (uniq @module_lst) {
             $module_string .= qq"${m} " if (defined($m));
         }
-        $module_string .= '2>/dev/null 1>&2';
+        $module_string .= '2>/dev/null 1>&2 } || true; }';
         $options->{module_string} = $module_string;
     }
 

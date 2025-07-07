@@ -66,6 +66,7 @@ sub ProteinFold {
     my $output_name = basename($options->{input}, ('.gbk', '.fsa', '.fasta',));
     my $paths = $class->Bio::Adventure::Config::Get_Paths(output_name => $output_name);
     my $comment = '## Iterate over a sequence with Alphafold.';
+    my $jname = qq"proteinfold_${output_name}";
     my $jstring = qq?
 use Bio::Adventure::Structure;
 \$h->Bio::Adventure::Structure::ProteinFold_Worker(
@@ -74,6 +75,7 @@ use Bio::Adventure::Structure;
   mode => '$options->{mode}',
   output => '$paths->{output}',
   output_dir => '$paths->{output_dir}',
+  jname => '${jname}',
   jprefix => '$options->{jprefix}',
   stdout => '$paths->{stdout}',
   stderr => '$paths->{stderr}',);
@@ -81,7 +83,7 @@ use Bio::Adventure::Structure;
     my $folder = $class->Submit(
         input => $options->{input},
         output => $paths->{output},
-        jname => $options->{jname},
+        jname => $jname,
         jprefix => $options->{jprefix},
         jstring => $jstring,
         libtype => $options->{libtype},

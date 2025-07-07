@@ -1916,6 +1916,7 @@ sub Salmon {
         args => \%args,
         required => ['species', 'input'],
         jcpu => 8,
+        libtype => 'CDS',
         jwalltime => '4:00:00',
         jmem => 24,
         jprefix => '45',);
