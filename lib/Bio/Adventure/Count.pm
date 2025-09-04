@@ -94,7 +94,6 @@ sub Feature_Counts {
         } else {
             $stranded = 0;
         }
-        $fc_invocation .= qq" -s ${stranded}";
     } else {
         $stranded = 0;
     }
@@ -121,6 +120,7 @@ stranded=${stranded}
     if ($options->{fractional}) {
         $fc_invocation .= ' -M --fraction';
     }
+    $fc_invocation .= qq" -s \${stranded}";
 
     $fc_invocation .= qq" -Q \${min_quality}";
     if ($options->{paired}) {
