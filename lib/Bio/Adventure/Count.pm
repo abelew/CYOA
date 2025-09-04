@@ -107,8 +107,6 @@ min_length=$options->{min_length}
 min_quality=${qual}
 mode=$options->{mode}
 secondary=$options->{secondary}
-supplementary=${supplementary}
-sort=${sort}
 stranded=${stranded}
 
 {
