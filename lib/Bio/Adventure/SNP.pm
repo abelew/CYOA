@@ -64,6 +64,12 @@ sub Align_SNP_Search {
     return($search);
 }
 
+=head2 C<Dantools_RNASeq>
+
+ Use Dantools to generate a catalog of variants and new genome using RNASeq data
+ and an extant genome.
+
+=cut
 sub Dantools_RNASeq {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
@@ -161,8 +167,11 @@ dantools summarize-aa \\
   1>>$paths->{output_dir}/summarize_aa.stdout \\
   2>>$paths->{output_dir}/summarize_aa.stderr
 echo "Starting transloc?"
+xz -9e -f $paths->{output_dir}/depth_summary.tsv  $paths->{output_dir}/metadata.tsv \\
+  $paths->{output_dir}/modified_aa.tsv $paths->{output_dir}/modified_nt.tsv \\
+  $paths->{output_dir}/original_bins.tsv $paths->{output_dir}/summarized_aa.tsv \\
+  $paths->{output_dir}/summarized_nt.tsv
 !;
-
     my $comment_string = '## Use dantools to examine RNASeq data vs a reference.';
     my $dantools = $class->Submit(
         comment => $comment_string,
@@ -267,7 +276,6 @@ rm ${output_file}
         stderr => $stderr,
         stdout => $stdout,
         output => $output_bcf,);
-
     $comment_string = qq!## This little job should make unique IDs for every detected
 ## SNP and a ratio of snp/total for all snp positions with > 20 reads.
 ## Further customization may follow.
@@ -558,6 +566,7 @@ sub SNP_Ratio_Worker {
         output_penetrance => 'variants_penetrance.txt',
         output_pkm => 'by_gene_length.txt',
         output_dir => 'outputs/40freebayes',
+        output_coverage => 'coverage_summary.txt',
         penetrance_tag => 'SAP',
         qual => 10,
         vcf_cutoff => 5,
@@ -571,6 +580,9 @@ sub SNP_Ratio_Worker {
     my $genome = $paths->{fasta};
     my $gff = $paths->{gff};
     print $log "Reading gff: ${gff}, extracting type: $options->{gff_type} features tagged $options->{gff_tag}.\n";
+    print "Reading gff: ${gff}, extracting type: $options->{gff_type} features tagged $options->{gff_tag}.\n";
+    print $log "The reference genome is: $genome.\n";
+    print "The reference genome is: $genome.\n";
     my $in_bcf = FileHandle->new("bcftools view $options->{input} |");
     print $log "The large matrix of data will be written to: $options->{output}\n";
     my $all_out = FileHandle->new(">$options->{output}");
@@ -708,6 +720,9 @@ sub SNP_Ratio_Worker {
     print $log "Reading bcf file.\n";
     my $count = 0; ## Use this to count the positions changed in the genome.
     my $num_variants = 0; ## Use this to count the lines read in the bcf file.
+    my $insufficient_coverage = 0;
+    my $insufficient_quality = 0;
+    my $insufficient_metric = 0;
   READER: while (my $line = <$in_bcf>) {
       $num_variants++;
       next READER if ($line =~ /^#/);
@@ -717,6 +732,7 @@ sub SNP_Ratio_Worker {
       ## Only accept the simplest non-indel mutations.
       if ($options->{qual} ne '' && defined($qual)) {
           if ($qual < $options->{qual}) {
+              $insufficient_quality++;
               next READER;
           }
       }
@@ -777,7 +793,7 @@ sub SNP_Ratio_Worker {
     print $all_out qq"${header_line}\n";
     print $log "Reading genome.\n";
     my $input_genome = $class->Bio::Adventure::Read_Genome_Fasta(
-        %args, fasta => $genome,);
+        %args, genome => $genome,);
     my $annotations = $class->Bio::Adventure::Read_Genome_GFF(
         gff => $gff, gff_tag => $options->{gff_tag},
         gff_type => $options->{gff_type}, %args);
@@ -811,7 +827,7 @@ sub SNP_Ratio_Worker {
       my $vcf_cutoff = $options->{vcf_cutoff};
       if (defined($vcf_cutoff)) {
           if ($datum->{$depth_tag} < $vcf_cutoff) {
-              print "Dropping $datum->{position} because depth ($datum->{$depth_tag}) is less than ${vcf_cutoff}.\n";
+              $insufficient_coverage++;
               print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{$chosen}\n";
               next SHIFTER;
           }
@@ -819,23 +835,25 @@ sub SNP_Ratio_Worker {
       if (defined($chosen) && defined($datum->{chosen})) {
           if (defined($options->{min_value}) && defined($options->{max_value})) {
               if ($datum->{chosen} > $options->{max_value}) {
-                  print "$datum->{position} has exceeded max value: $options->{max_value}\n";
+                  print $log "$datum->{position} has exceeded max value: $options->{max_value}\n";
                   print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
                   next SHIFTER;
               } elsif ($datum->{chosen} < $options->{min_value}) {
-                  print "$datum->{position} is less than min value: $options->{min_value}\n";
+                  print $log "$datum->{position} is less than min value: $options->{min_value}\n";
+                  $insufficient_metric++;
                   print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
                   next SHIFTER;
               }
           } elsif (defined($options->{min_value})) {
               if ($datum->{chosen} < $options->{min_value}) {
-                  print "$datum->{position} is less than min value: $options->{min_value}\n";
+                  print $log "$datum->{position} is less than min value: $options->{min_value}\n";
                   print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
+                  $insufficient_metric++;
                   next SHIFTER;
               }
           } elsif (defined($options->{max_value})) {
               if ($datum->{chosen} > $options->{max_value}) {
-                  print "$datum->{position} has exceeded max value: $options->{max_value}\n";
+                  print $log "$datum->{position} has exceeded max value: $options->{max_value}\n";
                   print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
                   next SHIFTER;
               }
@@ -963,6 +981,11 @@ sub SNP_Ratio_Worker {
 
   } ## End looking at the each observation.
     $all_out->close();  ## Close out the matrix of observations.
+    print $log "When filtering variants,
+${insufficient_coverage} positions had insufficient coverage.
+${insufficient_quality} positions had bad quality.
+${insufficient_metric} positions failed the metric.
+";
     print $log "Iterated over ${points} attempted variant modifications.\n";
     print $log "Writing variants as (variants/kilobase gene)/megabase chromosome.\n";
     $output_by_gene->close();
@@ -993,12 +1016,20 @@ sub SNP_Ratio_Worker {
     $output_genome->close();
     $output_penetrance->close();
     print $log "Compressing matrix of all metrics.\n";
-    qx"xz -9e -f $options->{output}";
+    my $pre_compress = $options->{output};
+    $pre_compress =~ s/\.xz$//;
+    qx"xz -9e -f ${pre_compress}";
     print $log "Compressing output by gene.\n";
-    qx"xz -9e -f $options->{output_by_gene}";
-    qx"xz -9e -f $options->{output_penetrance}";
+    $pre_compress = $options->{output_by_gene};
+    $pre_compress =~ s/\.xz$//;
+    qx"xz -9e -f ${pre_compress}";
+    $pre_compress = $options->{output_penetrance};
+    $pre_compress =~ s/\.xz$//;
+    qx"xz -9e -f ${pre_compress}";
     print $log "Compressing output pkm file.\n";
-    qx"xz -9e -f $options->{output_pkm}";
+    $pre_compress = $options->{output_pkm};
+    $pre_compress =~ s/\.xz$//;
+    qx"xz -9e -f ${pre_compress}";
     $log->close();
     $filtered_coverage->close();
     return($count);
@@ -1573,12 +1604,20 @@ sub SNP_Ratio_Intron_Worker {
     }
     $output_genome->close();
     print $log "Compressing matrix of all metrics.\n";
-    qx"xz -9e -f $options->{output}";
+    my $pre_compress = $options->{output};
+    $pre_compress =~ s/\.xz$//;
+    qx"xz -9e -f ${pre_compress}";
     print $log "Compressing output by gene.\n";
-    qx"xz -9e -f $options->{output_by_gene}";
-    qx"xz -9e -f $options->{output_penetrance}";
+    $pre_compress = $options->{output_by_gene};
+    $pre_compress =~ s/\.xz$//;
+    qx"xz -9e -f ${pre_compress}";
+    $pre_compress = $options->{output_penetrance};
+    $pre_compress =~ s/\.xz$//;
+    qx"xz -9e -f ${pre_compress}";
     print $log "Compressing output pkm file.\n";
-    qx"xz -9e -f $options->{output_pkm}";
+    $pre_compress = $options->{output_pkm};
+    $pre_compress =~ s/\.xz$//;
+    qx"xz -9e -f ${pre_compress}";
     $log->close();
     $filtered_coverage->close();
     return($count);

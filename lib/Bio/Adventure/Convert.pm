@@ -58,6 +58,39 @@ sub Any2Any {
     $in_fh->close();
 }
 
+sub Bam2Bigwig {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['input',],
+        remove => 1,
+        jmem => 8,
+        jcpu => 1,
+        jprefix => '50',
+        jwalltime => '1:00:00',);
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $output_name = basename($options->{input}, ('.bam', '.sam'));
+    my $output = qq"$paths->{output_dir}/${output_name}.bw";
+    my $comment = qq!## This uses deeptools to convert an alignment to bw.!;
+    my $extra_args = qq"$options->{arbitrary}";
+    my $jstring = qq!
+bamCoverage ${extra_args} \\
+  -b $options->{input} -o ${output} \\
+  2>$paths->{stderr} \\
+  1>$paths->{stdout}
+!;
+    my $bam2bw = $class->Submit(
+        comment => $comment,
+        jdepends => $options->{jdepends},
+        jname => "bam2bw",
+        jprefix => $options->{jprefix},
+        jstring => $jstring,
+        stderr => $paths->{stderr},
+        stdout => $paths->{stdout},
+        output => $output,);
+    return($bam2bw);
+}
+
 sub Extract_Subseq {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
@@ -197,7 +230,7 @@ sub Gb2Gff {
         required => ['input'],
         jprefix => '78');
     my $base = basename($options->{input}, ('.xz', '.gz', '.bz2'));
-    $base = basename($base, ('.gb', '.gba', '.gbk', '.genbank'));
+    $base = basename($base, ('.gb', '.gba', '.gbk', '.genbank', '.gbff',));
     my $dir = dirname($options->{input});
     if (defined($options->{output_dir})) {
         $dir = $options->{output_dir};
@@ -208,6 +241,10 @@ sub Gb2Gff {
     my $output_cds_gff = qq"${dir}/${base}_cds.gff";
     my $output_inter_gff = qq"${dir}/${base}_interCDS.gff";
     my $output_cds_fasta = qq"${dir}/${base}.ffn";
+    my $output_nc_fasta = qq"${dir}/${base}_ncRNA.fasta";
+    my $output_nc_gff = qq"${dir}/${base}_ncRNA.gff";
+    my $output_misc_fasta = qq"${dir}/${base}_miscRNA.fasta";
+    my $output_misc_gff = qq"${dir}/${base}_miscRNA.gff";
     my $output_pep_fasta = qq"${dir}/${base}.faa";
     my $output_rrna_gff = qq"${dir}/${base}_rrna.gff";
     my $output_rrna_fasta = qq"${dir}/${base}_rrna.fasta";
@@ -229,6 +266,10 @@ my \$result = \$h->Bio::Adventure::Convert::Gb2Gff_Worker(
   output_cds_gff => '${output_cds_gff}',
   output_inter_gff => '${output_inter_gff}',
   output_cds_fasta => '${output_cds_fasta}',
+  output_nc_fasta => '${output_nc_fasta}',
+  output_nc_gff => '${output_nc_gff}',
+  output_misc_fasta => '${output_misc_fasta}',
+  output_misc_gff => '${output_misc_gff}',
   output_pep_fasta => '${output_pep_fasta}',
   output_rrna_gff => '${output_rrna_gff}',
   output_rrna_fasta => '${output_rrna_fasta}',
@@ -250,6 +291,8 @@ my \$result = \$h->Bio::Adventure::Convert::Gb2Gff_Worker(
         output_cds_gff => $output_cds_gff,
         output_inter_gff => $output_inter_gff,
         output_cds_fasta => $output_cds_fasta,
+        output_nc_fasta => $output_nc_fasta,
+        output_nc_gff => $output_nc_gff,
         output_pep_fasta => $output_pep_fasta,
         output_rrna_gff => $output_rrna_gff,
         output_rrna_fasta => $output_rrna_fasta,
@@ -288,8 +331,21 @@ sub Gb2Gff_Worker {
                                     -format => 'Fasta');
     my $pep_fasta = Bio::SeqIO->new(-file => qq">$options->{output_pep_fasta}",
                                     -format => 'Fasta');
+    my $nc_fasta = Bio::SeqIO->new(-file => qq">$options->{output_nc_fasta}",
+                                   -format => 'Fasta');
+    my $misc_fasta = Bio::SeqIO->new(-file => qq">$options->{output_misc_fasta}",
+                                     -format => 'Fasta');
+    my $nc_gffout = Bio::Tools::GFF->new(-file => ">$options->{output_nc_gff}", -gff_version => 3);
+    my $misc_gffout = Bio::Tools::GFF->new(-file => ">$options->{output_misc_gff}", -gff_version => 3);
     my $rrna_gffout = Bio::Tools::GFF->new(-file => ">$options->{output_rrna_gff}", -gff_version => 3);
     my $rrna_fasta = Bio::SeqIO->new(-file => qq">$options->{output_rrna_fasta}", -format => 'Fasta');
+    my $rrna_id_counter = {};
+    my $cds_id_counter = {};
+    my $ncrna_id_counter = {};
+    my $miscrna_id_counter = {};
+    my $id_count = 0;
+
+    ## FIXME: This if/elsif tree is stupid, make it generic via a hash or something.
     while (my $seq = $seqio->next_seq) {
         $seq_count++;
         print "Writing feature: $seq_count\n";
@@ -320,8 +376,17 @@ sub Gb2Gff_Worker {
                   $id_hash->{$thing} = $arr[0];
               }
               my $id = '';
-              if (defined($id_hash->{protein_id})) {
-                  $id = qq"$id_hash->{protein_id}";
+              if (defined($id_hash->{standard_name})) {
+                  $id = qq"$id_hash->{standard_name}";
+              } elsif (defined($id_hash->{gene})) {
+                  $id = qq"$id_hash->{gene}";
+              }
+              if (defined($rrna_id_counter->{id})) {
+                  my $id_count = $rrna_id_counter->{id} + 1;
+                  $rrna_id_counter->{id} = $id_count;
+                  $id .= qq".${id_count}";
+              } else {
+                  $rrna_id_counter->{id} = 0;
               }
               if (defined($id_hash->{gene})) {
                   $desc .= "$id_hash->{gene} ; ";
@@ -350,6 +415,7 @@ sub Gb2Gff_Worker {
                   len => $len,
                   feat => $feat_object,
               };
+              $desc =~ s/\;\s*$//g;
               my $rrna_object = Bio::PrimarySeq->new(-id => $id_string, -seq => $seq,
                                                      description => $desc);
               $rrna_fasta->write_seq($rrna_object);
@@ -363,15 +429,24 @@ sub Gb2Gff_Worker {
                   $id_hash->{$thing} = $arr[0];
               }
               my $id = '';
-              if (defined($id_hash->{protein_id})) {
+              if (defined($id_hash->{standard_name})) {
+                  $id = qq"$id_hash->{standard_name}";
+              } elsif (defined($id_hash->{protein_id})) {
                   $id = qq"$id_hash->{protein_id}";
+              }
+              if (defined($cds_id_counter->{id})) {
+                  my $id_count = $cds_id_counter->{id} + 1;
+                  $cds_id_counter->{id} = $id_count;
+                  $id .= qq".${id_count}";
+              } else {
+                  $cds_id_counter->{id} = 0;
               }
               my $desc = '';
               if (defined($id_hash->{gene})) {
-                  $desc .= "$id_hash->{gene} ; ";
+                  $desc .= "$id_hash->{gene};";
               }
               if (defined($id_hash->{db_xref})) {
-                  $desc .= "$id_hash->{db_xref} ; ";
+                  $desc .= "$id_hash->{db_xref};";
               }
               if (defined($id_hash->{product})) {
                   $desc .= "$id_hash->{product}";
@@ -408,17 +483,133 @@ sub Gb2Gff_Worker {
                   feat => $feat_object,
               };
               push(@feature_list, $size);
+              $desc =~ s/\;\s*$//g;
               my $seq_object = Bio::PrimarySeq->new(-id => $id, -seq => $seq, description => $desc);
               my $pep_object = Bio::PrimarySeq->new(-id => $id, -seq => $pep, description => $desc);
               $cds_fasta->write_seq($seq_object);
               my $ttseq = $seq_object->seq;
               $pep_fasta->write_seq($pep_object);
-          } elsif ($feat_object->primary_tag eq 'gene') {
-              $gene_gff->write_feature($feat_object);
-          }
-        } ## End looking at every feature and putting them into the @feature_list
-        ## Now make a hash from it and fill in the inter-cds data
+          } elsif ($feat_object->primary_tag eq 'ncRNA') {
+              $nc_gffout->write_feature($feat_object);
+              $feat_count++;
+              my $id_string = '';
+              my $id_hash = {};
+              foreach my $thing (keys %{$feat_object->{_gsf_tag_hash}}) {
+                  my @arr = @{$feat_object->{_gsf_tag_hash}->{$thing}};
+                  $id_hash->{$thing} = $arr[0];
+              }
+              my $id = '';
+              if (defined($id_hash->{standard_name})) {
+                  $id = $id_hash->{standard_name};
+              } elsif (defined($id_hash->{gene})) {
+                  $id = $id_hash->{gene};
+              }
+              if (defined($ncrna_id_counter->{$id})) {
+                  my $id_count = $ncrna_id_counter->{$id} + 1;
+                  $ncrna_id_counter->{$id} = $id_count;
+                  $id .= ".${id_count}";
+              } else {
+                  $ncrna_id_counter->{$id} = 0;
+              }
 
+              my $desc = '';
+              if (defined($id_hash->{db_xref})) {
+                  $desc .= "$id_hash->{db_xref};";
+              }
+              if (defined($id_hash->{product})) {
+                  $desc .= "$id_hash->{product}";
+              }
+              $desc .= "\n";
+              my $start = $feat_object->start;
+              my $end = $feat_object->end;
+              my $len = $feat_object->length;
+              ## This is in response to the puzzling error:
+              ## "Error::throw("Bio::Root::Exception", "Location end (601574) exceeds length (0) of called sequence C"...) called at /sw/local/perl/5.28.1/perl5/Bio/Root/Root.pm line 449"
+              my $seq = '';
+              my $e;
+              try {
+                  $seq = $feat_object->spliced_seq->seq;
+              }
+              catch ($e) {
+                  print "Something went wrong getting the sequence.\n";
+                  next FEAT;
+              }
+              my $size = {
+                  id => $id,
+                  start => $start,
+                  end => $end,
+                  len => $len,
+                  feat => $feat_object,
+              };
+              push(@feature_list, $size);
+              $desc =~ s/\;\s*$//g;
+              my $seq_object = Bio::PrimarySeq->new(-id => $id, -seq => $seq, description => $desc);
+              $nc_fasta->write_seq($seq_object);
+              my $ttseq = $seq_object->seq;
+          } elsif ($feat_object->primary_tag eq 'misc_RNA') {
+              ## Note: misc_RNA appears to me to be an ensembl-specific type and includes the various
+              ## feature types which fall under ncRNA at NCBI...
+              ## This is noteworthy, because ensembl's genbank files keep the ID under the tag
+              ## 'standard_name' rather than ID or gene or whatever NCBI does.
+              $misc_gffout->write_feature($feat_object);
+              $feat_count++;
+              my $id_string = '';
+              my $id_hash = {};
+              ## I should convert this to use $feat_object->get_tags and $feat_object->get_tag_values
+              foreach my $thing (keys %{$feat_object->{_gsf_tag_hash}}) {
+                  my @arr = @{$feat_object->{_gsf_tag_hash}->{$thing}};
+                  $id_hash->{$thing} = $arr[0];
+              }
+              my $id = '';
+              if (defined($id_hash->{standard_name})) {
+                  $id = $id_hash->{standard_name};
+              } elsif (defined($id_hash->{gene})) {
+                  $id = $id_hash->{gene};
+              }
+              if (defined($miscrna_id_counter->{$id})) {
+                  my $id_count = $miscrna_id_counter->{$id} + 1;
+                  $miscrna_id_counter->{$id} = $id_count;
+                  $id .= ".${id_count}";
+              } else {
+                  $miscrna_id_counter->{$id} = 0;
+              }
+              my $desc = '';
+              if (defined($id_hash->{db_xref})) {
+                  $desc .= "$id_hash->{db_xref};";
+              }
+              if (defined($id_hash->{product})) {
+                  $desc .= "$id_hash->{product}";
+              }
+              $desc .= "\n";
+              my $start = $feat_object->start;
+              my $end = $feat_object->end;
+              my $len = $feat_object->length;
+              ## This is in response to the puzzling error:
+              ## "Error::throw("Bio::Root::Exception", "Location end (601574) exceeds length (0) of called sequence C"...) called at /sw/local/perl/5.28.1/perl5/Bio/Root/Root.pm line 449"
+              my $seq = '';
+              my $e;
+              try {
+                  $seq = $feat_object->spliced_seq->seq;
+              }
+              catch ($e) {
+                  print "Something went wrong getting the sequence.\n";
+                  next FEAT;
+              }
+              my $size = {
+                  id => $id,
+                  start => $start,
+                  end => $end,
+                  len => $len,
+                  feat => $feat_object,
+              };
+              push(@feature_list, $size);
+              $desc =~ s/\;\s*$//g;
+              my $seq_object = Bio::PrimarySeq->new(-id => $id, -seq => $seq, description => $desc);
+              $misc_fasta->write_seq($seq_object);
+              ## Why do I have this in my previous block?
+              ##my $ttseq = $seq_object->seq;
+          } ## End looking for miscRNA
+      } ## End looking at every feature and putting them into the @feature_list
         my %inter_features = ();
         my ($p_st, $p_en, $c_st, $c_en, $inter_start, $inter_end) = 0;
       INTER: for my $c (0 .. $#feature_list) {
@@ -490,6 +681,10 @@ sub Gb2Gff_Worker {
         pep_fasta => $options->{output_pep_fasta},
         rrna_gff => $options->{output_rrna_gff},
         rrna_fasta => $options->{output_rrna_fasta},
+        ncrna_gff => $options->{output_nc_gff},
+        ncrna_fasta => $options->{output_nc_fasta},
+        misc_gff => $options->{output_misc_gff},
+        misc_fasta => $options->{output_misc_fasta},
     };
     close($handle);
     $fasta->close();
@@ -501,6 +696,8 @@ sub Gb2Gff_Worker {
     $pep_fasta->close();
     $rrna_gffout->close();
     $rrna_fasta->close();
+    $nc_gffout->close();
+    $nc_fasta->close();
     return($ret_stats);
 }
 
@@ -530,42 +727,45 @@ sub Gff2Fasta {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
-        required => ['input',],
         gff_tag => 'gene_id',
         gff_type => 'cds',);
     unless ($options->{species} || ($options->{input} && $options->{gff})) {
         die("This requires either a species or an input gff/fasta.")
     }
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $genome;
     my $gff;
     my $species;
     if ($options->{species}) {
-        my $input_base = qq"$options->{libpath}/genome/$options->{species}";
-        $genome = qq"${input_base}.fasta";
-        $gff = qq"${input_base}.gff";
+        $genome = $paths->{fasta};
+        $gff = $paths->{gff};
         $species = $options->{species};
     } elsif ($options->{input} && $options->{gff}) {
         $genome = $options->{input};
         $gff = $options->{gff};
-        $species = basename($genome, split(/,/, $class->{suffixes}));
-        $species = basename($genome, ('.fasta', '.fna', '.faa'));
     }
+    $species = basename($genome, $class->{suffixes});
+    $species = basename($genome, $class->{suffixes});
 
     my $wanted_tag = $options->{gff_tag};
     my $wanted_type = $options->{gff_type};
+    print "Reading: ${genome}.\n";
     my $chromosomes = $class->Read_Genome_Fasta(genome => $genome);
     my $gff_handle = Bio::Adventure::Get_FH(input => $gff);
     my $nt_file = qq"${species}_${wanted_type}_${wanted_tag}_nt.fasta";
     my $aa_file = qq"${species}_${wanted_type}_${wanted_tag}_aa.fasta";
+    my $subset_gff = qq"${species}_${wanted_type}_${wanted_tag}.gff";
     my $nt_out = Bio::SeqIO->new(
         -format => 'Fasta',
         -file => qq">${nt_file}",);
     my $aa_out = Bio::SeqIO->new(
         -format => 'Fasta',
         -file => qq">${aa_file}",);
+    my $gff_out = FileHandle->new(">${subset_gff}");
     ## Note that this and the next line might not be a good idea,
     ## HT_Types only looks at the first n (40,000) records and uses that as a heuristic
     ## to see that the wanted type is actually in the gff file.
+    print "Counting ${wanted_type} entries in ${gff}.\n";
     my $feature_type = $class->Bio::Adventure::Count::HT_Types(
         annotation => $gff,
         feature_type => $wanted_type,);
@@ -573,6 +773,7 @@ sub Gff2Fasta {
     my $annotation_in = Bio::Tools::GFF->new(-fh => $gff_handle, -gff_version => 3);
     my $features_written = 0;
     my $features_read = 0;
+    print "Iterating over gff entries in search of ${wanted_type}s.\n";
   LOOP: while (my $feature = $annotation_in->next_feature()) {
       $features_read++;
       my $primary_type = $feature->primary_tag();
@@ -592,13 +793,18 @@ sub Gff2Fasta {
           print "Did not find the tag: ${wanted_tag}, perhaps check the gff file.\n";
           next LOOP;
       }
+      my $gff_string = $annotation_in->gff_string($feature);
+      print $gff_out qq"${gff_string}\n";
       my $id = $ids[0];
       my $genome_obj = $chromosomes->{$gff_chr}->{obj};
       my $cds = $genome_obj->trunc($start, $end);
       if ($strand == -1) {
           $cds = $cds->revcom;
       }
-      my $id_string = qq"chr_${gff_chr}_id_${id}_start_${start}_end_${end}";
+      my $id_string = $id;
+      if (!defined($id_string)) {
+          $id_string = qq"chr_${gff_chr}_id_${id}_start_${start}_end_${end}";
+      }
       my $nt_sequence = Bio::Seq->new(
           -id => $id_string,
           -seq => $cds->seq());

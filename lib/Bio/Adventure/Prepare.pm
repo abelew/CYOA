@@ -7,8 +7,10 @@ use Moo;
 extends 'Bio::Adventure';
 
 use Cwd qw"abs_path getcwd cwd";
+use Archive::Zip qw":ERROR_CODES :CONSTANTS";
 use Bio::DB::EUtilities;
 use File::Basename;
+use File::Copy qw"move";
 use File::Path qw"make_path rmtree";
 use File::Which qw"which";
 use HTML::TreeBuilder::XPath;
@@ -34,6 +36,319 @@ use XML::LibXML;
 
 ## Taking the wall of code out of Phage::Filter_Kraken_Worker
 ## I am hoping to make this more robust and useful elsewhere.
+
+sub Download_Ensembl_Files {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        overwrite => 0,
+        species => 'mus_musculus',
+    );
+    my $sleeper = 3;
+    my $release = 0;
+    my $overwrite = $options->{overwrite};
+    if (defined($options->{release})) {
+        $release = $options->{release};
+    } elsif (defined($options->{version})) {
+        $release = $options->{version};
+    }
+    my $got = 0;
+    my $mech = WWW::Mechanize->new(autocheck => 1);
+    my $ens_root = qq"https://ftp.ensembl.org/pub/";
+    unless ($release) {
+        my $current_release = 0;
+        my @releases = ();
+        print "Checking ensembl for the latest release.\n";
+        my $root_index = $mech->get($ens_root);
+        $got = $mech->success();
+        if ($got) {
+            my @ens_index = $mech->links();
+          ENS_LINKS: for my $i (@ens_index) {
+                my $root_url = $i->url();
+                next ENS_LINKS unless ($root_url =~ /^release\-/);
+                my $release_num = $root_url;
+                $release_num =~ s/^.*release\-(\d+).*$/$1/;
+                push(@releases, $release_num);
+                if ($release_num > $current_release) {
+                    $current_release = $release_num;
+                }
+            }
+        }
+        $release = $current_release;
+        print "Automatically chose release: ${release}.\n";
+        sleep($sleeper);
+    }
+    print "Downloading files from ftp.ensembl.org for species: $options->{species}, release: ${release}.\n";
+
+    ## Gather and concatenate the genbank annotations.
+    my $gb_root = qq"${ens_root}/release-${release}/genbank/$options->{species}/";
+    print "Checking for ensembl genbank flat files.\n";
+    my $gb_filename = qq"$options->{species}_${release}_ens.gb.gz";
+    my $gb_downloaded = 0;
+    if (-f $gb_filename && !$overwrite) {
+        print "The genbank file already exists and overwrite is off, skipping.\n";
+    } else {
+        if (-f $gb_filename) {
+            rm($gb_filename);
+        }
+        my $gb_index = $mech->get($gb_root);
+        $got = $mech->success();
+        if ($got) {
+            my @gb_index = $mech->links();
+            my $gb_concatenated = FileHandle->new(">>${gb_filename}");
+          GB_LINKS: for my $i (@gb_index) {
+                my $link_url = $i->url();
+                if ($link_url =~ /\.dat\.gz$/) {
+                    sleep $sleeper;
+                    my $full_url = qq"${gb_root}${link_url}";
+                    my $dl = $mech->get($full_url, ':content_file' => $gb_concatenated);
+                    $got = $mech->success();
+                    if ($got) {
+                        print "Downloaded chromosome ${link_url}.\n";
+                        $gb_downloaded++;
+                    } ## Checking success of single file download.
+                } ## Checking for a link to a chromosomal gb file.
+            } ## Iterating over files in the directory.
+            $gb_concatenated->close();
+        } ## Checking if a single file downloaded.
+        if ($gb_downloaded < 1) {
+            print "No genbank flat files successfully downloaded, deleting the concatenated file.\n";
+            rm($gb_filename);
+        }
+    } ## Checking overwrite status.
+
+    ## Download the master gff3 file.
+    my $gff3_root = qq"https://ftp.ensembl.org/pub/release-${release}/gff3/$options->{species}/";
+    my $gff_file = qq"$options->{species}_${release}_ens.gff3.gz";
+    if (-f $gff_file && !$overwrite) {
+        print "The gff3 file already exists and overwrite is off, skipping.\n";
+    } else {
+        print "Checking for an ensembl gff3 file.\n";
+        my $gff_index = $mech->get($gff3_root);
+        $got = $mech->success();
+        if ($got) {
+            my @gff_index = $mech->links();
+          GFF_LINKS: for my $i (@gff_index) {
+                my $link_url = $i->url();
+                if ($link_url =~ /\.$options->{release}\.gff3\.gz$/) {
+                    sleep $sleeper;
+                    my $gff_out = FileHandle->new(">${gff_file}");
+                    my $full_url = qq"${gff3_root}${link_url}";
+                    my $dl = $mech->get($full_url, ':content_file' => $gff_out);
+                    $gff_out->close();
+                    $got = $mech->success();
+                    if ($got) {
+                        print "Downloaded ${gff_file}.\n";
+                    } else {
+                        rm($gff_file);
+                        print "Failed to download ${gff_file}, deleting it.\n";
+                    }
+                    last GFF_LINKS;
+                } ## Checking links for gff file.
+            } ## Iterating over links
+        } else {  ## Found the gff3 directory.
+            print "Unable to download the gff3 file.\n";
+        }
+    } ## Checking overwrite status.
+
+    ## Download the cDNA fasta file
+    my $cdna_root = qq"https://ftp.ensembl.org/pub/release-${release}/fasta/$options->{species}/cdna";
+    my $cdna_file = qq"$options->{species}_$options->{release}_ens_cdna.ffn.gz";
+    if (-f $cdna_file && !$overwrite) {
+        print "The cdna file exists and overwrite is off, skipping.\n";
+    } else {
+        print "Checking for an ensembl cdna file.\n";
+        my $cdna_index = $mech->get($cdna_root);
+        $got = $mech->success();
+        if ($got) {
+            my @cdna_index = $mech->links();
+          CDNA_LINKS: for my $i (@cdna_index) {
+                my $link_url = $i->url();
+                if ($link_url =~ /\.cdna\.all\.fa\.gz$/) {
+                    sleep $sleeper;
+                    my $cdna_out = FileHandle->new(">${cdna_file}");
+                    my $full_url = qq"${cdna_root}/${link_url}";
+                    my $dl = $mech->get($full_url, ':content_file' => $cdna_out);
+                    $cdna_out->close();
+                    $got = $mech->success();
+                    if ($got) {
+                        print "Downloaded ${cdna_file}.\n";
+                    } else {
+                        rm($cdna_file);
+                        print "Failed to download ${cdna_file}, deleting it.\n";
+                    }
+                    last CDNA_LINKS;
+                }
+            }
+        } else {
+            print "Unable to download the cdna file.\n";
+        }
+    }
+
+    ## Download the cds fasta file
+    my $cds_root = qq"https://ftp.ensembl.org/pub/release-$options->{release}/fasta/$options->{species}/cds";
+    my $cds_file = qq"$options->{species}_$options->{release}_ens.ffn.gz";
+    if (-f $cds_file && !$overwrite) {
+        print "The CDS file already exists and overwrite is off, skipping.\n";
+    } else {
+        print "Checking for the ensembl CDS file.\n";
+        my $cds_index = $mech->get($cds_root);
+        $got = $mech->success();
+        if ($got) {
+            my @cds_index = $mech->links();
+            my $cds_out = FileHandle->new(">${cds_file}");
+          CDS_LINKS: for my $i (@cds_index) {
+                my $link_url = $i->url();
+                if ($link_url =~ /\.cds\.all\.fa\.gz$/) {
+                    sleep $sleeper;
+                    my $full_url = qq"${cds_root}/${link_url}";
+                    my $dl = $mech->get($full_url, ':content_file' => $cds_out);
+                    $cds_out->close();
+                    $got = $mech->success();
+                    if ($got) {
+                        print "Downloaded ${cds_file}.\n";
+                    } else {
+                        rm($cds_out);
+                        print "Failed to download ${cds_file}, deleting it.\n";
+                    }
+                    last CDS_LINKS;
+                }
+            }
+        } else {
+            print "Unable to download the CDS file.\n";
+        }
+    }
+
+    ## Download the ncrna fasta file
+    my $ncrna_root = qq"https://ftp.ensembl.org/pub/release-$options->{release}/fasta/$options->{species}/ncrna";
+    my $ncrna_file = qq"$options->{species}_$options->{release}_ncrna_ens.fasta.gz";
+    if (-f $ncrna_file && !$overwrite) {
+        print "The ncRNA file exists and overwrite is off, skipping.\n";
+    } else {
+        print "Checking for the ensembl ncRNA file.\n";
+        my $ncrna_index = $mech->get($ncrna_root);
+        $got = $mech->success();
+        if ($got) {
+            my @ncrna_index = $mech->links();
+          NC_LINKS: for my $i (@ncrna_index) {
+                my $link_url = $i->url();
+                if ($link_url =~ /\.ncrna\.fa\.gz$/) {
+                    sleep $sleeper;
+                    my $full_url = qq"${ncrna_root}/${link_url}";
+                    my $ncrna_out = FileHandle->new(">${ncrna_file}");
+                    my $dl = $mech->get($full_url, ':content_file' => $ncrna_out);
+                    $ncrna_out->close();
+                    $got = $mech->success();
+                    if ($got) {
+                        print "Downloaded ${ncrna_file}.\n";
+                    } else {
+                        rm($ncrna_file);
+                        print "Failed to download ${ncrna_file}, deleting it.\n";
+                    }
+                    last NC_LINKS;
+                }
+            }
+        } else {
+            print "Unable to download the ncRNA file.\n";
+        }
+    }
+
+    ## Download the peptide fasta
+    my $pep_root = qq"https://ftp.ensembl.org/pub/release-$options->{release}/fasta/$options->{species}/pep";
+    my $pep_file = qq"$options->{species}_$options->{release}_ens.faa.gz";
+    if (-f $pep_file && !$overwrite) {
+        print "The peptide file exists and overwrite is off, skipping.\n";
+    } else {
+        print "Checking for the ensembl peptide file.\n";
+        my $pep_index = $mech->get($pep_root);
+        $got = $mech->success();
+        if ($got) {
+            my @pep_index = $mech->links();
+          PEP_LINKS: for my $i (@pep_index) {
+                my $link_url = $i->url();
+                if ($link_url =~ /\.pep\.all\.fa\.gz$/) {
+                    sleep $sleeper;
+                    my $full_url = qq"${pep_root}/${link_url}";
+                    my $pep_out = FileHandle->new(">${pep_file}");
+                    my $dl = $mech->get($full_url, ':content_file' => $pep_out);
+                    $pep_out->close();
+                    $got = $mech->success();
+                    if ($got) {
+                        print "Downloaded ${pep_file}.\n";
+                    } else {
+                        rm($pep_out);
+                        print "Failed to download ${pep_file}, deleting it.\n";
+                    }
+                    last PEP_LINKS;
+                }
+            }
+        } else {
+            print "Unable to download the peptide file.\n";
+        }
+    }
+
+    ## Download the genome fasta file(s)
+    ## Here is the set in which I am likely interested and a little information from the README
+    ## 1.  The set of alts: .dna.alt.fa.gz
+    ## 2.  Primary assembly: .dna.primary_assembly.fa.gz
+    ##     all toplevel sequences excluding haplotypes and patches; use this when doing analyses
+    ##     which would be confused by them.  These may not always exist.
+    ## 4.  Toplevel assembly: .dna.toplevel.fa.gz
+    ##     toplevel assemblies includ anything flagged as toplevel in ensembl: chromosomes,
+    ##     unassembled regions, N-padded haplotypes/patches.
+    ## 5.  masked assembly alts: .dna_rm.alt.fa.gz
+    ## 6.  masked assembly toplevel: .dna_rm.toplevel.fa.gz
+    ##     Any rm files are hardmasked with repeatmasker and have interspersed and low-complexity
+    ##     regions filled in with N
+    ## 7.  masked assembly primary: .dna_rm.primary.fa.gz
+    ## 8.  softmasked assembly alts: .dna_sm.alt.fa.gz
+    ## 9.  softmasked assembly toplevel: .dna_sm.toplevel.fa.gz
+    ##     Ibid except masked by lowercasing instead of N
+    ## 10. softmasked assembly primary: .dna_sm.primary.fa.gz
+    ## 11-n: There may also be explicit haplotype chromosomes and all the chromosomes separately.
+    my %dna_files = (
+        dna_alt => '\.dna\.alt\.fa\.gz',
+        primary => '\.dna\.primary_assembly\.fa\.gz',
+        toplevel => '\.dna\.toplevel\.fa\.gz',
+        masked_alt => '\.dna_rm\.alt\.fa\.gz',
+        masked_toplevel => '\.dna_rm\.toplevel\.fa\.gz',
+        masked_primary => '\.dna_rm\.primary\.fa\.gz',
+        soft_alt => '\.dna_sm\.alt\.fa\.gz',
+        soft_toplevel => '\.dna_sm\.toplevel\.fa\.gz',
+        soft_primary => '\.dna_sm\.primary\.fa\.gz',
+    );
+    my $dna_root = qq"https://ftp.ensembl.org/pub/release-$options->{release}/fasta/$options->{species}/dna";
+    my $dna_index = $mech->get($dna_root);
+    print "Checking for a directory of genome fasta files.\n";
+    $got = $mech->success();
+    if ($got) {
+        my @dna_index = $mech->links();
+      TYPES: for my $type (keys %dna_files) {
+          DNA_LINKS: for my $i (@dna_index) {
+                my $link_url = $i->url();
+                if ($link_url =~ /$dna_files{$type}$/) {
+                    sleep $sleeper;
+                    my $full_url = qq"${dna_root}/${link_url}";
+                    my $type_file = qq"$options->{species}_$options->{release}_${type}_ens.fasta.gz";
+                    my $type_out = FileHandle->new(">${type_file}");
+                    my $dl = $mech->get($full_url, ':content_file' => $type_out);
+                    $got = $mech->success();
+                    if ($got) {
+                        print "Downloaded ${type_file}.\n";
+                    } else {
+                        rm($type_out);
+                        print "Failed to download ${type_file}, deleting it.\n";
+                    }
+                    $type_out->close();
+                    last DNA_LINKS;
+                }
+            }
+        }
+    } else {
+        print "Unable to download the genome fasta files.\n";
+    }
+    ## Create a nice return here.
+}
+
 sub Download_NCBI_Assembly {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
@@ -136,9 +451,8 @@ sub Download_NCBI_Accession {
     my $options = $class->Get_Vars(
         args => \%args,
         required => ['input'],
-        library => 'nucleotide',
+        ## library => 'nucleotide',
         jprefix => '11',);
-
     my $job_name = $class->Get_Job_Name();
     ## Make an array of the accession(s)
     my @unique = ();
@@ -155,10 +469,41 @@ sub Download_NCBI_Accession {
     }
     @unique = uniq(@unique);
 
-    my $eutil = Bio::DB::EUtilities->new(-eutil => 'esummary',
-                                         -email => $options->{email},
-                                         -db => $options->{library},
-                                         -id => \@unique,);
+    ## Ordered list of databases I think might have my accession.
+    my @dbs = ('nuccore', 'genome', 'bioproject', 'biosample', 'gene',
+               'books', 'protein', 'snp', 'structure',
+               'cdd', 'gap', 'dbvar', 'gds', 'geoprofiles',
+               'homologene', 'mesh', 'toolkit', 'nlmcatalog', 'popset',
+               'probe', 'proteinclusters', 'pcassay', 'pccompound',
+               'pcsubstance', 'pmc', 'taxonomy',);
+    my $found = 0;
+    my $eutil;
+  DBLOOP: for my $db (@dbs) {
+        print "Submitting search for @unique to $db.\n";
+        $eutil = Bio::DB::EUtilities->new(
+            -eutil => 'esearch', -email => $options->{email},
+            -retmax => 10000,
+            -db => $db, -term => $options->{input},);
+        my @found_ids = $eutil->get_ids;
+        use Data::Dumper;
+        if (scalar(@found_ids) >= 1) {
+            print "Found @unique in ${db} with @found_ids\n";
+            $found++;
+            $eutil = Bio::DB::EUtilities->new(-eutil => 'esummary',
+                                              -email => $options->{email},
+                                              -db => $db,
+                                              -id => \@found_ids,);
+            last DBLOOP;
+        } else {
+            print "Did not find @unique in ${db}.\n";
+        }
+        sleep(5);
+    }
+    if ($found == 0) {
+        print "Unable to find the accession: @unique in any database.\n";
+        return(undef);
+    }
+
     while (my $docsum = $eutil->next_DocSum) {
         my $acc_version = '';
         my $accession = '';
@@ -375,6 +720,58 @@ sub Download_SRA_PRJNA {
     }
     $csv_fh->close();
     $log->close();
+}
+
+sub Download_NCBIDatasets_Accession {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        delete => 0,
+        required => ['input'],
+        jprefix => '11',);
+    my $job_name = $class->Get_Job_Name();
+    ## Make an array of the accession(s)
+    my $mech = WWW::Mechanize->new(autocheck => 1);
+    my $url = qq"https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/$options->{input}/download?include_annotation_type=GENOME_FASTA&include_annotation_type=GENOME_GFF&include_annotation_type=RNA_FASTA&include_annotation_type=CDS_FASTA&include_annotation_type=PROT_FASTA&include_annotation_type=GENOME_GBFF&include_annotation_type=SEQUENCE_REPORT&hydrated=FULLY_HYDRATED";
+    print "Downloading data for $options->{input}.\n";
+    my $downloaded_file = qq"$options->{input}.zip";
+    if (-f $downloaded_file) {
+        print "Already downloaded ${downloaded_file}.\n";
+    } else {
+        $mech->get($url);
+        $mech->save_content($downloaded_file);
+    }
+    print "Extracting downloaded .zip file.\n";
+    ## I was going to use Archive::Zip for this, but it was being a PITA.
+    my $writer = FileHandle->new("unzip -o ${downloaded_file} |");
+  EXTRACT: while (my $line = <$writer>) {
+        chomp $line;
+        next EXTRACT unless ($line =~ /inflating/);
+        my $extracted = $line;
+        $extracted =~ s/^\s+inflating:\s*//g;
+        $extracted =~ s/\s+$//g;
+        my $base = basename($extracted);
+        if ($base eq 'protein.faa') {
+            $base = qq"$options->{input}.faa";
+        } elsif ($base eq 'genomic.gff') {
+            $base = qq"$options->{input}.gff";
+        } elsif ($base eq 'genomic.gbff') {
+            $base = qq"$options->{input}.gbff";
+        } elsif ($base eq 'cds_from_genomic.fna') {
+            $base = qq"$options->{input}.ffn";
+        } elsif ($base =~ /_genomic\.fna/) {
+            $base = qq"$options->{input}.fsa";
+        }
+        my $moved = move($extracted, $base);
+    }
+    $writer->close();
+    print "Deleting downloaded file: ${downloaded_file}.\n";
+    my $gzipped = qx"gzip -9 $options->{input}.gbff";
+    if ($options->{delete}) {
+        unlink $downloaded_file;
+    }
+    print "Deleting ncbi_dataset directory.\n";
+    my $removed = rmtree("ncbi_dataset");
 }
 
 =head2 C<Fastq_Dump>

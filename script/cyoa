@@ -35,7 +35,7 @@ relevant parameters.
 =cut
 
 ## Going to pull an initial instance of cyoa in order to handle command line arguments
-our $cyoa = new Bio::Adventure;
+our $cyoa = Bio::Adventure->new();
 ## The general idea is to have a toplevel 'task' to perform
 ## Something like TNSeq, RNASeq, etc
 ## Then a second-level method to perform therein,

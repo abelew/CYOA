@@ -80,22 +80,11 @@ sub Feature_Counts {
     my $output_dir = dirname($options->{input});
     my $output = qq"${output_dir}/${output_name}";
     my $sort = $options->{sort};
-    my $fc_invocation = qq"counted=0
-{
-  /usr/bin/time -v -o ${output}.time -a featureCounts \\
-    -T 1 ";
-    if ($options->{introns}) {
-        $fc_invocation .= qq" -J -G $paths->{fasta}";
-    }
-    if ($options->{fractional}) {
-        $fc_invocation .= ' -M --fraction';
-    }
     my $qual = $options->{qual};
     if (!defined($qual)) {
         print "Setting minimum quality to 0.\n";
         $qual = '0';
     }
-    $fc_invocation .= qq" -Q ${qual}";
     my $stranded = $options->{stranded};
     if (defined($stranded)) {
         if ($stranded eq 'forward') {
@@ -109,14 +98,39 @@ sub Feature_Counts {
     } else {
         $stranded = 0;
     }
+
+    my $fc_invocation = qq"counted=0
+gff_type=$options->{gff_type}
+gff_tag=$options->{gff_tag}
+max_length=$options->{max_length}
+max_reads=$options->{max_reads}
+min_length=$options->{min_length}
+min_quality=${qual}
+mode=$options->{mode}
+secondary=$options->{secondary}
+supplementary=${supplementary}
+sort=${sort}
+stranded=${stranded}
+
+{
+  /usr/bin/time -v -o ${output}.time -a featureCounts \\
+    -T 1 ";
+    if ($options->{introns}) {
+        $fc_invocation .= qq" -J -G $paths->{fasta}";
+    }
+    if ($options->{fractional}) {
+        $fc_invocation .= ' -M --fraction';
+    }
+
+    $fc_invocation .= qq" -Q \${min_quality}";
     if ($options->{paired}) {
-        $fc_invocation .= qq" -p --countReadPairs -B -P -d $options->{minlength} -D $options->{maxlength}";
+        $fc_invocation .= qq" -p --countReadPairs -B -P -d \${minlength} -D \${maxlength}";
     }
     $fc_invocation .= qq" \\
-    -R CORE -t $options->{gff_type} -g $options->{gff_tag} \\
+    -R CORE -t \${gff_type} -g \${gff_tag} \\
     -a $paths->{gff} \\
 ";
-    $output .= qq"_s${stranded}_$options->{gff_type}_$options->{gff_tag}_fcounts.csv";
+    $output .= qq"_s\${stranded}_\${gff_type}_\${gff_tag}_fcounts.csv";
     my $error = basename($output, ('.csv'));
     my $stderr = qq"${output_dir}/${error}.stderr";
     my $stdout = qq"${output_dir}/${error}.stdout";

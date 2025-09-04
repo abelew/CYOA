@@ -303,7 +303,7 @@ sub Check_Job {
                        'AvePages', 'AveRSS', 'AveVMSize', 'Elapsed',
                        'ExitCode', 'MaxDiskRead', 'MaxDiskWrite',
                        'MaxPages', 'MaxRSS', 'MaxVMSize', 'Partition',
-                       'ReqMem', 'State');
+                       'ReqMem', 'State',);
         my @data;
         ## If the csv already exists, append a new record to it by creating a new array
         ## from the existing data and adding the new stuff.

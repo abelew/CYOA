@@ -4,6 +4,7 @@ use autodie qw":all";
 use diagnostics;
 use warnings qw"all";
 use Exporter;
+use Cwd qw"abs_path getcwd cwd";
 use File::Basename qw"basename dirname";
 use File::Path qw"make_path";
 use Getopt::Long qw"GetOptionsFromArray";
@@ -611,6 +612,7 @@ sub Get_Modules {
             modules => ['cyoa', 'hisat2', 'samtools', 'bbmap',], },
         'Bacphlip' => { modules => 'bacphlip', exe => 'bacphlip' },
         'Bam2Coverage' => { modules => ['samtools', 'bbmap',] },
+        'Bam2Bigwig' => {modules => ['deeptools',] },
         'Bedtools_Coverage' =>  { modules => 'bedtools', exe => 'bedtools' },
         'Biopieces_Graph' => { modules => ['biopieces'] },
         'Bowtie' => { modules => 'bowtie1', },
@@ -807,11 +809,22 @@ sub Get_Paths {
     my $subroutine = $args{subroutine};
     $subroutine = Bio::Adventure::Config::Get_Caller() unless($subroutine);
     $subroutine = 'undef' if (!defined($subroutine));
+    my %modules = Get_Modules();
+    my $loaded = $class->Module_Loader(%modules);
     my $libpath_prefix = qq"$options->{libpath}/$options->{libtype}";
     my $libdir_prefix = qq"$options->{libdir}/$options->{libtype}";
     my $output_prefix = qq"$options->{output_base}/$options->{jprefix}";
     my $paths = {};
-    $paths->{output_base} = basename($options->{input}, ('.gz', '.xz', '.bam')) if (defined($options->{input}));
+    if (defined($options->{input})) {
+        $paths->{output_base} = basename($options->{input}, $class->{suffixes});
+        $paths->{input_dirname} = dirname($options->{input});
+        if ($paths->{input_dirname} eq '.' || $paths->{input_dirname} eq '') {
+            $paths->{input_dirname} = getcwd();
+        }
+    } else {
+        $paths->{input_dirname} = getcwd();
+        $paths->{output_base} = basename($paths->{input_dirname});
+    }
     $paths->{blast_dir} = qq"${libpath_prefix}/blast";
     $paths->{codon_dir} = qq"${libpath_prefix}/codon_tables";
     $paths->{fasta_dir} = qq"${libpath_prefix}/fasta";
@@ -822,6 +835,13 @@ sub Get_Paths {
     $paths->{index_prefix} = qq"${libpath_prefix}/indexes";
     $paths->{index_prefix_shell} = qq"${libdir_prefix}/indexes";
     $paths->{output_prefix} = $output_prefix;
+    $paths->{jname} = $paths->{output_base};
+    if ($options->{jprefix}) {
+        $paths->{jname} = qq"$options->{jprefix}$options->{jname}";
+    }
+    if ($options->{libtype}) {
+        $paths->{jname} .= "_$options->{libtype}";
+    }
     make_path($paths->{blast_dir}) unless (-d $paths->{blast_dir});
     make_path($paths->{codon_dir}) unless (-d $paths->{codon_dir});
     make_path($paths->{fasta_dir}) unless (-d $paths->{fasta_dir});
@@ -870,6 +890,9 @@ sub Get_Paths {
     if ($subroutine eq 'aaa') {
         my $output_suffix = basename($options->{input}, ('.fsa', '.faa', '.fasta', '.fa', '.ffn'));
         $paths->{output_dir} = qq"${output_prefix}alphafold_${output_suffix}";
+    }
+    elsif ($subroutine eq 'Bam2Bigwig') {
+        $paths->{output_dir} = $paths->{input_dirname};
     }
     elsif ($subroutine eq 'Bowtie') {
         $paths->{index} = qq"$paths->{index_prefix}/bt1/$options->{species}";
@@ -1051,7 +1074,10 @@ sub Get_Paths {
         $paths->{index} = qq"$paths->{index_prefix}/salmon/$options->{species}";
         $paths->{index_dir} = qq"$paths->{index_prefix}/salmon";
         $paths->{index_shell} = qq"$paths->{index_prefix_shell}/salmon/$options->{species}";
-        $paths->{output_dir} = qq"${output_prefix}salmon_$options->{species}";
+        $paths->{output_dir} = qq"${output_prefix}salmon_$options->{species}_$options->{libtype}";
+        $paths->{output} = qq"$paths->{output_dir}/quant.sf";
+        $paths->{stdout} = qq"$paths->{output_dir}/salmon_$options->{species}.stdout";
+        $paths->{stderr} = qq"$paths->{output_dir}/salmon_$options->{species}.stderr";
     }
     elsif ($subroutine eq 'SLSearch') {
         $paths->{output_dir} = qq"${output_prefix}slsearch_$options->{species}";
@@ -1179,6 +1205,7 @@ sub Get_TODOs {
         ## Remap reads to a new assembly to estimate coverage on a per-baseis.
         "assemblycoverage+" => \$todo_list->{todo}{'Bio::Adventure::Assembly::Assembly_Coverage'},
         ## Use the logic from Assembly_Coverage to calculate coverage vs. an existing genome.
+        "bam2bigwig+" => \$todo_list->{todo}{'Bio::Adventure::Convert::Bam2Bigwig'},
         "bam2cov+" => \$todo_list->{todo}{'Bio::Adventure::Convert::Bam2Coverage'},
         ## Use bedtools to calculate coverage, partially redundant with bam2cov
         "bedcov+" => \$todo_list->{todo}{'Bio::Adventure::Count::Bedtools_Coverage'},
@@ -1216,7 +1243,10 @@ sub Get_TODOs {
         "dantools_rnaseq+" => \$todo_list->{todo}{'Bio::Adventure::SNP::Dantools_RNASeq'},
         "dedupgatk+" => \$todo_list->{todo}{'Bio::Adventure::Convert::GATK_Dedup'},
         "ncbidownload+" => \$todo_list->{todo}{'Bio::Adventure::Prepare::Download_NCBI_Accession'},
-        "downloadassembly+" => \$todo_list->{todo}{'Bio::Adventure::Prepare::Download_NCBI_Assembly'},
+        "dlassembly+" => \$todo_list->{todo}{'Bio::Adventure::Prepare::Download_NCBI_Assembly'},
+        "dldataset+" => \$todo_list->{todo}{'Bio::Adventure::Prepare::Download_NCBIDatasets_Accession'},
+        "dlncbi+" => \$todo_list->{todo}{'Bio::Adventure::Prepare::Download_NCBI_Accession'},
+        "dlensembl+" => \$todo_list->{todo}{'Bio::Adventure::Prepare::Download_Ensembl_Files'},
         "downsampleguess+" => \$todo_list->{todo}{'Bio::Adventure::Map::Downsample_Guess_Strand'},
         "essentialitytas+" => \$todo_list->{todo}{'Bio::Adventure::TNSeq::Essentiality_TAs'},
         "extendkraken+" => \$todo_list->{todo}{'Bio::Adventure::Index::Extend_Kraken_DB'},

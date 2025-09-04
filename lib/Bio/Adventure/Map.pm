@@ -1919,8 +1919,10 @@ sub Salmon {
         libtype => 'CDS',
         jwalltime => '4:00:00',
         jmem => 24,
+        stranded => 'A',
         jprefix => '45',);
     my $depends = $options->{jdepends};
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     if ($options->{species} =~ /\:/) {
         my @species_lst = split(/:/, $options->{species});
         my @result_lst = ();
@@ -1941,36 +1943,67 @@ sub Salmon {
     $libtype = $options->{libtype} if ($options->{libtype});
     my $species = $options->{species};
 
-    my $jname = qq"sal_${species}";
+    my $jname = qq"sal_${species}_$options->{libtype}";
     ## $jname = $options->{jname} if ($options->{jname});
     my $sa_args = '';
     my $sa_input = $options->{input};
     my $input_name = $sa_input;
+    my $num_inputs = 1;
     if ($sa_input =~ /$options->{delimiter}/) {
         my @pair_listing = split(/$options->{delimiter}/, $sa_input);
         my $r1_fd = $class->Get_FD(input => $pair_listing[0]);
         my $r2_fd = $class->Get_FD(input => $pair_listing[1]);
         $sa_args .= qq" -1 ${r1_fd} -2 ${r2_fd} ";
         $input_name = $pair_listing[0];
+        $num_inputs = 2;
     } else {
         my $r1_fd = $class->Get_FD(input => $sa_input);
         $sa_args .= qq" -r ${r1_fd} ";
     }
 
+    ## A reminder from the salmon documentation regarding the various strand declarations:
+    ## 'A': autodetect
+    ##   Orientations:
+    ## I = inward
+    ## O = outward
+    ## M = matching
+    ##   Stranded vs. not: S/U
+    ##   read1 is on the forward/reverse strand: F/R
+    ## Thus, a paired end, stranded, away from each other library <-> with r1 on the reverse strand:
+    ## 'OSR'
+    my $strand_string = $options->{stranded};
+    if (!defined($strand_string)) {
+        $strand_string = 'A';
+    } elsif ($strand_string eq '0' || 'no') {
+        if ($num_inputs == 1) {
+            $strand_string = 'U';
+        } else {
+            $strand_string = 'IU';
+        }
+    } elsif ($strand_string eq '1' || 'forward') {
+        $strand_string = 'ISF';
+    } elsif ($strand_string eq '-1' || 'reverse') {
+        $strand_string = 'ISR';
+    } elsif ($strand_string =~ /S|U|F|R|I|O|M/) {
+        print "The strand string: ${strand_string} was provided to cyoa.\n";
+    } else {
+        $strand_string = 'A';
+    }
+
     ## Check that the indexes exist
-    my $sa_reflib = qq"$options->{libpath}/${libtype}/indexes/$options->{species}_salmon_index";
+    my $sa_reflib = $paths->{index_dir};
     my $index_job;
-    if (!-r $sa_reflib) {
-        my $transcript_file = qq"$options->{libpath}/${libtype}/$options->{species}_cds.fasta";
+    if (!-d $sa_reflib) {
+        my $transcript_file = qq"$options->{libpath}/${libtype}/$options->{species}.fasta";
         my $index_extras = { input => $transcript_file };
         my %index_args = $class->Extra_Options(options => $options, extras => $index_extras);
         $index_job = $class->Bio::Adventure::Index::Salmon_Index(%index_args);
         $options->{jdepends} = $index_job->{job_id};
     }
 
-    my $outdir = qq"outputs/$options->{jprefix}salmon_${species}";
-    my $stderr = qq"${outdir}/salmon_${species}.stderr";
-    my $stdout = qq"${outdir}/salmon_${species}.stdout";
+    my $outdir = $paths->{output_dir};
+    my $stderr = $paths->{stderr};
+    my $stdout = $paths->{stdout};
     my $comment = qq!## This is a salmon pseudoalignment of ${sa_input} against
 ## ${sa_reflib}.
 !;
@@ -1979,7 +2012,7 @@ mapped=1
 {
   /usr/bin/time -v -o ${stdout}.time -a \\
     salmon quant -i ${sa_reflib} \\
-      -l A --gcBias --validateMappings  \\
+      -l ${strand_string} --gcBias --validateMappings  \\
       ${sa_args} \\
       -o ${outdir} \\
       2>${stderr} \\
@@ -1993,7 +2026,7 @@ mapped=1
         input => $sa_input,
         jname => $jname,
         jstring => $jstring,
-        output => qq"${outdir}/quant.sf",
+        output => $paths->{output},
         stderr => $stderr,
         stdout => $stdout,
     );

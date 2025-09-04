@@ -988,7 +988,6 @@ sub Process_RNAseq {
         $map_prereq = $last_job;
     }
 
-    $prefix = sprintf("%02d", ($prefix + 1));
     my $do_fastp = 1;
     my $fastp;
     print "\nJust checking, what is fastp: $options->{fastp}\n";
@@ -1004,6 +1003,7 @@ sub Process_RNAseq {
     }
 
     if ($do_fastp) {
+        $prefix = sprintf("%02d", ($prefix + 1));
         print "${prefix}: Starting fastp.\n";
         $fastp = $class->Bio::Adventure::Trim::Fastp(
             input => $options->{input},
@@ -1016,7 +1016,6 @@ sub Process_RNAseq {
         sleep($options->{jsleep});
     }
 
-    $prefix = sprintf("%02d", ($prefix + 1));
     my $do_fastqc = 1;
     print "\nJust checking, what is fastqc: $options->{fastqc}\n";
     if ($options->{fastqc} eq 'check') {
@@ -1032,6 +1031,7 @@ sub Process_RNAseq {
 
     if ($do_fastqc) {
         print "${prefix}: Starting fastqc.\n";
+        $prefix = sprintf("%02d", ($prefix + 1));
         my $fastqc = $class->Bio::Adventure::QA::Fastqc(
             input => $options->{input},
             jdepends => $last_job,

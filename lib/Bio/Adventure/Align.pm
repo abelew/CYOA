@@ -546,8 +546,6 @@ sub Map_Accession {
 
 =back
 
-=back
-
 =cut
 sub ProgressiveMauve {
     my ($class, %args) = @_;
@@ -673,8 +671,6 @@ location=\$(dirname Mauve)
 =item input(required)
 
 Directory name containing input fasta files.
-
-=back
 
 =back
 
