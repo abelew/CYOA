@@ -1072,6 +1072,19 @@ sub Samtools {
     my $workdir = dirname($input);
     ## Add a samtools version check because *sigh*
     my $samtools_version = qx"samtools 2>&1 | grep 'Version'";
+    print "TESTME: SAMTOOLS VERSION: ${samtools_version}\n";
+    my $samtools_type = 'new';
+    ## If there is a 0.1 in the version string, then use the old syntax.
+#    if ($samtools_version =~ /0\.1/) {
+#        $samtools_first = qq"samtools view -u \\
+#  -t $options->{libdir}/genome/$options->{species}.fasta \\
+#  -S ${input} 1>${output}";
+#        $samtools_second = qq"samtools sort -l 9 ${output} \\
+#  ${sorted_name} \\
+#  2>>${stderr} \\
+#  1>>${stdout}";
+#    }
+
     ## Start out assuming we will use the new samtools syntax.
 
     my $stderr = qq"${output}_samtools.stderr";
@@ -1101,16 +1114,6 @@ echo 'Time for initial samtools conversion command.' >> ${output}.time
   -o ${sorted_name}.bam \\
   2>>${stderr} \\
   1>>${stdout}";
-    ## If there is a 0.1 in the version string, then use the old syntax.
-    if ($samtools_version =~ /0\.1/) {
-        $samtools_first = qq"samtools view -u \\
-  -t $options->{libdir}/genome/$options->{species}.fasta \\
-  -S ${input} 1>${output}";
-        $samtools_second = qq"samtools sort -l 9 ${output} \\
-  ${sorted_name} \\
-  2>>${stderr} \\
-  1>>${stdout}";
-    }
     my $paired_string = '';
     if ($options->{paired}) {
         $paired_string = qq!
