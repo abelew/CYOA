@@ -648,7 +648,7 @@ sub Trimomatic {
         length => 50,
         quality => '20',
         jcpu => 4,
-        jmem => 6,
+        jmem => 12,
         jprefix => '01',
         jwalltime => '36:00:00',);
     my $trim;
