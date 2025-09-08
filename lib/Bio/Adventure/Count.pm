@@ -1117,7 +1117,7 @@ sub Kraken {
         required => ['input'],
         library => 'viral',
         jcpu => 2,
-        jmem => 32,
+        jmem => 64,
         jprefix => '11',
         clean => 1,);
     ## kraken2 --db ${DBNAME} --paired --classified-out cseqs#.fq seqs_1.fq seqs_2.fq
