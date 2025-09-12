@@ -101,9 +101,9 @@ sub Feature_Counts {
     my $fc_invocation = qq"counted=0
 gff_type=$options->{gff_type}
 gff_tag=$options->{gff_tag}
-max_length=$options->{max_length}
+max_length=$options->{maxlength}
 max_reads=$options->{max_reads}
-min_length=$options->{min_length}
+min_length=$options->{minlength}
 min_quality=${qual}
 mode=$options->{mode}
 secondary=$options->{secondary}

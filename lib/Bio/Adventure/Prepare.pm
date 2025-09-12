@@ -129,7 +129,7 @@ sub Download_Ensembl_Files {
             my @gff_index = $mech->links();
           GFF_LINKS: for my $i (@gff_index) {
                 my $link_url = $i->url();
-                if ($link_url =~ /\.$options->{release}\.gff3\.gz$/) {
+                if ($link_url =~ /\.${release}\.gff3\.gz$/) {
                     sleep $sleeper;
                     my $gff_out = FileHandle->new(">${gff_file}");
                     my $full_url = qq"${gff3_root}${link_url}";
@@ -152,7 +152,7 @@ sub Download_Ensembl_Files {
 
     ## Download the cDNA fasta file
     my $cdna_root = qq"https://ftp.ensembl.org/pub/release-${release}/fasta/$options->{species}/cdna";
-    my $cdna_file = qq"$options->{species}_$options->{release}_ens_cdna.ffn.gz";
+    my $cdna_file = qq"$options->{species}_${release}_ens_cdna.ffn.gz";
     if (-f $cdna_file && !$overwrite) {
         print "The cdna file exists and overwrite is off, skipping.\n";
     } else {
@@ -185,8 +185,8 @@ sub Download_Ensembl_Files {
     }
 
     ## Download the cds fasta file
-    my $cds_root = qq"https://ftp.ensembl.org/pub/release-$options->{release}/fasta/$options->{species}/cds";
-    my $cds_file = qq"$options->{species}_$options->{release}_ens.ffn.gz";
+    my $cds_root = qq"https://ftp.ensembl.org/pub/release-${release}/fasta/$options->{species}/cds";
+    my $cds_file = qq"$options->{species}_${release}_ens.ffn.gz";
     if (-f $cds_file && !$overwrite) {
         print "The CDS file already exists and overwrite is off, skipping.\n";
     } else {
@@ -219,8 +219,8 @@ sub Download_Ensembl_Files {
     }
 
     ## Download the ncrna fasta file
-    my $ncrna_root = qq"https://ftp.ensembl.org/pub/release-$options->{release}/fasta/$options->{species}/ncrna";
-    my $ncrna_file = qq"$options->{species}_$options->{release}_ncrna_ens.fasta.gz";
+    my $ncrna_root = qq"https://ftp.ensembl.org/pub/release-${release}/fasta/$options->{species}/ncrna";
+    my $ncrna_file = qq"$options->{species}_${release}_ncrna_ens.fasta.gz";
     if (-f $ncrna_file && !$overwrite) {
         print "The ncRNA file exists and overwrite is off, skipping.\n";
     } else {
@@ -253,8 +253,8 @@ sub Download_Ensembl_Files {
     }
 
     ## Download the peptide fasta
-    my $pep_root = qq"https://ftp.ensembl.org/pub/release-$options->{release}/fasta/$options->{species}/pep";
-    my $pep_file = qq"$options->{species}_$options->{release}_ens.faa.gz";
+    my $pep_root = qq"https://ftp.ensembl.org/pub/release-${release}/fasta/$options->{species}/pep";
+    my $pep_file = qq"$options->{species}_${release}_ens.faa.gz";
     if (-f $pep_file && !$overwrite) {
         print "The peptide file exists and overwrite is off, skipping.\n";
     } else {
@@ -316,7 +316,7 @@ sub Download_Ensembl_Files {
         soft_toplevel => '\.dna_sm\.toplevel\.fa\.gz',
         soft_primary => '\.dna_sm\.primary\.fa\.gz',
     );
-    my $dna_root = qq"https://ftp.ensembl.org/pub/release-$options->{release}/fasta/$options->{species}/dna";
+    my $dna_root = qq"https://ftp.ensembl.org/pub/release-${release}/fasta/$options->{species}/dna";
     my $dna_index = $mech->get($dna_root);
     print "Checking for a directory of genome fasta files.\n";
     $got = $mech->success();
@@ -328,7 +328,7 @@ sub Download_Ensembl_Files {
                 if ($link_url =~ /$dna_files{$type}$/) {
                     sleep $sleeper;
                     my $full_url = qq"${dna_root}/${link_url}";
-                    my $type_file = qq"$options->{species}_$options->{release}_${type}_ens.fasta.gz";
+                    my $type_file = qq"$options->{species}_${release}_${type}_ens.fasta.gz";
                     my $type_out = FileHandle->new(">${type_file}");
                     my $dl = $mech->get($full_url, ':content_file' => $type_out);
                     $got = $mech->success();
