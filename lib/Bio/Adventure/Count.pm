@@ -29,8 +29,12 @@ my @ISA=qw"Tree::DAG_Node";
 
 =head1 METHODS
 
-=cut
+=head2 C<Bedtools_Coverage>
 
+  Use bedtools to calculate coverage of a dataset.
+  10.1093/bioinformatics/btq033
+
+=cut
 sub Bedtools_Coverage {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
@@ -62,12 +66,18 @@ bedtools genomecov -bga -ibam $options->{input} 1>${stdout} 2>${stderr}
     return($bedtools);
 }
 
+=head2 C<Feature_Counts>
+
+  Use featureCounts from subread to count abundance given a set of alignments.
+  10.1093/bioinformatics/btt656
+
+=cut
 sub Feature_Counts {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species',],
-        fractional => 1,
+        fractional => 0,
         minlength => 50,
         maxlength => 800,
         paired => 1,
@@ -116,13 +126,14 @@ stranded=${stranded}
         $fc_invocation .= qq" -J -G $paths->{fasta}";
     }
     if ($options->{fractional}) {
+        print "It is recommended that if one wants multimapped/fractional reads to use salmon/kallisto/etc.\n";
         $fc_invocation .= ' -M --fraction';
     }
     $fc_invocation .= qq" -s \${stranded}";
 
     $fc_invocation .= qq" -Q \${min_quality}";
     if ($options->{paired}) {
-        $fc_invocation .= qq" -p --countReadPairs -B -P -d \${minlength} -D \${maxlength}";
+        $fc_invocation .= qq" -p --countReadPairs -B -P -d \${min_length} -D \${max_length}";
     }
     $fc_invocation .= qq" \\
     -R CORE -t \${gff_type} -g \${gff_tag} \\
@@ -839,6 +850,13 @@ xz -f -9e ${output}
     return($htseq);
 }
 
+
+=head2 C<Insert_Size>
+
+  Use gatk to get the insert size distribution of a library.
+  gr.107524.110v220/9/1297
+
+=cut
 sub Insert_Size {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
@@ -1090,6 +1108,8 @@ sub Jellyfish_Matrix {
 =head2 C<Kraken>
 
  Use kraken2 to taxonomically classify reads.
+ 10.1186/s13059-019-1891-0  (I dunno why but my brain always seems to think that Torsten
+ Seeman helped write this -- no, it is Ben Langmead)
 
  Kraken2 is a kmer-based read classifier.  It is quite fast once its
  databases are built.
@@ -1280,7 +1300,8 @@ sub Kraken_to_Matrix_Worker {
 
 =head2 C<Mash>
 
- Calculate distances using mash
+ Calculate distances using mash.
+ 10.1186/s13059-016-0997-x
 
 =cut
 sub Mash {
