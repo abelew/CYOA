@@ -1072,7 +1072,6 @@ sub Samtools {
     my $workdir = dirname($input);
     ## Add a samtools version check because *sigh*
     my $samtools_version = qx"samtools 2>&1 | grep 'Version'";
-    print "TESTME: SAMTOOLS VERSION: ${samtools_version}\n";
     my $samtools_type = 'new';
     ## If there is a 0.1 in the version string, then use the old syntax.
 #    if ($samtools_version =~ /0\.1/) {

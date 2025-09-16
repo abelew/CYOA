@@ -1037,7 +1037,7 @@ sub Hisat2 {
         my $genome_fasta = $paths->{fasta};
         my $index_job = $class->Bio::Adventure::Index::Hisat2_Index(
             input => $genome_fasta,
-            jprefix => $options->{jprefix} - 1,
+            jprefix => qq"$options->{jprefix}_0",
             output_dir => $paths->{output_dir},
             jdepends => $options->{jdepends},
             libtype => $options->{libtype},);
@@ -1921,6 +1921,11 @@ sub Salmon {
         jmem => 24,
         stranded => 'A',
         jprefix => '45',);
+    if ($options->{libtype} ne 'CDS') {
+        print "The library type for salmon generally needs to be CDS unless this is something special.
+Waiting 10 seconds to see if you change your mind.\n";
+        sleep(10);
+    }
     my $depends = $options->{jdepends};
     my $paths = $class->Bio::Adventure::Config::Get_Paths();
     if ($options->{species} =~ /\:/) {
@@ -1994,11 +1999,13 @@ sub Salmon {
     my $sa_reflib = $paths->{index_dir};
     my $index_job;
     if (!-d $sa_reflib) {
-        my $transcript_file = qq"$options->{libpath}/${libtype}/$options->{species}.fasta";
-        my $index_extras = { input => $transcript_file };
+        my $transcript_file = qq"$options->{libpath}/${libtype}/fasta/$options->{species}.fasta";
+        my $index_extras = {
+            input => $transcript_file,
+            cluster => 0,
+        };
         my %index_args = $class->Extra_Options(options => $options, extras => $index_extras);
         $index_job = $class->Bio::Adventure::Index::Salmon_Index(%index_args);
-        $options->{jdepends} = $index_job->{job_id};
     }
 
     my $outdir = $paths->{output_dir};
@@ -2024,6 +2031,7 @@ mapped=1
     my $salmon = $class->Submit(
         comment => $comment,
         input => $sa_input,
+        jdepends => $options->{jdepends},
         jname => $jname,
         jstring => $jstring,
         output => $paths->{output},
@@ -2034,7 +2042,7 @@ mapped=1
     my $stats = $class->Bio::Adventure::Metadata::Salmon_Stats(
         input => qq"${outdir}/lib_format_counts.json",
         jdepends => $salmon->{job_id},
-        jprefix => $options->{jprefix} + 1,
+        jprefix => qq"$options->{jprefix}_1",
         jname => qq"sastats_$options->{species}",
     );
     $salmon->{stats} = $stats;

@@ -628,6 +628,7 @@ sub Salmon_Index {
     my $cds = basename($options->{input}, ('.fasta', '.fa'));
     my $cds_dir = dirname($options->{input});
     my $species = $cds;
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     ## Drop the suffixes which might be annoying.
     $species =~ s/_cds//g;
     $species =~ s/_nt//g;
@@ -653,21 +654,49 @@ sub Salmon_Index {
     my $index_input = $options->{input};
     my $index_string = qq!
 salmon index -t ${index_input} \\
-  -i $options->{libdir}/${libtype}/indexes/${species}_salmon_index!;
+  -i $paths->{index_dir} !;
     if ($options->{decoy}) {
         if (!-f $species_location) {
             cp($species_file, $species_location);
         }
-        my $decoy_location = qq"$options->{libdir}/${libtype}/${species}_decoys.fasta";
-        $decoy_copy_string = qq!less $options->{input} > ${decoy_location}
-less ${species_file} >> ${decoy_location}
-less ${species_file} | { grep '^>' || test \$? = 1; } | sed 's/^>//g' >> ${decoy_location}.txt
-!;
-        $index_input = $decoy_location;
-        $jstring = qq!${decoy_copy_string}
-mkdir -p ${output_dir}
-${index_string} \\
-  --decoys ${decoy_location}.txt \\
+        my $decoy_location = qq"$options->{libpath}/${libtype}/fasta/${species}_decoys.fasta";
+        my $decoy_txt_name = basename($decoy_location, ('.fasta'));
+        my $decoy_txt_dir = dirname($decoy_location);
+        my $decoy_text_file = qq"${decoy_txt_dir}/${decoy_txt_name}.txt";
+        my $genome_location = qq"$options->{libpath}/genome/fasta/${species}.fasta";
+        ## Write out the required concatenation of the transcripts+genome.
+        print "TESTME: Opening $decoy_location to write transcripts and decoys.\n";
+        my $decoys = FileHandle->new(">${decoy_location}");
+        print "TESTME: Opening $options->{input} to read the transcripts\n";
+        my $tx = FileHandle->new("<$options->{input}");
+        print "Writing transcripts to the transcript+decoy file.\n";
+        while (my $line = <$tx>) {
+            print $decoys $line;
+        }
+        $tx->close();
+        print "TESTME: Opening ${genome_location} to read the genome.\n";
+        my $genome = FileHandle->new("<${genome_location}");
+        print "TESTME: Opening the decoys.txt file to write the modified headers.\n";
+        my $decoy_txt = FileHandle->new(">${decoy_text_file}");
+        print "Writing genome to transcript+decoy file with modified fasta headers.\n";
+        while (my $line = <$genome>) {
+            chomp $line;
+            if ($line =~ /^>/) {
+                $line =~ s/\s+|:|\|//g;
+                print "TESTME: $line\n";
+                my $decoy_line = $line;
+                $decoy_line =~ s/\^>//g;
+                print $decoy_txt "$decoy_line\n";
+            }
+            print $decoys "$line\n";
+        }
+        $genome->close();
+        $decoy_txt->close();
+        print "Writing indexes to: $paths->{index_dir}\n";
+        $jstring = qq!mkdir -p ${output_dir}
+salmon index -t ${decoy_location} \\
+  -i $paths->{index_dir} \\
+  --decoys ${decoy_text_file} \\
   2>${stderr} \\
   1>${stdout}
 !;
@@ -691,7 +720,7 @@ otherwise a decoy-less index will be generated.");
         jstring => $jstring,
         jname => qq"salidx_${species}",
         jmem => 24,
-        jprefix => '15',
+        jprefix => $options->{jprefix},
         output => $output_dir,
         stderr => $stderr,
         stdout => $stdout,

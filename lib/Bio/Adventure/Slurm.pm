@@ -1671,9 +1671,7 @@ fi
     }
     my $job_id = undef;
     my $handle = IO::Handle->new;
-    print "TESTME Checking for inappropriate ioctl before slurm submission.\n";
     my $sbatch_pid = open($handle, qq"${sbatch_cmd_line} |");
-    print "TESTME Checking for inappropriate ioctl after slurm submission.\n";
     while (my $line = <$handle>) {
         chomp($line);
         next unless($line =~ /Submitted/);

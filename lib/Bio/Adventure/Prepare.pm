@@ -322,6 +322,7 @@ sub Download_Ensembl_Files {
     $got = $mech->success();
     if ($got) {
         my @dna_index = $mech->links();
+        my $primary_downloaded = 0;
       TYPES: for my $type (keys %dna_files) {
           DNA_LINKS: for my $i (@dna_index) {
                 my $link_url = $i->url();
@@ -334,14 +335,21 @@ sub Download_Ensembl_Files {
                     $got = $mech->success();
                     if ($got) {
                         print "Downloaded ${type_file}.\n";
+                        if ($type eq 'primary') {
+                            print "The primary assembly was downloaded, likely use this for indexing: ${type_file}.\n";
+                            $primary_downloaded++;
+                        }
                     } else {
                         rm($type_out);
                         print "Failed to download ${type_file}, deleting it.\n";
                     }
                     $type_out->close();
                     last DNA_LINKS;
-                }
-            }
+                }  ## Each link
+            } ## Each file in the index
+        } ## Each type
+        if ($primary_downloaded == 0) {
+            print "The most likely file to index is the toplevel, there is no primary assembly.\n";
         }
     } else {
         print "Unable to download the genome fasta files.\n";

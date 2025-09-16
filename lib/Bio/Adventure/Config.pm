@@ -836,6 +836,12 @@ sub Get_Paths {
     $paths->{index_prefix_shell} = qq"${libdir_prefix}/indexes";
     $paths->{output_prefix} = $output_prefix;
     $paths->{jname} = $paths->{output_base};
+    if (!defined($options->{jprefix})) {
+        $options->{jprefix} = '01';
+    }
+    if (!defined($options->{jname})) {
+        $options->{jname} = $paths->{jname};
+    }
     if ($options->{jprefix}) {
         $paths->{jname} = qq"$options->{jprefix}$options->{jname}";
     }
@@ -1070,9 +1076,9 @@ sub Get_Paths {
         my $libname = basename($options->{library}, $class->{suffixes});
         $paths->{output_dir} = qq"${output_prefix}blast_$options->{input}_vs_${libname}";
     }
-    elsif ($subroutine eq 'Salmon') {
+    elsif ($subroutine eq 'Salmon' || $subroutine eq 'Salmon_Index') {
         $paths->{index} = qq"$paths->{index_prefix}/salmon/$options->{species}";
-        $paths->{index_dir} = qq"$paths->{index_prefix}/salmon";
+        $paths->{index_dir} = qq"$paths->{index_prefix}/salmon/$options->{species}";
         $paths->{index_shell} = qq"$paths->{index_prefix_shell}/salmon/$options->{species}";
         $paths->{output_dir} = qq"${output_prefix}salmon_$options->{species}_$options->{libtype}";
         $paths->{output} = qq"$paths->{output_dir}/quant.sf";

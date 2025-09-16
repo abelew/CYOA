@@ -631,7 +631,6 @@ sub Process_DNASeq {
         freebayes => 1,
         input_paired => undef,
         library => 'bacteria',
-        mapper => 'hisat2',
         sra => 0,
         stranded => 'reverse',);
     my $prefix = sprintf("%02d", 0);
@@ -756,7 +755,7 @@ sub Process_DNASeq {
     my $nth_species;
     my $hisat_compress_input = '';
     $prefix = sprintf("%02d", ($prefix + 1));
-    if ($options->{mapper} eq 'hisat2') {
+    if ($options->{mapper} =~ /hisat/) {
         print "\n${prefix}: Starting hisat2 with $map_input.\n";
         $first_map = $class->Bio::Adventure::Map::Hisat2(
             compress => $options->{compress},
@@ -806,8 +805,6 @@ sub Process_DNASeq {
             $ret->{$jobid} = $first_snp;
             sleep($options->{jsleep});
         }
-    } else {
-        die("I do not know this mapper yet.");
     }
 
     unless ($ran_kraken) {
@@ -852,7 +849,7 @@ sub Process_DNASeq {
                 $last_sam_job = $nth_map->{samtools}->{job_id};
             } else {
                 print "\n${prefix}: Performing additional mapping against ${nth_species} without filtering.\n";
-                if ($options->{mapper} eq 'hisat2') {
+                if ($options->{mapper} =~ /hisat/) {
                     $nth_map = $class->Bio::Adventure::Map::Hisat2(
                         compress => 0,
                         jdepends => $last_sam_job,
@@ -885,8 +882,6 @@ sub Process_DNASeq {
                         sleep($options->{jsleep});
                     }
                     sleep($options->{jsleep});
-                } else {
-                    die("I do not know this mapper yet.");
                 }
             }
             $c++;
@@ -916,7 +911,7 @@ sub Process_DNASeq {
         $jobid = qq"${prefix}comptrim";
         $ret->{$jobid} = $compress_input;
         sleep($options->{jsleep});
-        if ($options->{mapper} eq 'hisat2') {
+        if ($options->{mapper} =~ /hisat/) {
             my $compress_first_map = $class->Bio::Adventure::Compress::Compress(
                 input => qq"$first_map->{unaligned}:$first_map->{aligned}",
                 jdepends => $last_job,
@@ -944,7 +939,6 @@ sub Process_RNAseq {
         freebayes => 0,
         input_paired => undef,
         library => 'bacteria',
-        mapper => 'hisat2',
         sra => 0,
         stranded => 'reverse',);
     my $prefix = sprintf("%02d", 0);
@@ -973,19 +967,30 @@ sub Process_RNAseq {
     my $trim;
     $prefix = sprintf("%02d", ($prefix + 1));
     if ($options->{trim}) {
-        print "\n${prefix}: Starting trimmer.\n";
-        $trim = $class->Bio::Adventure::Trim::Trimomatic(
-            compress => $options->{compress},
-            input => $options->{input},
-            input_paired => $options->{input_paired},
-            jprefix => $prefix,
-            jname => 'trimomatic',);
-        $jobid = qq"${prefix}trim";
-        $ret->{$jobid} = $trim;
-        $map_input = $trim->{output};
-        sleep($options->{jsleep});
-        $last_job = $trim->{job_id};
-        $map_prereq = $last_job;
+        if (-f "outputs/01trimomatic/r1-trimmed.fastq.xz") {
+            print "It appears the trimmer was already run.\n";
+            $map_input = qq"outputs/01trimomatic/r1-trimmed.fastq.xz";
+            if (-f "outputs/01trimomatic/r2-trimmed.fastq.xz") {
+                $map_input .= qq":outputs/01trimomatic/r2-trimmed.fastq.xz";
+            } else {
+                $trim->{output_unpaired} = $map_input;
+            }
+            $trim->{output} = $map_input;
+        } else {
+            print "\n${prefix}: Starting trimmer.\n";
+            $trim = $class->Bio::Adventure::Trim::Trimomatic(
+                compress => $options->{compress},
+                input => $options->{input},
+                input_paired => $options->{input_paired},
+                jprefix => $prefix,
+                jname => 'trimomatic',);
+            $jobid = qq"${prefix}trim";
+            $ret->{$jobid} = $trim;
+            $map_input = $trim->{output};
+            sleep($options->{jsleep});
+            $last_job = $trim->{job_id};
+            $map_prereq = $last_job;
+        }
     }
 
     my $do_fastp = 1;
@@ -1063,13 +1068,15 @@ sub Process_RNAseq {
     my $first_intron = shift @intron_list;
     my $species_length = scalar(@species_list);
     my $first_map;
+    my $first_salmon;
     my $last_sam_job;
     my $nth_map;
+    my $nth_salmon;
     my $nth_species;
     my $hisat_compress_input = '';
     $prefix = sprintf("%02d", ($prefix + 1));
-    if ($options->{mapper} eq 'hisat2') {
-        print "\n${prefix}: Starting hisat2 with $map_input.\n";
+    if ($options->{mapper} =~ /hisat/) {
+        print "\n${prefix}: Starting hisat with $map_input.\n";
         $first_map = $class->Bio::Adventure::Map::Hisat2(
             compress => $options->{compress},
             gff_type => $first_type,
@@ -1115,19 +1122,19 @@ sub Process_RNAseq {
             $ret->{$jobid} = $first_snp;
             sleep($options->{jsleep});
         }
-    } elsif ($options->{mapper} eq 'salmon') {
+    }
+    if ($options->{mapper} =~ /salmon/) {
         print "\n${prefix}: Starting salmon.\n";
-        $first_map = $class->Bio::Adventure::Map::Salmon(
+        $first_salmon = $class->Bio::Adventure::Map::Salmon(
             input => $map_input,
             species => $first_species,
             jprefix => $prefix,
+            libtype => 'CDS',
             jdepends => $trim->{job_id},);
         $last_job = $first_map->{job_id};
         $jobid = qq"${prefix}salmon";
         $ret->{$jobid} = $first_map;
         sleep($options->{jsleep});
-    } else {
-        die("I do not know this mapper yet.");
     }
 
     $prefix = sprintf("%02d", ($prefix + 1));
@@ -1172,7 +1179,7 @@ sub Process_RNAseq {
                 $last_sam_job = $nth_map->{samtools}->{job_id};
             } else {
                 print "\n${prefix}: Performing additional mapping against ${nth_species} without filtering.\n";
-                if ($options->{mapper} eq 'hisat2') {
+                if ($options->{mapper} =~ /hisat/) {
                     $nth_map = $class->Bio::Adventure::Map::Hisat2(
                         compress => 0,
                         jdepends => $last_sam_job,
@@ -1205,9 +1212,10 @@ sub Process_RNAseq {
                         sleep($options->{jsleep});
                     }
                     sleep($options->{jsleep});
-                } elsif ($options->{mapper} eq 'salmon') {
+                }
+                if ($options->{mapper} =~ /salmon/) {
                     print "\n${prefix}: Starting salmon in for loop.\n";
-                    $nth_map = $class->Bio::Adventure::Map::Salmon(
+                    $nth_salmon = $class->Bio::Adventure::Map::Salmon(
                         jdepends => $trim->{job_id},
                         input => $map_input,
                         species => $nth_species,
@@ -1215,8 +1223,6 @@ sub Process_RNAseq {
                     sleep($options->{jsleep});
                     $jobid = qq"${prefix}salmon";
                     $ret->{$jobid} = $nth_map;
-                } else {
-                    die("I do not know this mapper yet.");
                 }
             }
             $c++;
@@ -1246,7 +1252,7 @@ sub Process_RNAseq {
         $jobid = qq"${prefix}comptrim";
         $ret->{$jobid} = $compress_input;
         sleep($options->{jsleep});
-        if ($options->{mapper} eq 'hisat2') {
+        if ($options->{mapper} =~ /hisat/) {
             my $compress_first_map = $class->Bio::Adventure::Compress::Compress(
                 input => $hisat_compress_input,
                 jdepends => $last_job,
@@ -1310,8 +1316,7 @@ sub RNAseq {
         args => \%args,
         required => ['input', 'species'],
         gff_type => 'gene',
-        gff_tag => 'ID',
-        mapper => 'hisat2',);
+        gff_tag => 'ID',);
     my $prefix = sprintf("%02d", 1);
     my $final_locustag = basename(cwd());
 

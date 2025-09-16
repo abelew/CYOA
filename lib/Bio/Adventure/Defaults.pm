@@ -135,7 +135,7 @@ has libtype => (is => 'rw', default => 'genome'); ## Type of sequence to map aga
 has locus_tag => (is => 'rw', default => undef); ## Used by prokka to define gene prefixes
 has logdir => (is => 'rw', default => 'outputs/logs'); ## place to dump logs
 has loghost => (is => 'rw', default => 'localhost'); ## Host to which to send logs
-has mapper => (is => 'rw', default => 'hisat'); ## Use this aligner if none was chosen.
+has mapper => (is => 'rw', default => 'hisat:salmon'); ## Use this aligner if none was chosen.
 has mature_fasta => (is => 'rw', default => undef); ## Database of mature miRNA sequences to search
 has maximum => (is => 'rw', default => undef); ## catchall maximum threshold
 has maxlength => (is => 'rw', default => 42); ## Maximum sequence length when trimming
