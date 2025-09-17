@@ -217,7 +217,7 @@ has stranded => (is => 'rw', default => 'reverse'); ## Did this data come from a
 has suffixes => (is => 'rw', default => '.bam,.bigwig,.bw,.count,.csfasta,.csv,.fa,.faa,.fasta,.fastq,.ffn,.fna,.fsa,.gb,.gba,.gbf,.gbk,.genbank,.gff,.gz,.qual,.sam,.sf,.tbl,.tsv,.xz'); ## Suffixes to remove when invoking basename
 has supplementary => (is => 'rw', default => 'ignore'); ## or ignore, used by htseq-count.
 has ta_offset => (is => 'rw', default => 0); ## When counting TAs, this is either 0 or 2 depending on if the TA was removed.
-has task => (is => 'rw', default => 'tnseq');
+has task => (is => 'rw', default => 'unknown');
 has taxid => (is => 'rw', default => '353153'); ## Default taxonomy ID, unknown for now.
 has test_file => (is => 'rw', default => 'direct-term-repeasts.fasta'); ## There are a few places where testing for the existence of a test file is useful.
 has threshold => (is => 'rw', default => 0.05); ## A second cutoff value (looking at you, glimmer.)

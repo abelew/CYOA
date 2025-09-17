@@ -900,16 +900,16 @@ sub Get_Paths {
     elsif ($subroutine eq 'Bam2Bigwig') {
         $paths->{output_dir} = $paths->{input_dirname};
     }
-    elsif ($subroutine eq 'Bowtie') {
-        $paths->{index} = qq"$paths->{index_prefix}/bt1/$options->{species}";
-        $paths->{index_shell} = qq"$paths->{index_prefix_shell}/bt1/$options->{species}";
+    elsif ($subroutine eq 'Bowtie' || $subroutine eq 'BT1_Index') {
+        $paths->{index} = qq"$paths->{index_prefix}/bowtie/$options->{species}";
+        $paths->{index_shell} = qq"$paths->{index_prefix_shell}/bowtie/$options->{species}";
         $paths->{index_file} = qq"$paths->{index}.1.ebwt";
         $paths->{index_file_shell} = qq"$paths->{index_shell}.1.ebwt";
         $paths->{output_dir} = qq"${output_prefix}bowtie_$options->{species}";
     }
     elsif ($subroutine eq 'Bowtie2' || $subroutine eq 'BT2_Index') {
-        $paths->{index} = qq"$paths->{index_prefix}/bt2/$options->{species}";
-        $paths->{index_dir} = qq"$paths->{index_prefix}/bt2";
+        $paths->{index} = qq"$paths->{index_prefix}/bowtie2/$options->{species}";
+        $paths->{index_dir} = qq"$paths->{index_prefix}/bowtie2";
         $paths->{index_file} = qq"$paths->{index}.1.bt2";
         $paths->{index_file2} = qq"$paths->{index}.1.bt2l";
         $paths->{index_shell} = qq"$paths->{index_prefix_shell}/bt2/$options->{species}";
@@ -917,7 +917,7 @@ sub Get_Paths {
         $paths->{index_file2_shell} = qq"$paths->{index_shell}.1.bt2l";
         $paths->{output_dir} = qq"${output_prefix}bowtie2_$options->{species}";
     }
-    elsif ($subroutine eq 'BWA') {
+    elsif ($subroutine eq 'BWA' || $subroutine eq 'BWA_Index') {
         $paths->{index} = qq"$paths->{index_prefix}/bwa/$options->{species}";
         $paths->{index_dir} = qq"$paths->{index_prefix}/bwa";
         $paths->{index_shell} = qq"$paths->{index_prefix_shell}/bwa/$options->{species}";
@@ -977,7 +977,7 @@ sub Get_Paths {
         $paths->{stdout} = qq"$paths->{output_dir}/gb2gff.stdout";
         $paths->{stderr} = qq"$paths->{output_dir}/gb2gff.stderr";
     }
-    elsif ($subroutine eq 'Hisat2') {
+    elsif ($subroutine eq 'Hisat2' || $subroutine eq 'Hisat2_Index') {
         $paths->{index_dir} = qq"$paths->{index_prefix}/hisat";
         $paths->{index} = qq"$paths->{index_dir}/$options->{species}";
         $paths->{index_shell} = qq"$paths->{index_prefix_shell}/hisat/$options->{species}";
@@ -1010,7 +1010,7 @@ sub Get_Paths {
         $paths->{stderr} = qq"$paths->{output_dir}/$paths->{output_base}_insert_size.stderr";
         $paths->{stdout} = qq"$paths->{output_dir}/$paths->{output_base}_insert_size.stdout";
     }
-    elsif ($subroutine eq 'Kallisto') {
+    elsif ($subroutine eq 'Kallisto' || $subroutine eq 'Kallisto_Index') {
         $paths->{index_dir} = qq"$paths->{index_prefix}/kallisto";
         $paths->{index_file} = qq"$paths->{index_prefix}/kallisto/$options->{species}.idx";
         $paths->{index_file_shell} = qq"$paths->{index_prefix_shell}/kallisto/$options->{species}.idx";
@@ -1064,7 +1064,7 @@ sub Get_Paths {
         $paths->{stdout} = qq"$paths->{output_dir}/$args{output_name}_rnafold.stdout";
         $paths->{stderr} = qq"$paths->{output_dir}/$args{output_name}_rnafold.stderr";
     }
-    elsif ($subroutine eq 'RSEM') {
+    elsif ($subroutine eq 'RSEM' || $subroutine eq 'RSEM_Index') {
         $paths->{index} = qq"$paths->{index_prefix}/rsem/$options->{species}";
         $paths->{index_dir} = qq"$paths->{index_prefix}/rsem";
         $paths->{index_shell} = qq"$paths->{index_prefix_shell}/rsem/$options->{species}";
@@ -1120,9 +1120,9 @@ sub Get_Paths {
         $paths->{stdout} = qq"$paths->{output_dir}/${input_name}_spring.stdout";
         $paths->{stderr} = qq"$paths->{output_dir}/${input_name}_spring.stderr";
     }
-    elsif ($subroutine eq 'STAR') {
+    elsif ($subroutine eq 'STAR' || $subroutine eq 'STAR_Index') {
         $paths->{index} = qq"$paths->{index_prefix}/star/$options->{species}";
-        $paths->{index_dir} = qq"$paths->{index_prefix}/star";
+        $paths->{index_dir} = qq"$paths->{index_prefix}";
         $paths->{index_file} = qq"$paths->{index}/SAindex";
         $paths->{index_file_shell} = qq"$paths->{index_shell}/SAindex";
         $paths->{index_shell} = qq"$paths->{index_prefix_shell}/star/$options->{species}";

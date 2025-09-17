@@ -1033,9 +1033,11 @@ sub Hisat2 {
         }
     }
     ## Check that the indexes exist
+    my $cluster = $options->{cluster};
     if (!-r $paths->{index_file} && !-r $paths->{index_file2}) {
         my $genome_fasta = $paths->{fasta};
         my $index_job = $class->Bio::Adventure::Index::Hisat2_Index(
+            cluster => 0,
             input => $genome_fasta,
             jprefix => qq"$options->{jprefix}_0",
             output_dir => $paths->{output_dir},
@@ -1043,7 +1045,6 @@ sub Hisat2 {
             libtype => $options->{libtype},);
         ## The following line inserts the indexer into the dependency chain
         ## Do not forget this, it is rather important.
-        $options->{jdepends} = $index_job->{job_id};
     }
 
     my $hisat_input_flag = '-q '; ## fastq by default
@@ -1120,7 +1121,11 @@ mapped=1
 ## read the sam/un(aligned) outputs.
 sync
 !;
+    ## Explicitly setting the cluster state to whatever it was before checking for indexes
+    ## Because I started setting the index creation in a bash job to avoid
+    ## accidental overwriting of indexes by multiple jobs.
     my $hisat_job = $class->Submit(
+        cluster => $cluster,
         comment => $comment,
         jdepends => $options->{jdepends},
         input => $hisat_input,
@@ -1998,16 +2003,15 @@ Waiting 10 seconds to see if you change your mind.\n";
     ## Check that the indexes exist
     my $sa_reflib = $paths->{index_dir};
     my $index_job;
+    my $cluster = $options->{cluster};
     if (!-d $sa_reflib) {
         my $transcript_file = qq"$options->{libpath}/${libtype}/fasta/$options->{species}.fasta";
         my $index_extras = {
             input => $transcript_file,
-            cluster => 0,
         };
         my %index_args = $class->Extra_Options(options => $options, extras => $index_extras);
-        $index_job = $class->Bio::Adventure::Index::Salmon_Index(%index_args);
+        $index_job = $class->Bio::Adventure::Index::Salmon_Index(%index_args, cluster => 0);
     }
-
     my $outdir = $paths->{output_dir};
     my $stderr = $paths->{stderr};
     my $stdout = $paths->{stdout};
@@ -2028,7 +2032,11 @@ mapped=1
   echo 'salmon failed.' >> ${stderr}
 }
 !;
+    ## Explicitly setting the cluster state to whatever it was before
+    ## testing for the indexes, because I forced the index creation
+    ## to run outside of the context of a cluster.
     my $salmon = $class->Submit(
+        cluster => $cluster,
         comment => $comment,
         input => $sa_input,
         jdepends => $options->{jdepends},
