@@ -50,7 +50,6 @@ sub Count_Extract_GFF {
     my $feature_count = 0;
   FEAT: while (my $feature = $gff_io->next_feature()) {
         my $contig_id = $feature->seq_id;
-        ## print "TESTME: Contig: $contig_id\n";
         $counters->{total_features}++;
         my $tag = $feature->primary_tag;
         if (defined($gff_type)) {
@@ -83,12 +82,11 @@ sub Count_Extract_GFF {
         my $contig = $feature->seq_id;
         $info->{contig} = $contig;
         if (!defined($observed->{$contig})) {
-            ## print "TESTME: STarting a new contig\n";
             $observed->{$contig} = [];
             $counters->{contigs}->{$contig} = 0;
             $feature_count = -1;
         } else {
-            ## print "TESTME: In existing contig: $contig\n";
+            ## print "In existing contig: $contig\n";
         }
         $feature_count++;
         $counters->{contigs}->{$contig}++;

@@ -739,13 +739,17 @@ sub Gff2Fasta {
     if ($options->{species}) {
         $genome = $paths->{fasta};
         $gff = $paths->{gff};
-        $species = $options->{species};
     } elsif ($options->{input} && $options->{gff}) {
         $genome = $options->{input};
         $gff = $options->{gff};
     }
-    $species = basename($genome, $class->{suffixes});
-    $species = basename($genome, $class->{suffixes});
+    $species = basename($genome, @{$class->{suffix_array}});
+    $species = basename($species, @{$class->{suffix_array}});
+    ## Count IDs as we come across them.
+    my $id_counter = {};
+    my $nt_id_counter = {};
+    my $contig_id_counter = {};
+    my $aa_id_counter = {};
 
     my $wanted_tag = $options->{gff_tag};
     my $wanted_type = $options->{gff_type};
@@ -802,8 +806,17 @@ sub Gff2Fasta {
           $cds = $cds->revcom;
       }
       my $id_string = $id;
+      my $long_id_string = qq"chr_${gff_chr}_id_${id}_start_${start}_end_${end}";
+
+      if (!defined($id_counter->{$id})) {
+          $id_counter->{$id} = 1;
+      } else {
+          $id_counter->{$id}++;
+          $id_string = $long_id_string;
+      }
+
       if (!defined($id_string)) {
-          $id_string = qq"chr_${gff_chr}_id_${id}_start_${start}_end_${end}";
+          $id_string = $long_id_string;
       }
       my $nt_sequence = Bio::Seq->new(
           -id => $id_string,

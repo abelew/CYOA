@@ -1769,6 +1769,9 @@ sub Wait {
         print "There is no job to wait on.\n";
         return(undef);
     }
+    if (defined($args{sleep})) {
+        sleep($args{sleep});
+    }
 
     my $datum;
     my $wait_count = {

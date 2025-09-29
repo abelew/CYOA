@@ -1163,7 +1163,7 @@ sub SNP_Ratio_Intron_Worker {
         vcf_cutoff => 5,
         vcf_method => 'freebayes',);
     my $species = $options->{species};
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $paths = $class->Bio::Adventure::Config::Get_Paths(species => $species);
     my $output_dir = $paths->{output_dir};
     my $log_file = qq"${output_dir}/snp_ratio_intron.stdout";
     my $log = FileHandle->new(">${log_file}");
@@ -1179,10 +1179,8 @@ sub SNP_Ratio_Intron_Worker {
     my $type_counter = FileHandle->new(">$options->{output_types}");
     my $filtered_coverage = FileHandle->new(">${filtered_coverage_log}");
     my %type_counts = ();
-
     ## Read the genome so that I may write a copy with all the nucleotides changed.
-    my $input_genome = $class->Bio::Adventure::Read_Genome_Fasta(
-        %args, fasta => $genome,);
+    my $input_genome = $class->Bio::Adventure::Read_Genome_Fasta(%args, input => $genome,);
     my %original_genome;
     for my $chr_key (keys %{$input_genome}) {
         my %internal = %{$input_genome->{$chr_key}};

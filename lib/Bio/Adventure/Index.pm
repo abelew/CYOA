@@ -42,16 +42,10 @@ sub BT1_Index {
         required => ['input'],);
     my $species = basename($options->{input}, ('.gz', '.bz2', '.xz'));
     $species = basename($species, ('.fasta', '.fa'));
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
-    my $copied_location = qq"$paths->{index}.fasta";
-    if (!-f $copied_location) {
-        my $fc = $class->Get_FC(input => $options->{input});
-        my $copied = qx"${fc} > ${copied_location}";
-    }
-    my $output_dir = qq"$options->{basedir}/outputs/$options->{jprefix}bt1index";
+    my $paths = $class->Bio::Adventure::Config::Get_Paths(species => $species);
+    my $output_dir = $paths->{output_dir};
     my $stdout = qq"${output_dir}/bt1_index.stdout";
     my $stderr = qq"${output_dir}/bt1_index.stderr";
-
     my $jstring = qq!mkdir -p ${output_dir}
 bowtie-build $options->{input} \\
   $paths->{index} \\
@@ -150,7 +144,9 @@ sub BWA_Index {
     my $output_dir = qq"$options->{basedir}/outputs/$options->{jprefix}bwa_index";
     my $stdout = qq"${output_dir}/bwa_index.stdout";
     my $stderr = qq"${output_dir}/bwa_index.stderr";
-    my $jstring = qq!mkdir -p ${output_dir}
+    my $jstring = qq!
+mkdir -p ${output_dir}
+mkdir -p $paths->{index_dir}
 start=\$(pwd)
 cd $paths->{index_dir}
 ln -sf ${full_input} ${species}.fa

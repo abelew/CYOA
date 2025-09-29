@@ -1243,7 +1243,6 @@ Writing results to ${gff_output_filename}.\n";
             }
 
             if ($last_read_start ne $read_start) {
-                ## print "TESTME cpn: $current_name($current_strand) vs $previous_name($previous_strand) vs $next_name($next_strand) || $read_strand $read_start\n";
                 $last_read_start = $read_start;
             }
 
@@ -1270,7 +1269,6 @@ Writing results to ${gff_output_filename}.\n";
             ## if the current feature is -1 and the next is +1, then the current reads
             ## may be associated with both
             if (!defined($current_strand)) {
-                ## print "TESTME: No current strand defined, skipping.\n";
                 next FEAT_SEARCH;
             }
             if ($read_strand eq '1') {
@@ -1333,7 +1331,6 @@ Writing results to ${gff_output_filename}.\n";
                     }
                     last FEAT_SEARCH;
                 } else {
-                    ## print "TESTME: end of current feature: $current_end is greater than the read end: $read_end\n";
                     next FEAT_SEARCH;
                 }
             } else { ## End checking the - strand

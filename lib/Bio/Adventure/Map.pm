@@ -75,6 +75,8 @@ sub Bowtie {
         jprefix => '10',);
     my $start_species = $options->{species};
     my $species = $start_species;
+    my $paths = $class->Bio::Adventure::Config::Get_Paths(species => $species,
+                                                          bt_type => $options->{bt_type});
     if ($species =~ /\:/) {
         my @species_lst = split(/:/, $species);
         my @result_lst = ();
@@ -87,7 +89,6 @@ sub Bowtie {
         $options->{species} = $start_species;
         return(@result_lst);
     }
-
     my $bt_type = $options->{bt_type};
     my $bt_args = $options->{bt_args}->{$bt_type};
     $bt_args = ' --best -v 0 -M 1 ' if (!defined($bt_args));
@@ -120,8 +121,7 @@ sub Bowtie {
     $bt_dir = $options->{bt_dir} if ($options->{bt_dir});
 
     ## Check that the indexes exist
-    my $bt_reflib = qq"$options->{libpath}/$options->{libtype}/indexes/$options->{species}";
-    my $bt_reftest = qq"${bt_reflib}.1.ebwt";
+    my $bt_reftest = $paths->{index_file};
     my $current_prefix = 10;
     if (defined($options->{jprefix})) {
         $current_prefix = $options->{jprefix};
@@ -131,7 +131,7 @@ sub Bowtie {
         $class->{bt1_indexjobs} = 1;
         my $genome_input = qq"$options->{libpath}/$options->{libtype}/${species}.fasta";
         $index_job = $class->Bio::Adventure::Index::BT1_Index(
-            input => $genome_input,
+            input => $paths->{fasta},
             jdepends => $options->{jdepends},
             jprefix => $current_prefix - 1,
             libtype => $libtype,);
@@ -140,24 +140,22 @@ sub Bowtie {
 
     my $bowtie_input_flag = "-q"; ## fastq by default
     $bowtie_input_flag = "-f" if ($options->{input} =~ /\.fasta/);
-    my $stderr = qq"${bt_dir}/$options->{jbasename}-${bt_type}.stderr";
-    my $stdout = qq"${bt_dir}/$options->{jbasename}-${bt_type}.stdout";
     my $comment = qq!## This is a bowtie1 alignment of ${bt_input} against
-## ${bt_reflib} using arguments: ${bt_args}.!;
+## $paths->{index} using arguments: ${bt_args}.!;
     my $aligned_filename = qq"${bt_dir}/$options->{jbasename}-${bt_type}_aligned_${species}.fastq";
     my $unaligned_filename = qq"${bt_dir}/$options->{jbasename}-${bt_type}_unaligned_${species}.fastq";
     my $sam_filename = qq"${bt_dir}/$options->{jbasename}-${bt_type}.sam";
     my $jstring = qq!mkdir -p ${bt_dir}
 bowtie \\
-  ${bt_reflib} \\
+  $paths->{index} \\
   ${bt_args} \\
   -p $options->{jcpu} \\
   ${bowtie_input_flag} ${bt_input} \\
   --un ${unaligned_filename} \\
   --al ${aligned_filename} \\
   -S ${sam_filename} \\
-  2>${stderr} \\
-  1>${stdout}
+  2>$paths->{stderr} \\
+  1>$paths->{stdout}
 !;
 
     my $bt_job = $class->Submit(
@@ -171,8 +169,8 @@ bowtie \\
         output => $sam_filename,
         postscript => $options->{postscript},
         prescript => $options->{prescript},
-        stderr => $stderr,
-        stdout => $stdout,
+        stderr => $paths->{stderr},
+        stdout => $paths->{stdout},
         unaligned => $unaligned_filename,);
     if (defined($index_job)) {
         $bt_job->{index} = $index_job;
@@ -181,7 +179,7 @@ bowtie \\
     my $expected_hours = $class->Bio::Adventure::Config::Estimate_Time_Composite(process => 'bt1');
     my $time_string = qq"${expected_hours}:00:00";
     my $compress_files = qq"${bt_dir}/$options->{jbasename}-${bt_type}_unaligned_${species}.fastq:${bt_dir}/$options->{jbasename}-${bt_type}_aligned_${species}.fastq";
-    my $comp = $class->Bio::Adventure::Compress::Recompress(
+    my $comp = $class->Bio::Adventure::Compress::Compress(
         comment => '## Compressing the sequences which failed to align against ${bt_reflib} using options ${bt_args}.',
         jdepends => $bt_job->{job_id},
         jname => qq"${jname}_xzun",
@@ -230,7 +228,7 @@ bowtie \\
     }  ## End if ($count)
 
     my $stats = $class->Bio::Adventure::Metadata::BT1_Stats(
-        input => $stderr,
+        input => $paths->{stderr},
         bt_type => $bt_type,
         count_table => $bt_job->{htseq}->[0]->{output},
         jdepends => $bt_job->{job_id},
@@ -336,6 +334,7 @@ sub Bowtie2 {
     my $bt_reftest = $paths->{index_file_shell};
     my $bt_reftest_large = $paths->{index_file2_shell};
     my $index_job;
+    my $cluster = $options->{cluster};
     if (!-r $bt_reftest && !-r $bt_reftest_large) {
         $job_suffix++;
         print "Hey! The Indexes do not appear to exist, check this out: ${bt_reftest}\n";
@@ -343,6 +342,7 @@ sub Bowtie2 {
         my $genome_input = $paths->{fasta};
         $index_job = $class->Bio::Adventure::Index::BT2_Index(
             input => $genome_input,
+            cluster => 0,
             jdepends => $options->{jdepends},
             jprefix => qq"$options->{jprefix}_${job_suffix}",
             libtype => $libtype,);
@@ -373,6 +373,7 @@ bowtie2 -x ${bt_reflib} ${bt2_args} \\
     my $bt2_job = $class->Submit(
         aligned => $aligned_filename,
         comment => $comment,
+        cluster => $cluster,
         input => $bt_input,
         jname => $bt2_name,
         jdepends => $options->{jdepends},
@@ -389,6 +390,7 @@ bowtie2 -x ${bt_reflib} ${bt2_args} \\
     $job_suffix++;
     my $comp = $class->Bio::Adventure::Compress::Recompress(
         comment => '## Compressing the sequences which failed to align against ${bt_reflib} using options ${bt2_args}.',
+        cluster => $cluster,
         input => $compression_files,
         jdepends => $bt2_job->{job_id},
         jname => qq"xzun_${suffix_name}",
@@ -399,6 +401,7 @@ bowtie2 -x ${bt_reflib} ${bt2_args} \\
     $job_suffix++;
     my $stats = $class->Bio::Adventure::Metadata::BT2_Stats(
         input => $stderr,
+        cluster => $cluster,
         count_table => qq"$options->{jbasename}.count.xz",
         jdepends => $bt2_job->{job_id},
         jname => qq"bt2st_${suffix_name}",
@@ -407,6 +410,7 @@ bowtie2 -x ${bt_reflib} ${bt2_args} \\
     $job_suffix++;
     my $sam_job = $class->Bio::Adventure::Convert::Samtools(
         input => $sam_filename,
+        cluster => $cluster,
         jdepends => $bt2_job->{job_id},
         jname => qq"s2b_${suffix_name}",
         jprefix => qq"$options->{jprefix}_${job_suffix}",);
@@ -417,6 +421,7 @@ bowtie2 -x ${bt_reflib} ${bt2_args} \\
         if ($libtype eq 'rRNA') {
             $job_suffix++;
             $htmulti = $class->Bio::Adventure::Count::HTSeq(
+                cluster => $cluster,
                 input => $sam_job->{output},
                 jdepends => $sam_job->{job_id},
                 jname => $suffix_name,
@@ -427,6 +432,7 @@ bowtie2 -x ${bt_reflib} ${bt2_args} \\
         } else {
             $job_suffix++;
             $htmulti = $class->Bio::Adventure::Count::HT_Multi(
+                cluster => $cluster,
                 input => $sam_job->{output},
                 jdepends => $sam_job->{job_id},
                 jname => $suffix_name,
@@ -562,6 +568,7 @@ sub BWA {
         return(@result_lst);
     }
 
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $bwa_input = $options->{input};
     my $stranded = $options->{stranded};
     my $test_file = '';
@@ -602,22 +609,24 @@ sub BWA {
     my $jname = qq"bwa_$options->{species}";
     $jname = $options->{jname} if ($options->{jname});
 
-    my $bwa_dir = qq"outputs/$options->{jprefix}bwa_$options->{species}";
+    my $bwa_dir = $paths->{output_dir};
     $bwa_dir = $options->{bwa_dir} if ($options->{bwa_dir});
 
     my $uncompress_jobid = undef;
     my $index_jobid = undef;
     ## Check that the indexes exist
     ## NOTE: BWA Might require the file to be named ...fa instead of ...fasta
-    my $bwa_reflib = qq"$options->{libpath}/$options->{libtype}/indexes/$options->{species}.fa";
+    my $bwa_reflib = qq"$paths->{index_dir}/$options->{species}.fa";
     my $bwa_reftest = qq"${bwa_reflib}.sa";
     my $index_job;
+    my $cluster = $options->{cluster};
     if (!-r $bwa_reftest) {
         my $index_extras = {
-            input => $bwa_reflib,
+            input => $paths->{fasta_shell},
             jprefix => $options->{jprefix} - 1,
         };
-        my %index_args = $class->Extra_Options(options => $options, extras => $index_extras);
+
+        my %index_args = $class->Extra_Options(options => $options, extras => $index_extras, cluster => 0);
         $index_job = $class->Bio::Adventure::Index::BWA_Index(%index_args);
         $options->{jdepends} = $index_job->{job_id};
     }
@@ -757,6 +766,7 @@ fi
     } ## End iterating over potential bwa methods.
     $sam_outs =~ s/:$//g;
     my %submit_extras = (
+        cluster => $cluster,
         comment => $comment,
         input => $bwa_input,
         jname => qq"bwa_$options->{species}",
@@ -1294,7 +1304,7 @@ sub Kallisto {
         $options->{species} = $start_species;
         return(@result_lst);
     }
-
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my %ka_jobs = ();
     my $ka_depends_on = '';
     my $libtype = 'genome';
@@ -1323,10 +1333,10 @@ sub Kallisto {
     }
 
     ## Check that the indexes exist
-    my $ka_reflib = qq"$options->{libpath}/${libtype}/indexes/$options->{species}.idx";
+    my $ka_reflib = $paths->{index_file};
     my $index_job;
     if (!-r $ka_reflib) {
-        my $transcriptome_fasta = qq"$options->{libpath}/${libtype}/$options->{species}_cds.fasta";
+        my $transcriptome_fasta = $paths->{fasta};
         $index_job = $class->Bio::Adventure::Index::Kallisto_Index(
             input => $transcriptome_fasta,
             jdepends => $options->{jdepends},
@@ -1334,9 +1344,9 @@ sub Kallisto {
         $options->{jdepends} = $index_job->{job_id};
     }
 
-    my $outdir = qq"outputs/$options->{jprefix}kallisto_${species}";
-    my $stderr = qq"${outdir}/kallisto_${species}.stderr";
-    my $stdout = qq"${outdir}/kallisto_${species}.stdout";
+    my $outdir = $paths->{output_dir};
+    my $stderr = $paths->{stderr};
+    my $stdout = $paths->{stdout};
     my $output_sam = qq"${outdir}/kallisto_${species}.sam";
     my $output_bam = qq"${outdir}/kallisto_${species}.bam";
     my $output_stats = qq"${outdir}/kallisto_${species}.stats";

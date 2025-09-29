@@ -1,6 +1,5 @@
 # -*-Perl-*-
 use strict;
-use Test::More qw"no_plan";
 use Bio::Adventure;
 use Cwd;
 use File::Copy qw"cp mv";
@@ -8,44 +7,53 @@ use File::Path qw"remove_tree make_path rmtree";
 use File::ShareDir qw"dist_file module_dir dist_dir";
 use String::Diff qw"diff";
 use Test::File::ShareDir::Dist { 'Bio-Adventure' => 'share/' };
-my $start_dir = dist_dir('Bio-Adventure');
+use Test::More qw"no_plan";
+
+my $source_dir = dist_dir('Bio-Adventure');
+my $source_phix_fasta = qq"${source_dir}/genome/fasta/phix.fasta";
+my $source_phix_gff = qq"${source_dir}/genome/gff/phix.gff";
+my $source_input_fastq = qq"${source_dir}/test_forward.fastq.gz";
 
 my $start = getcwd();
 my $new = 'test_output';
 mkdir($new);
 chdir($new);
 
-my $input_file = qq"${start_dir}/test_forward.fastq.gz";
-my $phix_fasta = qq"${start_dir}/genome/phix.fasta";
-my $phix_gff = qq"${start_dir}/genome/phix.gff";
+ok(-r $source_phix_fasta, "Found source phix fasta at: ${source_phix_fasta}.");
+ok(-r $source_phix_gff, "Found source phix gff at: ${source_phix_gff}.");
+my $local_phix_fasta = 'reference/genome/fasta/phix.fasta';
+my $local_phix_gff = 'reference/genome/gff/phix.gff';
+my $local_input_fastq = 'test_forward.fastq.gz';
+make_path('reference/genome/fasta'); ## Make a directory for the phix indexes.
+make_path('reference/genome/gff'); ## Make a directory for the phix indexes.
+if (-r $local_phix_fasta) {
+    ok(!-z $local_phix_fasta, 'Local phix file is not null.');
+} else {
+    ok(cp($source_phix_fasta, $local_phix_fasta), "Copying phix fasta file from ${source_phix_fasta} to ${local_phix_fasta}.");
+}
+
+if (-r $local_phix_gff) {
+    ok(!-z $local_phix_gff, 'Local phix file is not null.');
+} else {
+    ok(cp($source_phix_gff, $local_phix_gff), "Copying phix gff file from ${source_phix_gff} to ${local_phix_gff}.");
+}
+
+if (-r $local_input_fastq) {
+    ok(!-z $local_phix_gff, 'Local fastq file is not null.');
+} else {
+    ok(cp($source_input_fastq, $local_input_fastq), "Copying input fastq from: ${source_input_fastq} to ${local_input_fastq}.");
+}
 
 my $cyoa = Bio::Adventure->new(
     cluster => 0,
     basedir => cwd(),
     gff_tag => 'gene_id',
     gff_type => 'gene',
-    libdir => cwd(),
+    libdir => 'reference',
     species => 'phix',
     stranded => 'no');
-make_path('genome/indexes'); ## Make a directory for the phix indexes.
-make_path('genome/fasta');
-make_path('genome/gff');
-my $paths = $cyoa->Bio::Adventure::Config::Get_Paths();
-
-if (!-r 'test_forward.fastq.gz') {
-    ok(cp($input_file, 'test_forward.fastq.gz'), 'Copying data.');
-}
-
-if (!-r 'genome/fasta/phix.fasta') {
-    ok(cp($phix_fasta, $paths->{fasta}), qq"Copying phix fasta file: $paths->{fasta}.");
-}
-
-if (!-r 'genome/gff/phix.gff') {
-    ok(cp($phix_gff, $paths->{gff}), qq"Copying phix gff file: $paths->{gff}.");
-}
-
 my $bt1 = $cyoa->Bio::Adventure::Map::Bowtie(
-    input => qq"test_forward.fastq.gz",
+    input => $local_input_fastq,
     gff_tag => 'gene_id',
     gff_type => 'gene',
     jprefix => '23',
@@ -60,7 +68,7 @@ ok(-f $stats_file, qq"The stats file was created: ${stats_file}");
 
 my $actual = $cyoa->Last_Stat(input => $stats_file);
 ok($actual, 'Collect Bowtie1 Statistics');
-my $expected = qq"test_output-v0M1.stderr,v0M1,0,10000,0,9970,0,outputs/23bowtie_phix/test_output-v0M1_rpos_sno_gene_gene_id.csv.xz";
+my $expected = qq"test,v0M1,0,10000,0,9970,0,outputs/23bowtie_phix/test_output-v0M1_rpos_sno_gene_gene_id.csv.xz";
 unless(ok($expected eq $actual, 'Are the bowtie stats as expected?')) {
     my ($old, $new) = diff($expected, $actual);
     print "--Expected--\n${old}\n--Actual--\n${new}\n";

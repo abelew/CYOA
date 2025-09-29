@@ -31,11 +31,9 @@ ok($fastqc, 'Run Fastqc');
 my $status = $cyoa->Wait(job => $fastqc);
 ok($status->{State} eq 'COMPLETED', 'Fastqc completed.');
 my $stats_file = $fastqc->{stats}->{output};
-ok(my $actual = $cyoa->Last_Stat(input => $stats_file),
-   'Collect Fastqc Statistics');
+ok(my $actual = $cyoa->Last_Stat(input => $stats_file), 'Collect Fastqc Statistics');
 my $expected = 'fqcst,10000,0,pass,warn,pass,pass,pass,warn,fail,0';
-unless(ok($expected eq $actual,
-          'Are the fastqc results the expected value?')) {
+unless(ok($expected eq $actual, 'Are the fastqc results the expected value?')) {
     my($old, $new) = diff($expected, $actual);
     diag("$old\n$new\n");
 }

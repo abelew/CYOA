@@ -145,6 +145,7 @@ upon all the apparatus, and you’ve got to make it stop. Go to page 2025.',
             message => 'Once men turned their thinking over to machines in the hope that this would set them free. But that only permitted other men with machines to enslave them.  Go to page 27812',
             choices => {
                 '(fcount): Use featureCounts to count aligned reads.' => \&Bio::Adventure::Count::Feature_Counts,
+                '(gfftree): Count features by type in a gff file.' => \&Bio::Adventure::Count::GFF_Tree,
                 '(guessstrand): Count reads with respect to features and report strandedness.' => \&Bio::Adventure::Count::Guess_Strand,
                 '(htseq): Count mappings with htseq-count.' =>  \&Bio::Adventure::Count::HTSeq,
                 '(htmulti): Use different option sets for counting with htseq.' => \&Bio::Adventure::Count::HT_Multi,
@@ -651,6 +652,7 @@ sub Get_Modules {
         'GATK_Dedup' => { modules => 'gatk' },
         'Gb2Gff' => { modules => 'cyoa' },
         'Generate_Samplesheet' => { modules => 'R' },
+        'GFF_Tree' => { modules => ['cyoa'] },
         'Glimmer' => { modules => ['cyoa', 'glimmer'], exe => 'glimmer3' },
         'Glimmer_Single' => {
             modules => ['glimmer', 'cyoa'], exe => 'glimmer3' },
@@ -752,7 +754,7 @@ sub Get_Modules {
         ## I can set the exe for single vs pairwise now
         'Trimomatic_Pairwise' => { modules => ['trimomatic'], },
         'Trimomatic_Single' => { modules => ['trimomatic'], },
-        'Trinity' => { modules => 'trinity', exe => 'Trinity', },
+        'Trinity' => { modules => ['trinity', 'cyoa'], exe => 'Trinity', },
         'Trinity_Post' => { modules => ['cyoa', 'rsem'], },
         'Trinotate' => {
             modules => ['cyoa', 'divsufsort', 'transdecoder', 'blast', 'blastdb', 'signalp/4.1',
@@ -816,7 +818,8 @@ sub Get_Paths {
     my $output_prefix = qq"$options->{output_base}/$options->{jprefix}";
     my $paths = {};
     if (defined($options->{input})) {
-        $paths->{output_base} = basename($options->{input}, $class->{suffixes});
+        $paths->{output_base} = basename($options->{input}, $class->{suffix_array});
+        $paths->{output_base} = basename($paths->{output_base}, $class->{suffix_array});
         $paths->{input_dirname} = dirname($options->{input});
         if ($paths->{input_dirname} eq '.' || $paths->{input_dirname} eq '') {
             $paths->{input_dirname} = getcwd();
@@ -906,10 +909,13 @@ sub Get_Paths {
         $paths->{index_file} = qq"$paths->{index}.1.ebwt";
         $paths->{index_file_shell} = qq"$paths->{index_shell}.1.ebwt";
         $paths->{output_dir} = qq"${output_prefix}bowtie_$options->{species}";
+        $options->{bt_type} = 'default' unless (defined($options->{bt_type}));
+        $paths->{stdout} = qq"$paths->{output_dir}/$paths->{output_base}_$options->{species}_$options->{bt_type}.stdout";
+        $paths->{stderr} = qq"$paths->{output_dir}/$paths->{output_base}_$options->{species}_$options->{bt_type}.stderr";
     }
     elsif ($subroutine eq 'Bowtie2' || $subroutine eq 'BT2_Index') {
-        $paths->{index} = qq"$paths->{index_prefix}/bowtie2/$options->{species}";
-        $paths->{index_dir} = qq"$paths->{index_prefix}/bowtie2";
+        $paths->{index} = qq"$paths->{index_prefix}/bt2/$options->{species}";
+        $paths->{index_dir} = qq"$paths->{index_prefix}/bt2";
         $paths->{index_file} = qq"$paths->{index}.1.bt2";
         $paths->{index_file2} = qq"$paths->{index}.1.bt2l";
         $paths->{index_shell} = qq"$paths->{index_prefix_shell}/bt2/$options->{species}";
@@ -976,6 +982,9 @@ sub Get_Paths {
         $paths->{output_dir} = qq"${output_prefix}gb2gff";
         $paths->{stdout} = qq"$paths->{output_dir}/gb2gff.stdout";
         $paths->{stderr} = qq"$paths->{output_dir}/gb2gff.stderr";
+    }
+    elsif ($subroutine eq 'GFF_Tree') {
+        $paths->{output_dir} = qq"${output_prefix}gff_tree";
     }
     elsif ($subroutine eq 'Hisat2' || $subroutine eq 'Hisat2_Index') {
         $paths->{index_dir} = qq"$paths->{index_prefix}/hisat";
@@ -1073,7 +1082,7 @@ sub Get_Paths {
         $paths->{output_dir} = qq"${output_prefix}rsem_$options->{species}";
     }
     elsif ($subroutine eq 'Run_Parse_Blast') {
-        my $libname = basename($options->{library}, $class->{suffixes});
+        my $libname = basename($options->{library}, $class->{suffix_array});
         $paths->{output_dir} = qq"${output_prefix}blast_$options->{input}_vs_${libname}";
     }
     elsif ($subroutine eq 'Salmon' || $subroutine eq 'Salmon_Index') {
@@ -1092,17 +1101,17 @@ sub Get_Paths {
         $paths->{output_dir} = qq"${output_prefix}sl_recorder_$options->{species}";
     }
     elsif ($subroutine eq 'Split_Align_Blast') {
-        my $libname = basename($options->{library}, $class->{suffixes});
+        my $libname = basename($options->{library}, $class->{suffix_array});
         $paths->{output_dir} = qq"${output_prefix}blastsplit_$options->{input}_vs_${libname}";
     }
     elsif ($subroutine eq 'Split_Align_Fasta' || $subroutine eq 'Split_Align_Fasta_Worker') {
-        my $libname = basename($options->{library}, $class->{suffixes});
-        $libname = basename($libname, $class->{suffixes});
-        my $query = basename($options->{input}, $class->{suffixes});
-        $query = basename($query, $class->{suffixes});
+        my $libname = basename($options->{library}, $class->{suffix_array});
+        $libname = basename($libname, $class->{suffix_array});
+        my $query = basename($options->{input}, $class->{suffix_array});
+        $query = basename($query, $class->{suffix_array});
         my $output_dir = qq"${output_prefix}fasta_${query}_${libname}";
         my $output_base = basename($options->{input}, ('.gz', '.xz', '.bz2'));
-        $output_base = basename($output_base, $options->{suffixes});
+        $output_base = basename($output_base, $options->{suffix_array});
         $paths->{output} = qq"${output_dir}/${output_base}.parsed.txt";
         $paths->{output_dir} = $output_dir;
         $paths->{output_counts} = qq"${output_dir}/${output_base}.count";
@@ -1279,6 +1288,7 @@ sub Get_TODOs {
         "gatkdedup+" => \$todo_list->{todo}{'Bio::Adventure::Convert::GATK_Dedup'},
         "gb2gff+" => \$todo_list->{todo}{'Bio::Adventure::Convert::Gb2Gff'},
         "gff2fasta+" => \$todo_list->{todo}{'Bio::Adventure::Convert::Gff2Fasta'},
+        "gfftree+" => \$todo_list->{todo}{'Bio::Adventure::Count::GFF_Tree'},
         "glimmer+" => \$todo_list->{todo}{'Bio::Adventure::Feature_Prediction::Glimmer'},
         "glimmersingle+" => \$todo_list->{todo}{'Bio::Adventure::Feature_Prediction::Glimmer_Single'},
         "graphreads+" => \$todo_list->{todo}{'Bio::Adventure::Riboseq::Graph_Reads'},

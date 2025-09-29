@@ -1,6 +1,5 @@
 # -*-Perl-*-
 use strict;
-use Test::More qw"no_plan";
 use Bio::Adventure;
 use Cwd;
 use File::Copy qw"cp mv";
@@ -8,6 +7,7 @@ use File::Path qw"remove_tree make_path rmtree";
 use File::ShareDir qw"dist_file module_dir dist_dir";
 use String::Diff qw" diff_fully diff diff_merge diff_regexp ";
 use Test::File::ShareDir::Dist { 'Bio-Adventure' => 'share/' };
+use Test::More qw"no_plan";
 
 my $start_dir = dist_dir('Bio-Adventure');
 my $input_file = qq"${start_dir}/test_forward.fastq.gz";
@@ -29,11 +29,9 @@ my $fastqc = $cyoa->Bio::Adventure::QA::Fastqc(
     jprefix => $jprefix,);
 ok($fastqc, 'Run Fastqc');
 my $stats_file = $fastqc->{stats}->{output};
-ok(my $actual = $cyoa->Last_Stat(input => $stats_file),
-   'Collect Fastqc Statistics');
+ok(my $actual = $cyoa->Last_Stat(input => $stats_file), "Collect Fastqc Statistics to ${stats_file}.");
 my $expected = 'fqcst,10000,0,pass,warn,pass,pass,pass,warn,fail,0';
-unless(ok($expected eq $actual,
-          'Are the fastqc results the expected value?')) {
+unless(ok($expected eq $actual, 'Are the fastqc results the expected value?')) {
     my($old, $new) = diff($expected, $actual);
     diag("$old\n$new\n");
 }

@@ -1,6 +1,5 @@
 # -*-Perl-*-
 use strict;
-use Test::More qw"no_plan";
 use Bio::Adventure;
 use Cwd;
 use File::Basename qw"basename dirname";
@@ -9,60 +8,164 @@ use File::Path qw"make_path remove_tree rmtree";
 use File::ShareDir qw"dist_dir dist_file module_dir";
 use String::Diff qw"diff";
 use Test::File::ShareDir::Dist { 'Bio-Adventure' => 'share/' };
-my $start_dir = dist_dir('Bio-Adventure');
-my $input = 'consolidated.fastq.xz';
-my $input_file = qq"${start_dir}/${input}";
-my $phix_fasta = qq"${start_dir}/genome/phix.fastq";
-my $phix_gff = qq"${start_dir}/genome/phix.gff";
+use Test::More qw"no_plan";
+
+my $source_dir = dist_dir('Bio-Adventure');
+my $species = 'sagalactiae_cjb111';
+my $source_gb_fasta = qq"${source_dir}/genome/fasta/${species}.fasta";
+my $source_gb_gff = qq"${source_dir}/genome/gff/${species}.gff";
+my $source_gb_genbank = qq"${source_dir}/genome/genbank/${species}.gb.xz";
+my $source_input_fastq = qq"${source_dir}/consolidated.fastq.xz";
+my $local_gb_fasta = qq"reference/genome/fasta/${species}.fasta";
+my $local_gb_gff = qq"reference/genome/gff/${species}.fasta";
+my $local_gb_genbank = qq"reference/genome/genbank/${species}.gb.xz";
+my $local_input_fastq = 'consolidated.fastq.xz';
 
 my $start = getcwd();
 my $new = 'test_output_async';
 mkdir($new);
 chdir($new);
 
-if (!-r $input) {
-    ok(copy($input_file, $input), 'Copying data.');
+make_path('reference/genome/fasta'); ## Make a directory for the phix indexes.
+make_path('reference/genome/gff'); ## Make a directory for the phix indexes.
+make_path('reference/genome/genbank');
+
+if (-r $local_gb_genbank) {
+    ok(!-z $local_gb_genbank, 'Local genbank file is not null.');
+} else {
+    ok(cp($source_gb_genbank, $local_gb_genbank), "Copied group B gbk from ${source_gb_genbank} to ${local_gb_genbank}.");
 }
 
-my $genome = 'sagalactiae_cjb111';
+if (-r $local_input_fastq) {
+    ok(!-z $local_input_fastq, 'Local fastq file is not null.');
+} else {
+    ok(cp($source_input_fastq, $local_input_fastq), "Copied group B gbk from ${source_input_fastq} to ${local_input_fastq}.");
+}
+
 my $cyoa = Bio::Adventure->new(
     basedir => cwd(),
-    libdir => cwd(),
-    species => $genome,
+    libdir => 'reference',
+    species => $species,
     gff_tag => 'locus_tag',
     gff_type => 'gene',
     stranded => 'no',);
-my $paths = $cyoa->Bio::Adventure::Config::Get_Paths(subroutine => 'Transit_TPP',);
-my $groupb_strep = dist_file('Bio-Adventure', qq"genome/${genome}.gb.xz");
-if (!-r qq"genome/${genome}.fasta") {
-    ok(copy($groupb_strep, qq"genome/${genome}.gb.xz"), 'Copying group b genome.');
-}
+
+my $paths = $cyoa->Bio::Adventure::Config::Get_Paths(subroutine => 'Transit_TPP',
+                                                     species => $species);
 my $groupb_convert = $cyoa->Bio::Adventure::Convert::Gb2Gff(
-    input => qq"genome/${genome}.gb.xz", jprefix => '31', output_dir => 'genome',);
-my $status = $cyoa->Wait(job => $groupb_convert);
-ok($status->{State} eq 'COMPLETED', 'The conversion from genbank to fasta/gff completed.');
+    input => $local_gb_genbank, jprefix => '31', output_dir => 'reference',);
 ok($groupb_convert, 'Converted the group B strep genbank to fasta/gff/etc.');
-ok(-r $groupb_convert->{output_all_gff}, 'Found the newly created gff.');
-ok(-r $groupb_convert->{output_fasta}, 'Found the newly created fsa.');
+my $status = $cyoa->Wait(job => $groupb_convert);
+ok($status->{State} eq 'COMPLETED', 'The Group B Strep conversion completed.');
+
+ok(-r $groupb_convert->{output_all_gff}, "Found the newly created gff: $groupb_convert->{output_all_gff}");
+ok(-r $groupb_convert->{output_fasta}, "Found the newly created fsa: $groupb_convert->{output_fasta}");
 my $moved = move($groupb_convert->{output_fasta}, $paths->{fasta});
-ok($moved, qq"Moved the ${genome}.fsa to $paths->{fasta}.");
-$moved = move($groupb_convert->{output_gff_all}, $paths->{gff});
-ok($moved, qq"Moved ${genome}_all.gff to $paths->{gff}.");
+ok($moved, qq"Moved the groupb fasta to $paths->{fasta}.");
+$moved = move($groupb_convert->{output_all_gff}, $paths->{gff});
+ok($moved, qq"Moved the groupb gff to $paths->{gff}.");
 
 my $tpp = $cyoa->Bio::Adventure::TNSeq::Transit_TPP(
-    input => $input,
-    species => $genome,
+    input => $local_input_fastq,
+    species => $species,
     protocol => 'Sassetti',
     jprefix => '31',);
 $status = $cyoa->Wait(job => $tpp);
 ok($status->{State} eq 'COMPLETED', 'The transit preprocessing completed.');
 
 ok(-r $tpp->{samtools}->{output}, qq"Found the samtools bam file: $tpp->{samtools}->{output}.");
-ok(-r $tpp->{htseq}->[0]->{output}, qq"Found the htseq count table: $tpp->{htseq}->[0]->{output}.");
+
+
 ok(-r $tpp->{output_r1}, qq"Found the r1 reads: $tpp->{output_r1}.");
 ok(-r $tpp->{output_r1tr}, qq"Found the r1 trimmed reads: $tpp->{output_r1tr}.");
 ok(-r $tpp->{output_count}, qq"Found the tpp counts: $tpp->{output_count}.");
+
+my $expected = qq"coord	Fwd_Rd_Ct	Fwd_Templ_Ct	Rev_Rd_Ct	Rev_Templ_Ct	Tot_Rd_Ct	Tot_Templ_Ct
+11	0	0	0	0	0	0
+14	0	0	0	0	0	0
+22	0	0	0	0	0	0
+33	0	0	0	0	0	0
+41	0	0	0	0	0	0
+44	0	0	0	0	0	0
+70	0	0	0	0	0	0
+82	0	0	0	0	0	0
+87	0	0	0	0	0	0
+";
+my $cmd = "head $tpp->{output_count}";
+print "Checking htseq output via: ${cmd}\n";
+my $actual = qx"${cmd}";
+unless(ok($expected eq $actual, 'Are the tpp counts as expected?')) {
+    my($old, $new) = diff($expected, $actual);
+    diag("--\n${old}\n--\n${new}\n");
+}
+
 ok(-r $tpp->{output_wig}, qq"Found the tpp wig: $tpp->{output_wig}.");
+$expected = qq"# Generated by tpp from r1.fastq and
+variableStep chrom=sagalactiae_cjb111
+11 0
+14 0
+22 0
+33 0
+41 0
+44 0
+70 0
+82 0
+";
+## tpp puts some weird spaces at the end of the first line.
+$cmd = "head $tpp->{output_wig} | perl -pe 's/[ \\t]+\$//g'";
+print "Checking htseq output via: ${cmd}\n";
+$actual = qx"${cmd}";
+unless(ok($expected eq $actual, 'Does the wig match expectations?')) {
+    my($old, $new) = diff($expected, $actual);
+    diag("--\n${old}\n--\n${new}\n");
+}
+
 ok(-r $tpp->{output_bam}, qq"Found the tpp bam: $tpp->{output_bam}.");
 ok(-r $tpp->{output_stats}, qq"Found the tpp stats file: $tpp->{output_stats}.");
+$expected = qq"# BC_corr (reads vs. templates, summed over both strands): 1.000
+# Break-down of total reads (10000):
+#  -9 reads (-0.1%) lack the expected Tn prefix
+# Break-down of trimmed reads with valid Tn prefix (10000):
+#  primer_matches: 0 reads (0.0%) contain CTAGAGGGCCCAATTCGCCCTATAGTGAGT (Himar1)
+#  vector_matches: 0 reads (0.0%) contain CTAGACCGTCCAGTCTGGCAGGCCGGAAAC (phiMycoMarT7)
+#  adapter_matches: 0 reads (0.0%) contain GATCGGAAGAGCACACGTCTGAACTCCAGTCAC (Illumina/TruSeq index)
+#  misprimed_reads: 0 reads (0.0%) contain Himar1 prefix but don't end in TGTTA
+# read_length: 98 bp
+# mean_R1_genomic_length: 105.2 bp
+";
+$cmd = "tail $tpp->{output_stats}";
+print "Checking htseq output via: ${cmd}\n";
+$actual = qx"${cmd}";
+unless(ok($expected eq $actual, 'Do the stats match expectations?')) {
+    my($old, $new) = diff($expected, $actual);
+    diag("--\n${old}\n--\n${new}\n");
+}
+
+## There is a bit of a problem with the featureCounts/htseq output
+## It is compressed via a compression job which is allowed to separate itself from the dependency
+## chain because those outputs are ancillary to the purposes of TPP/Transit
+## As a result, this file almost certainly does not exist when things are allowed to run async.
+sleep(30);
+## So, eff it, drop in a sleep
+ok(-r $tpp->{htseq}->[0]->{output}, qq"Found the htseq count table: $tpp->{htseq}->[0]->{output}.");
+
+$expected = qq"ID870_00005	1
+ID870_00010	0
+ID870_00015	0
+ID870_00020	4
+ID870_00025	0
+ID870_00030	3
+ID870_00035	2
+ID870_00040	2
+ID870_00045	2
+ID870_00050	0
+";
+$cmd = "xzcat $tpp->{htseq}->[0]->{output} | head";
+print "Checking htseq output via: ${cmd}\n";
+$actual = qx"${cmd}";
+unless(ok($expected eq $actual, 'Is the resulting count table as expected?')) {
+    my($old, $new) = diff($expected, $actual);
+    diag("--\n${old}\n--\n${new}\n");
+}
+
 chdir($start);

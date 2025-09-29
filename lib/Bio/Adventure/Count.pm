@@ -6,6 +6,7 @@ use warnings qw"all";
 use Moo;
 extends 'Bio::Adventure';
 use Bio::Adventure::Config;
+use Bio::Adventure::Count_Tree;
 use Bio::DB::Sam;
 use Bio::FeatureIO;
 use Bio::Tools::GFF;
@@ -15,9 +16,6 @@ use File::Path qw"make_path";
 use File::Which qw"which";
 use List::Util qw"sum";
 use String::Approx qw"amatch";
-use Tree::DAG_Node;
-
-my @ISA=qw"Tree::DAG_Node";
 
 =head1 NAME
 
@@ -99,12 +97,15 @@ sub Feature_Counts {
     if (defined($stranded)) {
         if ($stranded eq 'forward') {
             $stranded = 1;
-        } elsif ($stranded eq 'reverse') {
+        }
+        elsif ($stranded eq 'reverse') {
             $stranded = 2;
-        } else {
+        }
+        else {
             $stranded = 0;
         }
-    } else {
+    }
+    else {
         $stranded = 0;
     }
 
@@ -139,11 +140,12 @@ stranded=${stranded}
     -R CORE -t \${gff_type} -g \${gff_tag} \\
     -a $paths->{gff} \\
 ";
-    $output .= qq"_s\${stranded}_\${gff_type}_\${gff_tag}_fcounts.csv";
+    my $output_file = qq"${output}_s${stranded}_$options->{gff_type}_$options->{gff_tag}_fcounts.csv";
+    my $output_variable = qq"${output}_s\${stranded}_\${gff_type}_\${gff_tag}_fcounts.csv";
     my $error = basename($output, ('.csv'));
     my $stderr = qq"${output_dir}/${error}.stderr";
     my $stdout = qq"${output_dir}/${error}.stdout";
-    $fc_invocation .= qq!    -o ${output} \\
+    $fc_invocation .= qq!    -o ${output_variable} \\
     $options->{input} \\
     2>>${stderr} \\
     1>>${stdout}
@@ -152,11 +154,11 @@ stranded=${stranded}
   echo 'featureCounts failed.' >> ${stderr}
 }
 if [[ "\${counted}" = 0 ]]; then
-  xz -9e -f ${output}
+  xz -9e -f ${output_file}
   xz -9e -f $options->{input}.featureCounts;
 fi
 !;
-    $output .= '.xz';
+    $output_file .= '.xz';
     my $comment = qq!## Counting the number of hits in $options->{input} for each feature found in $paths->{gff} via featureCounts.
 ## Is this stranded? ${stranded}.
 !;
@@ -166,7 +168,7 @@ fi
         gff_type => $options->{gff_type},
         gff_tag => $options->{gff_tag},
         input => $options->{input},
-        output => $output,
+        output => $output_file,
         stderr => $stderr,
         stdout => $stdout,
         postscript => $args{postscript},
@@ -373,33 +375,33 @@ sub Guess_Strand_Worker {
             $counters->{mean_scores} += this_mean(@scores);
             $counters->{mean_scored} += scalar(@scores);
         }
-            else {
-                print "No score ref\n";
-            }
+        else {
+            print "No score ref\n";
+        }
 
-            my $cigar = $align->cigar_str;
-            if ($cigar eq '') {
-                ## print "This did not align.\n";
-                next BAMLOOP;
-            }
-            $align_count++;
-            ## Look for a feature at this position...
-            #my %chr_features = %{$features->{$seqid}};
-            #for my $feat_id (keys %chr_features) {
-            #    my %feat = %{$chr_features{$feat_id}};
-            #
-            #    ##  ------------------->>>>>-------<<<<<--------------------------
-            #    ##                  >>>>>
-            #    if ($start <= $feat{start} && $end >= $feat{start} && $end < $feat{end}) {
-            #        use Data::Dumper;
-            #        #print Dumper %feat;
-            #    }
-            #}
-        }   ## End reading each bam entry
-        $counters->{grand_mean_score} = $counters->{mean_scores} / $counters->{mean_scored};
-        # $counters->{mean_mismatches} = $counters->{num_mismatches} / $counters->{total_bases};
-        # $counters->{proportion_unmapped} = (($counters->{this_unmapped} + $counters->{mate_unmapped}) / 2) / $counters->{couted};
-        print $log "
+        my $cigar = $align->cigar_str;
+        if ($cigar eq '') {
+            ## print "This did not align.\n";
+            next BAMLOOP;
+        }
+        $align_count++;
+        ## Look for a feature at this position...
+        #my %chr_features = %{$features->{$seqid}};
+        #for my $feat_id (keys %chr_features) {
+        #    my %feat = %{$chr_features{$feat_id}};
+        #
+        #    ##  ------------------->>>>>-------<<<<<--------------------------
+        #    ##                  >>>>>
+        #    if ($start <= $feat{start} && $end >= $feat{start} && $end < $feat{end}) {
+        #        use Data::Dumper;
+        #        #print Dumper %feat;
+        #    }
+        #}
+    }   ## End reading each bam entry
+    $counters->{grand_mean_score} = $counters->{mean_scores} / $counters->{mean_scored};
+    # $counters->{mean_mismatches} = $counters->{num_mismatches} / $counters->{total_bases};
+    # $counters->{proportion_unmapped} = (($counters->{this_unmapped} + $counters->{mate_unmapped}) / 2) / $counters->{couted};
+    print $log "
 Reads counted: $counters->{counted}
 Paired reads: $counters->{paired}
 Properly paired: $counters->{proper_pair}
@@ -426,8 +428,8 @@ Minus stranded: $counters->{minus_stranded}
 Grand score_mean: $counters->{grand_mean_score}
 Proportion unmapped: $counters->{proportion_unmapped}
 ";
-        $log->close();
-    }
+    $log->close();
+}
 
 =head2 C<HT_Multi>
 
@@ -514,7 +516,8 @@ sub HT_Multi {
                 suffix => $options->{suffix},);
             push(@jobs, $ht);
             $htseq_runs++;
-        } elsif (-r "$gtf") {
+        }
+        elsif (-r "$gtf") {
             print "Found ${gtf}, performing htseq with it.\n";
             my $ht = $class->Bio::Adventure::Count::HTSeq(
                 gff_type => $gff_type,
@@ -530,7 +533,7 @@ sub HT_Multi {
             push(@jobs, $ht);
             $htseq_runs++;
         }
-    } ## End foreach type
+    }                           ## End foreach type
     ## Also perform a whole genome count
     my $htall_jobname = qq"htall_${output_name}_$options->{species}_s${stranded}_$ro_opts{gff_type}_$ro_opts{gff_tag}";
     if (-r "$paths->{gff}") {
@@ -548,7 +551,8 @@ sub HT_Multi {
             prescript => $options->{prescript},
             suffix => $options->{suffix},);
         push(@jobs, $ht);
-    } elsif (-r "$paths->{gtf}") {
+    }
+    elsif (-r "$paths->{gtf}") {
         print "Found $paths->{gtf}, performing htseq_all with it.\n";
         my $ht = $class->Bio::Adventure::Count::HTSeq(
             htseq_gff => $paths->{gff},
@@ -562,7 +566,8 @@ sub HT_Multi {
             prescript => $args{prescript},
             suffix => $args{suffix},);
         push(@jobs, $ht);
-    } else {
+    }
+    else {
         print "Did not find $paths->{gff} nor $paths->{gtf}, not running htseq_all.\n";
     }
     return(\@jobs);
@@ -622,12 +627,14 @@ sub HT_Types {
         my $canonical = $names[0];
         if ($found_types{$type}) {
             $found_types{$type}++;
-        } else {
+        }
+        else {
             $found_types{$type} = 1;
         }
         if ($found_canonical{$canonical}) {
             $found_canonical{$canonical}++;
-        } else {
+        }
+        else {
             $found_canonical{$canonical} = 1;
         }
         if ($count > $max_lines) {
@@ -665,7 +672,8 @@ sub HT_Types {
     my $returned_type = "";
     if ($found_my_type == 1) {
         $returned_type = $my_type;
-    } else {
+    }
+    else {
         print "Did not find your specified type.  Changing it to: ${max_type} which had ${max} entries.\n";
         $returned_type = $max_type;
     }
@@ -768,7 +776,7 @@ sub HTSeq {
     my $gff_tag_arg = '';
     my $stdout = '';
     my $stderr = '';
-    my $annotation = $paths->{gtf};
+    my $annotation = $paths->{gff};
     if (!-r "${gtf}") {
         $annotation = $gff;
     }
@@ -781,13 +789,16 @@ sub HTSeq {
         $gff_type = $gff_type_pair->[0];
         $gff_type_arg = qq" --type ${gff_type}";
         $gff_tag_arg = qq" --idattr ${gff_tag}";
-    } elsif (ref($gff_type) eq 'ARRAY') {
+    }
+    elsif (ref($gff_type) eq 'ARRAY') {
         $gff_type_arg = qq" --type $gff_type->[0]";
         $gff_tag_arg = qq" --idattr ${gff_tag}";
-    } elsif ($gff_type eq 'none') {
+    }
+    elsif ($gff_type eq 'none') {
         $gff_type_arg = qq'';
         $gff_tag_arg = qq'';
-    } else {
+    }
+    else {
         $gff_type_arg = qq" --type \${gff_type}";
         $gff_tag_arg = qq" --idattr \${gff_tag}";
     }
@@ -1899,61 +1910,8 @@ sub GFF_Tree {
     my $gff_io = Bio::FeatureIO->new(-format => 'gff', -fh => $gff_in);
     my %id_types = ();
     my $counters = {};
-    package GFFTree;
-    sub new {
-        my $class = shift;
-        my $options = shift;
-        my $self = bless $class->SUPER::new();
-        $self->attributes($options);
-        return $self;
-    }
-    sub ids {
-        my $node = shift;
-        my $val = shift;
-        if ($val) {
-            my @ids = @{$node->attributes->{ids}};
-            push(@ids, $val);
-            $node->attributes->{ids} = \@ids;
-        }
-        else {
-            return $node->attributes->{ids};
-        }
-    }
-    sub num_ids {
-        my $node = shift;
-        my $val = shift;
-        if ($val) {
-            $node->attributes->{num_ids}++;
-        }
-        else {
-            return $node->attributes->{num_ids};
-        }
-    }
-    sub print_num_ids {
-        $_[0]->walk_down({callback=> sub {
-                              my $node = shift;
-                              printf "%s%.7s\t NumIDs: %d \n",
-                                  "  " x $_[0]->{_depth},
-                                  ## $node->name, scalar(@{$node->attributes->{ids}}),
-                                  $node->name, $node->attributes->{num_ids},
-                              }, _depth => 0 });
-    }
-    sub by_name {
-        my ($self, $name) = @_;
-        my @found =();
-        my $retvalue = wantarray ? 1 : 0;
-        $self->walk_down({callback => sub{
-            if ($_[0]->name eq $name) {
-                push @found, $_[0];
-                return $retvalue;
-            }
-            1}});
-        return wantarray? @found : @found ? $found[0] : undef;
-    }
-    package main;
-    # my $gff_tree = GFFTree->new({ ids => undef });
-    my $gff_tree = GFFTree->new({ num_ids => 1 });
-    my $root_name = 'hg38_111';
+    my $gff_tree = Bio::Adventure::Count_Tree->new({ num_ids => 1 });
+    my $root_name = $options->{species};
     $gff_tree->name($root_name);
     my $last_chromosome = 'start';
     my $feat_count = 0;
@@ -1974,16 +1932,18 @@ sub GFF_Tree {
         my $id = undef;
         if (scalar(@ids) > 0) {
             $id = $ids[0];
-        } elsif (scalar(@names) > 0) {
+        }
+        elsif (scalar(@names) > 0) {
             #print "Using Name instead of ID.\n";
             $id = $names[0];
-        } elsif (scalar(@parents) > 0) {
+        }
+        elsif (scalar(@parents) > 0) {
             #print "Using parent as a last resort.\n";
             $id = $parents[0];
         }
         if (!defined($id)) {
             #print "This has no ID: $feat_count\n";
-            $id = 'hg38_111';
+            $id = $options->{species};
         }
         unless (defined($id_types{$id})) {
             $id_types{$id} = $type;
@@ -1996,7 +1956,7 @@ sub GFF_Tree {
         my $parent_type = $id_types{$parent};
         if (!defined($parent_type)) {
             #print "This entry has no parent type: $parent $id $type $feat_count\n";
-            $parent_type = 'hg38_111';
+            $parent_type = $options->{species};
         }
         #print "Searching for: $type and $id and $parent / $parent_type\n";
         my $parent_node = undef;
@@ -2006,7 +1966,8 @@ sub GFF_Tree {
         my $node = undef;
         if (defined($parent_node)) {
             $node = $parent_node->by_name($type);
-        } else {
+        }
+        else {
             $node = $gff_tree->by_name($type);
         }
         if (defined($node) && defined($parent_node)) {
@@ -2015,22 +1976,26 @@ sub GFF_Tree {
                 ## $node->ids($id);
                 $node->num_ids($id);
                 #print "Parent and node are defiend, adding $id to a set of ids.\n";
-            } else {
+            }
+            else {
                 ## $parent_node->new_daughter({ids => [$id]})->name($type);
                 $parent_node->new_daughter({num_ids => 1})->name($type);
                 my $parent_name = $parent_node->name;
                 #print "Parent and node are defined, but node is a new child of parent.\n";
             }
-        } elsif (defined($node)) {
+        }
+        elsif (defined($node)) {
             ## $node->ids($id);
             $node->num_ids($id);
             #print "Only node is defiend, adding $id to a set of ids.\n";
-        } elsif (defined($parent_node)) {
+        }
+        elsif (defined($parent_node)) {
             ## $parent_node->new_daughter({ids => [$id]})->name($type);
             $parent_node->new_daughter({num_ids => 1})->name($type);
             my $parent_name = $parent_node->name;
             #print "Creating a new child under ${parent_name}\n";
-        } else {
+        }
+        else {
             ## $gff_tree->new_daughter({ids => [$id]})->name($type);
             $gff_tree->new_daughter({num_ids => 1})->name($type);
             #print "Creating a new root child of type: ${type}\n";

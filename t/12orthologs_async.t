@@ -1,6 +1,5 @@
 # -*-Perl-*-
 use strict;
-use Test::More qw"no_plan";
 use Bio::Adventure;
 use Cwd;
 use File::Basename qw"basename dirname";
@@ -9,49 +8,55 @@ use File::Path qw"remove_tree make_path rmtree";
 use File::ShareDir qw"dist_file module_dir dist_dir";
 use String::Diff qw"diff";
 use Test::File::ShareDir::Dist { 'Bio-Adventure' => 'share/' };
+use Test::More qw"no_plan";
+
+my $source_dir = dist_dir('Bio-Adventure');
+my $source_groupa_strep = qq"${source_dir}/genome/genbank/mgas_5005.gb.xz";
+my $source_groupb_strep = qq"${source_dir}/genome/genbank/sagalactiae_cjb111.gb.xz";
 
 my $start = getcwd();
 my $new = 'test_output_async';
 mkdir($new);
 chdir($new);
-my $start_dir = dist_dir('Bio-Adventure');
 
-my $groupa_strep = qq"${start_dir}/genome/mgas_5005.gb.xz";
-my $groupa_local = basename($groupa_strep);
-ok(cp($groupa_strep, $groupa_local), 'Copy the group A file.');
-ok(-r $groupa_local, 'Group A streptococcus file exists.');
-my $groupb_strep = qq"${start_dir}/genome/sagalactiae_cjb111.gb.xz";
-my $groupb_local = basename($groupb_strep);
-ok(cp($groupb_strep, $groupb_local), 'Copy the group B file.');
-ok(-r $groupb_local, 'Group B streptococcus file exists.');
+ok(-r $source_groupa_strep, "Found source groupa strep genome at: ${source_groupa_strep}.");
+ok(-r $source_groupb_strep, "Found source groupb strep genome at: ${source_groupb_strep}.");
+
 my $cyoa = Bio::Adventure->new(
     basedir => cwd(),
-    libdir => cwd());
+    libdir => 'reference',);
 
 ## First extract the amino acid sequences of our two streptococci genbank files.
 my $groupa_convert = $cyoa->Bio::Adventure::Convert::Gb2Gff(
-    input => $groupa_local, output_dir => '.',);
-my $status = $cyoa->Wait(job => $groupa_convert);
+    input => $source_groupa_strep, output_dir => '.',);
 ok($groupa_convert, 'Converted the group A strep genbank to fasta/gff/etc.');
-ok(-r $groupa_convert->{output_pep_fasta}, 'Created output peptide Group A fasta file.');
+my $status = $cyoa->Wait(job => $groupa_convert);
+ok($status->{State} eq 'COMPLETED', 'The group A strep conversion completed.');
+
+ok(-r 'mgas_5005.fsa', 'Found output groupA fasta file.');
 my $groupb_convert = $cyoa->Bio::Adventure::Convert::Gb2Gff(
-    input => $groupb_local, output_dir => '.',);
-$status = $cyoa->Wait(job => $groupa_convert);
+    input => $source_groupb_strep, output_dir => '.',);
 ok($groupb_convert, 'Converted the group B strep genbank to fasta/gff/etc.');
-ok(-r $groupb_convert->{output_pep_fasta}, 'Created output peptide Group B fasta file.');
+$status = $cyoa->Wait(job => $groupb_convert);
+ok($status->{State} eq 'COMPLETED', 'The group B strep conversion completed.');
+ok(-r 'sagalactiae_cjb111.fsa', 'Found output groupB fasta file.');
 
 ## Now invoke orthofinder
 my $orthos = $cyoa->Bio::Adventure::Align::OrthoFinder(
     input => qq"$groupa_convert->{output_pep_fasta}:$groupb_convert->{output_pep_fasta}",
     jprefix => '12',);
 $status = $cyoa->Wait(job => $orthos);
+ok($status->{State} eq 'COMPLETED', 'The orthofinder job finished.');
 
 ok(-r $orthos->{named_out}, 'Created tsv of named orthologs.');
-my $test_cmd = qq"head -n 2 $orthos->{named_out}";
+my $test_cmd = qq"head -n 2 $orthos->{output}";
 my $actual = qx"${test_cmd}";
-print "Invoking ${test_cmd} to check the named output.\n";
-my $expected = qq!Orthogroup	mgas_5005	mgas_5005_name	sagalactiae_cjb111	sagalactiae_cjb111_name
-"OG0000000"	"AAZ50854.1 GI_71852831 ; amino acid transport ATP-binding protein, AAZ51149.1 ftsE ; GI_71853126 ; cell division ATP-binding protein, AAZ51186.1 sagG ; GI_71853163 ; streptolysin S export ATP-binding protein, AAZ51426.1 srtF ; GI_71853403 ; lantibiotic transport ATP-binding protein, AAZ51473.1 proV ; GI_71853450 ; glycine betaine transport ATP-binding protein, AAZ51585.1 GI_71853562 ; ABC transporter ATP-binding protein, AAZ51601.1 GI_71853578 ; histidine transport ATP-binding protein, AAZ51695.1 glnQ.2 ; GI_71853672 ; glutamine transport ATP-binding protein, AAZ51855.1 artP ; GI_71853832 ; arginine transport ATP-binding protein, AAZ51980.1 GI_71853957 ; transporter, AAZ52136.1 GI_71854113 ; transporter, AAZ52139.1 GI_71854116 ; cobalt transport ATP-binding protein cbiO, AAZ52143.1 GI_71854120 ; ABC transporter ATP-binding protein, AAZ52247.1 salX ; GI_71854224 ; lantibiotic transport ATP-binding protein"	"AAZ50854.1 GI_71852831 "	""	"QOW75830.1 ATP-binding cassette domain-containing protein, QOW75889.1 ATP-binding cassette domain-containing protein, QOW75941.1 amino acid ABC transporter ATP-binding protein, QOW75969.1 ATP-binding cassette domain-containing protein, QOW75973.1 ABC transporter ATP-binding protein, QOW75989.1 ABC transporter ATP-binding protein, QOW76092.1 ABC transporter ATP-binding protein, QOW76121.1 ftsE ; cell division ATP-binding protein FtsE, QOW76148.1 amino acid ABC transporter ATP-binding protein, QOW76318.1 ABC transporter ATP-binding protein, QOW76332.1 amino acid ABC transporter ATP-binding protein, QOW76362.1 ABC transporter ATP-binding protein, QOW76375.1 betaine/proline/choline family ABC transporter ATP-binding protein, QOW76483.1 amino acid ABC transporter ATP-binding protein, QOW76495.1 ABC transporter ATP-binding protein, QOW76500.1 sugar ABC transporter ATP-binding protein, QOW76676.1 ABC transporter ATP-binding protein, QOW76764.1 ABC transporter ATP-binding protein, QOW77065.1 ABC transporter ATP-binding protein, QOW77115.1 ABC transporter ATP-binding protein, QOW77116.1 ABC transporter ATP-binding protein, QOW77166.1 ABC transporter ATP-binding protein, QOW77167.1 ABC transporter ATP-binding protein, QOW77187.1 ABC transporter ATP-binding protein, QOW77207.1 amino acid ABC transporter ATP-binding protein, QOW77578.1 ATP-binding cassette domain-containing protein, QOW77582.1 ABC transporter ATP-binding protein, QOW77612.1 ABC transporter ATP-binding protein, QOW77645.1 amino acid ABC transporter ATP-binding protein, QOW77719.1 ABC transporter ATP-binding protein"	"QOW75830.1 ATP-binding cassette domain-containing protein"	""
+print "Checking the named output via:
+${test_cmd}
+";
+## I made some changes to how I print the orthofinder outputs...
+my $expected = qq!Orthogroup	mgas_5005	sagalactiae_cjb111
+OG0000000	AAZ50854.1.231, AAZ51149.1.523, AAZ51186.1.560, AAZ51426.1.799, AAZ51473.1.840, AAZ51585.1.951, AAZ51601.1.967, AAZ51695.1.1061, AAZ51855.1.1217, AAZ51980.1.1342, AAZ52136.1.1498, AAZ52139.1.1501, AAZ52143.1.1505, AAZ52247.1.1608	QOW75830.1.1011, QOW75889.1.1073, QOW75941.1.1127, QOW75969.1.1155, QOW75973.1.1159, QOW75989.1.1178, QOW76092.1.1294, QOW76121.1.1325, QOW76148.1.1352, QOW76318.1.1536, QOW76332.1.1550, QOW76362.1.1580, QOW76375.1.1595, QOW76483.1.1706, QOW76495.1.1719, QOW76500.1.1724, QOW76676.1.1907, QOW76764.1.1997, QOW77065.1.309, QOW77115.1.360, QOW77116.1.361, QOW77166.1.414, QOW77167.1.415, QOW77187.1.440, QOW77207.1.460, QOW77578.1.860, QOW77582.1.864, QOW77612.1.894, QOW77645.1.930, QOW77719.1.32
 !;
 unless(ok($expected eq $actual, 'Is the resulting set of named orthologs as expected?')) {
     my($old, $new) = diff($expected, $actual);
@@ -62,7 +67,9 @@ ok(-r $orthos->{single_out}, 'Created tsv of single-named orthologs.');
 print "Checking the single output: $orthos->{single_out}\n";
 $test_cmd = qq"sort $orthos->{single_out} | head -n 2";
 $actual = qx"${test_cmd}";
-print "Invoking ${test_cmd} to check the single output.\n";
+print "Invoking
+${test_cmd}
+to check the single output.\n";
 $expected = qq!OG0000240
 OG0000241
 !;
@@ -75,14 +82,15 @@ ok(-r $orthos->{single_name_out}, 'Created tsv of single-named orthologs.');
 print "Checking the single output: $orthos->{single_out}\n";
 $test_cmd = qq"sort $orthos->{single_name_out} | head -n 2 | awk '{print \$2}'";
 $actual = qx"${test_cmd}";
-print "Invoking
+print "Invoking:
 ${test_cmd}
 to check the single named output.\n";
 $expected = qq!AAZ50620.1
-AAZ50621.1
+AAZ50621.1.1
 !;
 unless(ok($expected eq $actual, 'Is the resulting set of named orthologs as expected?')) {
     my($old, $new) = diff($expected, $actual);
     diag("--Expected--\n${old}\n--Actual--\n${new}\n");
 }
+
 chdir($start);
