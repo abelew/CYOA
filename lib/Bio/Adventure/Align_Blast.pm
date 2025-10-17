@@ -578,6 +578,7 @@ my \$result = \$h->Bio::Adventure::Align::Parse_Search(
         language => 'perl',
         parsed_output => $parse_output,);
     $concat_job->{parser} = $parse_job;
+    $parse_job->{job_id} = $parse_job->{job_id};
     return($concat_job);
 }
 

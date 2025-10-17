@@ -98,7 +98,10 @@ WriteMakefile(
             },
             homepage => 'https://github.com/abelew/CYOA.git',
         },
-    },);
+    },
+    ## Add the test output directories to the clean.
+    clean => { FILES => "test_output test_output_async" },
+);
 auto_install();
 package MY;
 use File::ShareDir::Install qw"postamble";

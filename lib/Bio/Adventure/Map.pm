@@ -236,6 +236,7 @@ bowtie \\
         jprefix => $options->{jprefix} + 2,
         trim_input => ${trim_output_file},);
     $bt_job->{stats} = $stats;
+    $bt_job->{job_id} = $stats->{job_id};
     return($bt_job);
 }
 
@@ -443,6 +444,9 @@ bowtie2 -x ${bt_reflib} ${bt2_args} \\
             $bt2_job->{htseq} = $htmulti;
         }
     }
+    my $last_value = $#$htmulti;
+    my $last_job = $htmulti->[$last_value];
+    $bt2_job->{job_id} = $last_job->{job_id};
     return($bt2_job);
 }
 
@@ -639,6 +643,7 @@ sub BWA {
     my @sam_files = ();
     my $stderr = qq"${bwa_dir}/bwa.stderr";
     my $stdout = qq"${bwa_dir}/bwa.stdout";
+    my $htmulti;
 
     for my $method (@bwa_methods) {
         my $sam_out = qq"${bwa_dir}/$options->{jbasename}_${method}.sam";
@@ -796,11 +801,12 @@ fi
                 stranded => $stranded,
             };
             my %htseq_args = $class->Extra_Options(options => $options, extras => $htseq_extras);
-            my $htmulti = $class->Bio::Adventure::Count::HTSeq(%htseq_args);
+            $htmulti = $class->Bio::Adventure::Count::HTSeq(%htseq_args);
             $bwa_job->{$htseq_name} = $htmulti;
         }
         $sam_count++;
     } ## Done running samtools/htseq on the various bwa output files.
+    $bwa_job->{job_id} = $htmulti->{job_id};
     return($bwa_job);
 }
 
@@ -923,6 +929,7 @@ ${sa_rm}
         jname => qq"sastrand_$options->{species}",
         jprefix => $options->{jprefix},);
     $salmon->{strand} = $strand;
+    $salmon->{job_id} = $strand->{job_id};
     return($salmon);
 }
 
@@ -1259,7 +1266,6 @@ sync
         output_dir => $paths->{output_dir},);
     $hisat_job->{stats} = $stats;
     $hisat_job->{job_id} = $stats->{job_id};
-
     return($hisat_job);
 }
 
@@ -2064,6 +2070,7 @@ mapped=1
         jname => qq"sastats_$options->{species}",
     );
     $salmon->{stats} = $stats;
+    $salmon->{job_id} = $stats->{job_id};
     return($salmon);
 }
 
@@ -2349,6 +2356,7 @@ fi
         prep_input => $input_read_info,
         unaccepted_input => $unaccepted,);
     $tophat->{stats} = $stats;
+    $tophat->{job_id} = $stats->{job_id};
     return($tophat);
 }
 

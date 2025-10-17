@@ -159,6 +159,7 @@ sub Check_Job {
     my @names;
     ## Read the jobs.csv if it exists to see which jobs have already been checked.
     if (-r $jobs_csv) {
+        print "Using the jobs_csv file: $jobs_csv\n";
         my $reader = FileHandle->new("<${jobs_csv}");
         my $read_count = 0;
       READER: while (my $line = <$reader>) {
@@ -168,7 +169,7 @@ sub Check_Job {
             my @csv_info = split(/\,/, $line);
             my $elements = $#csv_info;
             my $id = $csv_info[1];
-            $ids{$id}->{state} = $csv_info[$elements];
+            $ids{$id}->{info} = $csv_info[$elements];
         }
         $reader->close();
     }
@@ -191,7 +192,7 @@ sub Check_Job {
             next JOBLOG if ($line =~ /^#/);
             my ($name, $type, $id) = split(/\s+/, $line);
             next JOBLOG unless ($type eq 'slurm');
-            if (defined($ids{$id}->{state})) {
+            if (defined($ids{$id}->{info})) {
                 next JOBLOG;
             }
             if ($id =~ /^\d+/) {
@@ -208,7 +209,7 @@ sub Check_Job {
         next IDS if (!defined($id));
         my $job_info = {};
         my $command = qq"sacct -l -j ${id} -p";
-        print "Running: ${command}\n";
+        print "Running: ${command}\n" if (defined($args{verbose}));
         ## my $info = FileHandle->new("sacct -l -j ${id} --json |");
         my $info = FileHandle->new("${command} |");
         my $line_count = 0;
@@ -225,6 +226,10 @@ sub Check_Job {
                 for my $idx (0 .. $#provided_info) {
                     my $element = $provided_info[$idx];
                     my $key = $header_array[$idx];
+                    ## Temporary test looking for RUNNING
+                    ##if ($element eq 'RUNNING') {
+                    ##    print "The key associated with running is: $key\n";
+                    ##}
                     if (defined($element) && $element ne '') {
                         $job_info->{$key} = $element;
                     }
@@ -239,6 +244,7 @@ sub Check_Job {
                     next IDX if ($key eq 'Partition');
                     next IDX if ($key eq 'JobIDRaw');
                     next IDX if ($key eq 'JobID');
+                    next IDX if ($key eq 'State');
                     if ($element =~ m/^\d+\.*\d*[K|M|G]$/) {
                         my $num;
                         if ($element =~ /K$/) {
@@ -1785,11 +1791,16 @@ sub Wait {
         sleep(20);
         my $info = $class->Bio::Adventure::Slurm::Check_Job(input => $id, write => 0);
         $datum = $info->[0];
-        if ($datum->{State} eq 'COMPLETED') {
+        if (!defined($datum->{State})) {
+            ## I do not know what is going on, State should eval to RUNNING
+            $wait_count->{running}++;
+            next;
+        }
+        elsif ($datum->{State} eq 'COMPLETED') {
             $wait_count->{finished}++;
             print qq"The job ${id}:$datum->{JobName} required $datum->{MaxVMSize}G memory, ";
             print qq"$datum->{MaxDiskWrite}G disk, and ";
-            print qq"$datum->{'Elapsed'} time using $datum->{'AveCPUFreq'}Mhz.\n";
+            print qq"$datum->{'Elapsed'} time using $datum->{'AveCPUFreq'}Mhz on $datum->{'MaxVMSizeNode'}.\n";
         }
         elsif ($datum->{State} eq 'PENDING') {
             $wait_count->{pending}++;

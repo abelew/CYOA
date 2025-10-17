@@ -138,6 +138,7 @@ upon all the apparatus, and you’ve got to make it stop. Go to page 2025.',
                 '(gatkdedup): Deduplicate an existing bam alignment with gatk.' => \&Bio::Adventure::Convert::GATK_Dedup,
                 '(extract_seqids): Extract arbitrary sequence IDs from a reference.' => \&Bio::Adventure::Convert::Extract_SeqIDs,
                 '(extract_subseq): Extract a subsequence from a reference genome.' => \&Bio::Adventure::Convert::Extract_Subseq,
+                '(split_fasta): Separate a fasta file into its pieces.' => \&Bio::Adventure::Convert::Split_Fasta,
             },
         },
         Counting => {
@@ -740,6 +741,7 @@ sub Get_Modules {
         'Spladder' => { modules => 'spladder' },
         'Split_Align_Blast' => { modules => ['cyoa', 'blast', 'blastdb'], exe => 'blastn' },
         'Split_Align_Fasta' => { modules => ['cyoa', 'fasta',], exe => 'fasta36' },
+        'Split_Fasta' => { modules => ['cyoa'] },
         'Spring' => { modules => ['spring',] },
         'STAR' => { modules => 'star' },
         'STAR_Index' => { modules => ['star'] },
@@ -1122,6 +1124,9 @@ sub Get_Paths {
         $paths->{output_zero} = qq"${output_dir}/${output_base}_zero.txt";
         $paths->{output_all} = qq"${output_dir}/${output_base}_all.txt";
     }
+    elsif ($subroutine eq 'Split_Fasta') {
+        $paths->{output_dir} = qq"${output_prefix}split";
+    }
     elsif ($subroutine eq 'Spring') {
         my $input_name = basename($options->{input}, ('.gz', '.bz2', '.xz'));
         $input_name = basename($input_name, ('.fastq'));
@@ -1364,6 +1369,7 @@ sub Get_TODOs {
         "sortindexes+" => \$todo_list->{todo}{'Bio::Adventure::TNSeq::Sort_Indexes'},
         "spladder+" => \$todo_list->{todo}{'Bio::Adventure::Splicing::Spladder'},
         "splitalign+" => \$todo_list->{todo}{'Bio::Adventure::Align::Split_Align'},
+        "splitfasta+" => \$todo_list->{todo}{'Bio::Adventure::Convert::Split_Fasta'},
         "spring+" => \$todo_list->{todo}{'Bio::Adventure::Compress::Spring'},
         "sradownload+" => \$todo_list->{todo}{'Bio::Adventure::Prepare::Download_SRA_PRJNA'},
         "star+" => \$todo_list->{todo}{'Bio::Adventure::Map::STAR'},

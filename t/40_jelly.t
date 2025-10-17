@@ -45,9 +45,7 @@ if (-r $local_input_fastq) {
 }
 
 my $cyoa = Bio::Adventure->new(cluster => 0, basedir => cwd());
-my $jelly = $cyoa->Bio::Adventure::Count::Jellyfish(
-    input => $local_phix_fasta,
-    jprefix => 40,);
+my $jelly = $cyoa->Bio::Adventure::Count::Jellyfish(input => $local_phix_fasta, jprefix => 40,);
 ok($jelly, 'Run jellyfish jobs in the shell.');
 my $first_job_outputs = $jelly->{compression}->{output};
 my @output_files = split(/:/, $first_job_outputs);

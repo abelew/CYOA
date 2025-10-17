@@ -1600,14 +1600,20 @@ sub Record_Options {
     my $runner = $args{runner};
     my $result = $args{result};
     my $arg_fh = FileHandle->new(qq">>$class->{output_base}/args.tsv");
+    my $method = Bio::Adventure::Config::Get_Caller();
     my @written = ();
     if ($result->{stdout}) {
-        print $arg_fh "method\tstdout\t$result->{stdout}\n";
+        print $arg_fh "${method}\tstdout\t$result->{stdout}\n";
         push(@written, $result->{stdout});
     }
     for my $k (keys %{$result}) {
         if ($k =~ /output/) {
-            print $arg_fh "method\t$k\t$result->{$k}\n";
+            if (!defined($result->{$k})) {
+                warn("When writing options, ${k} has an undefined result.");
+                print $arg_fh "${method}\t${k}\tundefined_result\n";
+            } else {
+                print $arg_fh "${method}\t${k}\t$result->{$k}\n";
+            }
             push(@written, $k);
         }
     }
@@ -1755,9 +1761,10 @@ fi
         $runner->{$k} = $options->{$k};
     }
     my $result = $runner->Submit($class, %args);
+    ## $runner gets the outputs etc
+    ## What does $result get?
     my $recorded = $class->Record_Options(result => $result, runner => $runner);
     my $unloaded = $class->Module_Reset(env => $loaded);
-    $class = $class->Reset_Vars();
     if (!defined($class->{jobnames}) || $class->{jobnames} eq '') {
         $class->{jobnames} = [$result->{jname}];
     } else {
@@ -1773,6 +1780,7 @@ fi
         $class->{jobids} = \@tmp;
     }
     $class->{last_job} = $class->{job_id};
+    $class = $class->Reset_Vars();
     return($result);
 }
 

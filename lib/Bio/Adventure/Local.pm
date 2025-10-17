@@ -227,11 +227,13 @@ failed with error: $!.\n");
     $job->{log} = $bash_log;
     $job->{job_id} = $bash_pid;
     $job->{script_file} = $script_file;
+    $parent->{language} = 'bash';
+    make_path(qq"$options->{basedir}/outputs/logs");
     my $job_logger = FileHandle->new(">>outputs/logs/jobs.txt");
     print $job_logger "${jname}\tbash\t${bash_pid}\n";
     $job_logger->close();
     ## Reset the environment in case we left any cruft behind
-    my $reset = Bio::Adventure::Reset_Vars($class);
+    ## my $reset = Bio::Adventure::Reset_Vars($class);
     return($job);
 }
 

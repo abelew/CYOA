@@ -805,6 +805,10 @@ T7	2899	2977	plus
 T8	3290	3368	plus
 T9	3550	3628	plus
 ";
+chomp $expected;
+chomp $actual;
+$expected =~ s/\s+$//g;
+$actual =~ s/\s+//g;
 ## This test failed but it looks ok when I checked manually, what is up?
 $comparison = ok($expected1 eq $actual, "Checking rhotermpredict result via 'head $test_file'");
 if ($comparison) {

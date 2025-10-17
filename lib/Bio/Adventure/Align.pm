@@ -562,13 +562,13 @@ sub ProgressiveMauve {
     my $comment = qq!## Attempting to run progressive mauve a directory of genbank/fasta files: $options->{input}.
 !;
     my $mem = $options->{jmem} * 1000;
-    my $jstring = qq!
-location=\$(dirname Mauve)
-\${location}/progressiveMauve \
-  --output=${outdir}/alignment \
-  --output-guide-tree=${outdir}/guide_tree \
-  --backbone-output=${outdir}/backbone \
-  $options->{library} \
+    my $jstring = qq!mauve=\$(type -ap Mauve)
+location=\$(dirname \${mauve})
+\${location}/progressiveMauve \\
+  --output=${outdir}/alignment \\
+  --output-guide-tree=${outdir}/guide_tree \\
+  --backbone-output=${outdir}/backbone \\
+  $options->{reference} \\
   \$(/bin/find $options->{input})
 !;
     my $mauve = $class->Submit(
@@ -686,7 +686,7 @@ sub OrthoFinder {
     my $outdir = qq"outputs/$options->{jprefix}orthofinder";
     make_path(qq"${outdir}/input");
     if (-d "${outdir}/output") {
-        warn("The output directory already exists, moving it to a randomly generated name.");
+        print("The output directory already exists, moving it to a randomly generated name.");
         my $move_path = tmpnam();
         my $move_name = basename($move_path);
         my $new_dir = qq"${outdir}/output_${move_name}";
@@ -766,6 +766,7 @@ my \$result = \$h->Bio::Adventure::Align::Orthofinder_Names_Worker(
         stdout => $stdout,
         stderr => $stderr,);
     $ortho->{namer} = $namer;
+    $ortho->{job_id} = $namer->{job_id};
     return($ortho);
 }
 

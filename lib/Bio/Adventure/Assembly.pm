@@ -670,12 +670,12 @@ rm -rf chrysalis insilico_read_normalization read_partitions \\
         jname => qq"1trin_rsem",
         input => $options->{input},);
     my $trinotate = $class->Bio::Adventure::Annotation::Trinotate(
-        %args,
-        jdepends => $trinity->{job_id},
+        %args, jdepends => $trinity->{job_id},
         jname => qq"2trinotate",
         input => qq"${output_dir}/Trinity.fasta",);
     $trinity->{rsem_job} = $rsem;
     $trinity->{trinotate_job} = $trinotate;
+    $trinity->{job_id} = $trinotate->{job_id};
     return($trinity);
 }
 

@@ -1306,6 +1306,27 @@ sub Species2SF {
     return($ret);
 }
 
+sub Split_Fasta {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['input'],);
+    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+    my $fh = Bio::Adventure::Get_FH(input => $options->{input});
+    my $input = Bio::SeqIO->new(-fh => $fh, -format => 'Fasta');
+    my $ret = {};
+    while (my $sequence = $input->next_seq()) {
+        my $id = $sequence->id;
+        $id =~ s/[[:punct:]]/_/g;
+        my $seq_string = $sequence->seq;
+        my $out_filename = qq"${id}.fasta";
+        my $writer = Bio::SeqIO->new(-format => 'fasta', -file => qq">${out_filename}");
+        $writer->write_seq($sequence);
+        $ret->{$id} = $sequence;
+    }
+    return($ret);
+}
+
 =back
 
 =head1 AUTHOR - atb
