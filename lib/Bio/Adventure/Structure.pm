@@ -670,7 +670,7 @@ if [[ \! -z "\${nvcc_location}" ]]; then
 fi
 /usr/bin/time -v -o $paths->{stdout}.time -a \\
   run_alphafold.py ${xla_flag} \\
-    --json_path ${final_dir} \\
+    --json_path ${json_filename} \\
     --model_dir \$ALPHA_HOME/models \\
     --output_dir ${final_dir} \\
     --jax_compilation_cache_dir ${final_dir}/jax \\
