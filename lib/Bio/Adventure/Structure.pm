@@ -509,6 +509,9 @@ sub ProteinFold_JSON_Pairwise_OneInput {
     }
     my @jobs = ();
   FST: for my $c (0 .. ($#seqs - 1)) {
+        my $inner_job;
+        ## I am going to make a dependency chain of inner jobs to try and avoid
+        ## overflowing the scheduler
         my $first = $seqs[$c];
         next FST unless (defined($first));
         my $first_id = $first->id;
@@ -569,7 +572,10 @@ fi
     --flash_attention_implementation=xla \\
     1>$paths->{stdout} 2>&1
 !;
-            my $job = $class->Submit(
+            if (defined($inner_job)) {
+                $options->{jdepends} = $inner_job->{job_id};
+            }
+            $inner_job = $class->Submit(
                 jdepends => $options->{jdepends},
                 jname => qq"$options->{jname}_${id_string}",
                 jstring => $jstring,
@@ -581,8 +587,9 @@ fi
                 stdout => $paths->{stdout},
                 output => $paths->{output_dir},);
             push(@jobs, $job);
-        }
-    }
+        } ## End iterating over the inner jobs
+        sleep 1200;
+    } ## End iterating over the outer jobs
     return(@jobs);
 }
 

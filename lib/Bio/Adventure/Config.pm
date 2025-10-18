@@ -1066,7 +1066,7 @@ sub Get_Paths {
         my ($in1, $in2) = split(/$options->{delimiter}/, $options->{input});
         my $output_suffix_first = basename($in1, ('.txt', '.fsa', '.faa', '.fasta', '.fa', '.ffn'));
         my $output_suffix_second = basename($in2, ('.txt', '.fsa', '.faa', '.fasta', '.fa', '.ffn'));
-        $paths->{output_dir} = qq"${output_prefix}proteinfold_pairs_${output_suffix_first}_${output_suffix_second}";
+        $paths->{output_dir} = qq"${output_prefix}${output_suffix_first}/${output_suffix_second}";
         $paths->{output} = qq"$paths->{output_dir}/proteinfold.txt";
     }
     elsif ($subroutine eq 'RNAFold_Windows' || $subroutine eq 'RNAFold_Windows_Worker') {
