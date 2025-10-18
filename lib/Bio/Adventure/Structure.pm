@@ -347,7 +347,7 @@ export TF_FORCE_UNIFIED_MEMORY=true
 export XLA_CLIENT_MEM_FRACTION=3.2
 export XLA_FLAGS="\${XLA_FLAGS} --xla_disable_hlo_passes=custom-kernel-fusion-rewriter --xla_gpu_enable_triton_gemm=false"
 mkdir -p ${cif_directory}/jax
-nvcc_location=\$(command -v nvcc)
+nvcc_location=\$( { command -v nvcc || true; } )
 if [[ \! -z "\${nvcc_location}" ]]; then
   cuda_location=\$(dirname \$(dirname \${nvcc_location}))
   query_location=query_location="\${cuda_location}/extras/demo_suite/deviceQuery"
@@ -460,7 +460,7 @@ export TF_FORCE_UNIFIED_MEMORY=true
 export XLA_CLIENT_MEM_FRACTION=3.2
 export XLA_FLAGS="\${XLA_FLAGS} --xla_disable_hlo_passes=custom-kernel-fusion-rewriter --xla_gpu_enable_triton_gemm=false"
 mkdir -p $paths->{output_dir}/jax
-nvcc_location=\$(command -v nvcc)
+nvcc_location=\$( { command -v nvcc || true; } )
 if [[ \! -z "\${nvcc_location}" ]]; then
   cuda_location=\$(dirname \$(dirname \${nvcc_location}))
   query_location=query_location="\${cuda_location}/extras/demo_suite/deviceQuery"
@@ -559,7 +559,7 @@ export TF_FORCE_UNIFIED_MEMORY=true
 export XLA_CLIENT_MEM_FRACTION=3.2
 export XLA_FLAGS="\${XLA_FLAGS} --xla_disable_hlo_passes=custom-kernel-fusion-rewriter --xla_gpu_enable_triton_gemm=false"
 mkdir -p ${json_base}/jax
-nvcc_location=\$(command -v nvcc)
+nvcc_location=\$( { command -v nvcc || true; } )
 if [[ \! -z "\${nvcc_location}" ]]; then
   cuda_location=\$(dirname \$(dirname \${nvcc_location}))
   query_location="\${cuda_location}/extras/demo_suite/deviceQuery"
@@ -575,7 +575,7 @@ fi
     --output_dir ${json_base} \\
     --jax_compilation_cache_dir ${json_base}/jax \\
     --flash_attention_implementation=xla \\
-    1>$paths->{stdout} 2>&1
+    1>${json_base}.stdout 2>${json_base}.stderr
 !;
             if (defined($inner_job)) {
                 $options->{jdepends} = $inner_job->{job_id};
@@ -658,12 +658,14 @@ export TF_FORCE_UNIFIED_MEMORY=true
 export XLA_CLIENT_MEM_FRACTION=3.2
 export XLA_FLAGS="\${XLA_FLAGS} --xla_disable_hlo_passes=custom-kernel-fusion-rewriter --xla_gpu_enable_triton_gemm=false"
 mkdir -p ${final_dir}/jax
-nvcc_location=\$(command -v nvcc)
+nvcc_location=\$( { command -v nvcc || true; } )
 if [[ \! -z "\${nvcc_location}" ]]; then
   cuda_location=\$(dirname \$(dirname \${nvcc_location}))
-  query_location=query_location="\${cuda_location}/extras/demo_suite/deviceQuery"
+##  query_location=query_location="\${cuda_location}/extras/demo_suite/deviceQuery"
+  query_string=query_location="\${cuda_location}/extras/demo_suite/deviceQuery"
   if [[ -x "\$query_location" ]]; then
-    \$query_location >> ${final_dir}/queryDevice.stdout
+##    \$query_location >> ${final_dir}/queryDevice.stdout
+     echo \$query_string >> ${final_dir}/queryDevice.stdout
   fi
 fi
 /usr/bin/time -v -o $paths->{stdout}.time -a \\
@@ -673,7 +675,7 @@ fi
     --output_dir ${final_dir} \\
     --jax_compilation_cache_dir ${final_dir}/jax \\
     --flash_attention_implementation=xla \\
-    1>${final_dir}/$paths->{stdout} 2>&1
+    1>${final_dir}/stdout 2>${final_dir}/stderr
 echo "${first_id},${second_id}" >> $paths->{output_dir}/finished.txt
 !;
     my $job = $class->Submit(
@@ -753,7 +755,7 @@ export TF_FORCE_UNIFIED_MEMORY=true
 export XLA_CLIENT_MEM_FRACTION=3.2
 export XLA_FLAGS="\${XLA_FLAGS} --xla_disable_hlo_passes=custom-kernel-fusion-rewriter --xla_gpu_enable_triton_gemm=false"
 mkdir -p $paths->{output_dir}/jax
-nvcc_location=\$(command -v nvcc)
+nvcc_location=\$( { command -v nvcc || true; } )
 if [[ \! -z "\${nvcc_location}" ]]; then
   cuda_location=\$(dirname \$(dirname \${nvcc_location}))
   query_location=query_location="\${cuda_location}/extras/demo_suite/deviceQuery"
