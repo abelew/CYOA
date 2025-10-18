@@ -562,9 +562,10 @@ mkdir -p ${json_base}/jax
 nvcc_location=\$(command -v nvcc)
 if [[ \! -z "\${nvcc_location}" ]]; then
   cuda_location=\$(dirname \$(dirname \${nvcc_location}))
-  query_location=query_location="\${cuda_location}/extras/demo_suite/deviceQuery"
+  query_location="\${cuda_location}/extras/demo_suite/deviceQuery"
+  query_string=query_location="\${cuda_location}/extras/demo_suite/deviceQuery"
   if [[ -x "\$query_location" ]]; then
-    \$query_location >> ${json_base}/queryDevice.stdout
+    echo \$query_string >> ${json_base}/queryDevice.stdout
   fi
 fi
 /usr/bin/time -v -o $paths->{stdout}.time -a \\
