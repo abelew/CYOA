@@ -300,6 +300,8 @@ sub ProteinFold_JSON_Separate {
     my ($class, %args) = @_;
     my $options = $args{options};
     my $paths = $args{paths};
+    my $cif_directory = $paths->{cif_output_dir} unless (-d $paths->{cif_output_dir});
+    make_path($cif_directory);
     my $molecule_type = $options->{libtype};
     my $in = Bio::Adventure::Get_FH(input => $options->{input});
     my $seqio = Bio::SeqIO->new(-format => 'fasta', -fh => $in);
@@ -307,7 +309,7 @@ sub ProteinFold_JSON_Separate {
   SEQ: while (my $seq = $seqio->next_seq) {
         my $seqid = $seq->id;
         my $sequence = $seq->seq;
-        my $json_filename = qq"$paths->{output_dir}/${seqid}.json";
+        my $json_filename = qq"${cif_directory}/${seqid}.json";
         my $json_fh = FileHandle->new(">${json_filename}");
         my $peptide = {
             $molecule_type => {
@@ -326,7 +328,7 @@ sub ProteinFold_JSON_Separate {
         my $pretty = JSON->new->pretty->encode($datum);
         print $json_fh $pretty;
         $json_fh->close();
-        my $final_full = abs_path($paths->{output_dir});
+        my $final_full = abs_path($cif_directory);
         ## Note the following which applies to our cluster: CUDA
         ## Capability 7.x GPUs For all CUDA Capability 7.x GPUs
         ## (e.g. V100) the environment variable XLA_FLAGS must be
@@ -344,21 +346,21 @@ export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export TF_FORCE_UNIFIED_MEMORY=true
 export XLA_CLIENT_MEM_FRACTION=3.2
 export XLA_FLAGS="\${XLA_FLAGS} --xla_disable_hlo_passes=custom-kernel-fusion-rewriter --xla_gpu_enable_triton_gemm=false"
-mkdir -p $paths->{output_dir}/jax
+mkdir -p ${cif_directory}/jax
 nvcc_location=\$(command -v nvcc)
 if [[ \! -z "\${nvcc_location}" ]]; then
   cuda_location=\$(dirname \$(dirname \${nvcc_location}))
   query_location=query_location="\${cuda_location}/extras/demo_suite/deviceQuery"
   if [[ -x "\${query_location}" ]]; then
-    \$query_location >> $paths->{output_dir}/queryDevice.stdout
+    \$query_location >> ${cif_directory}/queryDevice.stdout
   fi
 fi
 /usr/bin/time -v -o $paths->{stdout}.time -a \\
   run_alphafold.py \\
     --json_path ${json_filename} \\
     --model_dir \$ALPHA_HOME/models \\
-    --output_dir $paths->{output_dir} \\
-    --jax_compilation_cache_dir $paths->{output_dir}/jax \\
+    --output_dir ${cif_directory} \\
+    --jax_compilation_cache_dir ${cif_directory}/jax \\
     --flash_attention_implementation=xla \\
     1>$paths->{stdout} 2>&1
 !;
@@ -372,7 +374,7 @@ fi
             language => 'bash',
             stderr => $paths->{stderr},
             stdout => $paths->{stdout},
-            output => $paths->{output_dir},);
+            output => $cif_directory,);
         push(@jobs, $job);
     }          ## End iterating over every sequence in the input file.
     return(@jobs);
@@ -521,8 +523,10 @@ sub ProteinFold_JSON_Pairwise_OneInput {
             next SCD unless (defined($second));
             my $second_id = $second->id;
             my $second_sequence = $second->seq;
-            my $id_string = qq"${first_id}_${second_id}";
-            my $json_filename = qq"$paths->{output_dir}/${id_string}.json";
+            my $id_string = qq"${first_id}/${second_id}";
+            my $json_base = qq"$paths->{output_dir}/${id_string}";
+            make_path($json_base) unless (-d $json_base);
+            my $json_filename = qq"${json_base}.json";
             my $json_fh = FileHandle->new(">${json_filename}");
             my $first_peptide = {
                 $molecule_type => {
@@ -547,28 +551,28 @@ sub ProteinFold_JSON_Pairwise_OneInput {
             my $pretty = JSON->new->pretty->encode($datum);
             print $json_fh $pretty;
             $json_fh->close();
-            my $final_full = abs_path($paths->{output_dir});
+            my $final_full = abs_path($json_base);
             my $jstring = qq!
 export TMPDIR=${final_full}
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export TF_FORCE_UNIFIED_MEMORY=true
 export XLA_CLIENT_MEM_FRACTION=3.2
 export XLA_FLAGS="\${XLA_FLAGS} --xla_disable_hlo_passes=custom-kernel-fusion-rewriter --xla_gpu_enable_triton_gemm=false"
-mkdir -p $paths->{output_dir}/jax
+mkdir -p ${json_base}/jax
 nvcc_location=\$(command -v nvcc)
 if [[ \! -z "\${nvcc_location}" ]]; then
   cuda_location=\$(dirname \$(dirname \${nvcc_location}))
   query_location=query_location="\${cuda_location}/extras/demo_suite/deviceQuery"
   if [[ -x "\$query_location" ]]; then
-    \$query_location >> $paths->{output_dir}/queryDevice.stdout
+    \$query_location >> ${json_base}/queryDevice.stdout
   fi
 fi
 /usr/bin/time -v -o $paths->{stdout}.time -a \\
   run_alphafold.py \\
     --json_path ${json_filename} \\
     --model_dir \$ALPHA_HOME/models \\
-    --output_dir $paths->{output_dir} \\
-    --jax_compilation_cache_dir $paths->{output_dir}/jax \\
+    --output_dir ${json_base} \\
+    --jax_compilation_cache_dir ${json_base}/jax \\
     --flash_attention_implementation=xla \\
     1>$paths->{stdout} 2>&1
 !;
@@ -585,8 +589,8 @@ fi
                 language => 'bash',
                 stderr => $paths->{stderr},
                 stdout => $paths->{stdout},
-                output => $paths->{output_dir},);
-            push(@jobs, $job);
+                output => $json_base,);
+            push(@jobs, $inner_job);
         } ## End iterating over the inner jobs
         sleep 1200;
     } ## End iterating over the outer jobs
@@ -611,10 +615,12 @@ sub ProteinFold_JSON_Pairwise_TwoSeq {
     $second_id =~ s/\.\d{1,2}$//;
     $second_id =~ s/:.*$//;
     my $id_string = qq"${first_id}_${second_id}";
-    my $final_dir = qq"$paths->{output_dir}/${id_string}";
-    make_path($final_dir) unless (-d $final_dir);
+    my $id_dir = qq"${first_id}/${second_id}";
+    my $final_dir = qq"$paths->{output_dir}/${id_dir}";
     my $final_full = abs_path($final_dir);
+    make_path($final_dir) unless (-d $final_dir);
     my $json_filename = qq"${final_dir}/${id_string}.json";
+    my $cif_filename = qq"${final_dir}/${id_string}.cif";
     my $json_fh = FileHandle->new(">${json_filename}");
     my $first_peptide = {
         $molecule_type => {
@@ -650,23 +656,23 @@ export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export TF_FORCE_UNIFIED_MEMORY=true
 export XLA_CLIENT_MEM_FRACTION=3.2
 export XLA_FLAGS="\${XLA_FLAGS} --xla_disable_hlo_passes=custom-kernel-fusion-rewriter --xla_gpu_enable_triton_gemm=false"
-mkdir -p $paths->{output_dir}/jax
+mkdir -p ${final_dir}/jax
 nvcc_location=\$(command -v nvcc)
 if [[ \! -z "\${nvcc_location}" ]]; then
   cuda_location=\$(dirname \$(dirname \${nvcc_location}))
   query_location=query_location="\${cuda_location}/extras/demo_suite/deviceQuery"
   if [[ -x "\$query_location" ]]; then
-    \$query_location >> $paths->{output_dir}/queryDevice.stdout
+    \$query_location >> ${final_dir}/queryDevice.stdout
   fi
 fi
 /usr/bin/time -v -o $paths->{stdout}.time -a \\
   run_alphafold.py ${xla_flag} \\
-    --json_path ${json_filename} \\
+    --json_path ${final_dir} \\
     --model_dir \$ALPHA_HOME/models \\
     --output_dir ${final_dir} \\
-    --jax_compilation_cache_dir $paths->{output_dir}/jax \\
+    --jax_compilation_cache_dir ${final_dir}/jax \\
     --flash_attention_implementation=xla \\
-    1>${final_dir}/paths->{stdout} 2>&1
+    1>${final_dir}/$paths->{stdout} 2>&1
 echo "${first_id},${second_id}" >> $paths->{output_dir}/finished.txt
 !;
     my $job = $class->Submit(
@@ -682,7 +688,7 @@ echo "${first_id},${second_id}" >> $paths->{output_dir}/finished.txt
         stderr => $paths->{stderr},
         stdout => $paths->{stdout},
         output_dir => $paths->{output_dir},
-        output => $json_filename,);
+        output => $cif_filename,);
     return($job);
 }
 
