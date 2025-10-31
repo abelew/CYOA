@@ -214,6 +214,7 @@ has mature_fasta => (is => 'rw', default => undef); ## Database of mature miRNA 
 has maximum => (is => 'rw', default => undef); ## catchall maximum threshold
 has maxlength => (is => 'rw', default => 42); ## Maximum sequence length when trimming
 has max_reads => (is => 'rw', default => 1000000);
+has max_value => (is => 'rw', default => undef);
 has method => (is => 'rw', default => undef);
 has mi_genome => (is => 'rw', default => undef); ## Set a miRbase genome to hunt for mature miRNAs
 has min_depth => (is => 'rw', default => 5); ## Default use: variant searching, depth limit
@@ -534,9 +535,13 @@ $ENV{PATH}.") unless($check);
     ## I was initially going to do this in BUILD(), but I think that might mess up jobs
     ## which set the jprefix parameter.
     my $modulecmd_handle = IO::Handle->new;
-    my $modulecmd_pid = open($modulecmd_handle, qq"bash -i -c 'type module' |");
+    ## This command, if run via bash, requires a controlling pty in order to find the
+    ## bash function 'module'.  slurm and the various managers will not provide that
+    ## so, we can use typescript to allocate one post-facto.
+    my $modulecmd_pid = open($modulecmd_handle, qq!/usr/bin/script -q -c 'bash -i -c "type module"' |!);
     my $modulecmd_text = '';
-    while (my $line = <$modulecmd_handle>) {
+  MOD: while (my $line = <$modulecmd_handle>) {
+        next MOD if ($line =~ /is a function/);
         $modulecmd_text .= $line;
     }
     $modulecmd_handle->close();
@@ -884,12 +889,17 @@ Ideally, this should get us a terminal with tab completion.
 
 =cut
 sub Get_Term {
-    my $term = Term::ReadLine->new('>');
-    my $attribs = $term->Attribs;
-    $attribs->{completion_suppress_append} = 1;
-    my $OUT = $term->OUT || \*STDOUT;
-    $Term::UI::VERBOSE = 0;
-    $term->ornaments(0);
+    my $term = undef;
+    if (-t STDOUT) {
+        $term = Term::ReadLine->new('>');
+        my $attribs = $term->Attribs;
+        $attribs->{completion_suppress_append} = 1;
+        my $OUT = $term->OUT || \*STDOUT;
+        $Term::UI::VERBOSE = 0;
+        $term->ornaments(0);
+    } else {
+        print "This process does not have a controlling terminal.\n";
+    }
     return($term);
 }
 
@@ -1069,7 +1079,7 @@ sub Get_Vars {
             $response =~ s/\@|\*|\+//g;
             $getopt_override_vars{$needed} = $response;
         }
-    }                           ## Done looking for required varnames.
+    } ## Done looking for required varnames.
 
     ## Use this for loop to fill in default values from the class.
     for my $varname (keys %default_vars) {
@@ -1192,6 +1202,29 @@ sub Get_Vars {
     return(\%returned_vars);
 }
 
+sub Juggle {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(args => \%args);
+    ## I really ought to make a ForkManager type, that could be super-fun to play with
+    my $runner;
+    if ($options->{cluster} eq 'slurm') {
+        $runner = Bio::Adventure::Slurm->new();
+    } elsif ($options->{cluster} eq 'torque') {
+        $runner = Bio::Adventure::Torque->new();
+    } elsif ($options->{cluster} eq 'bash') {
+        ## I should probably have something to handle gracefully bash jobs.
+        $runner = Bio::Adventure::Local->new();
+    } elsif ($options->{cluster} eq '0') {
+        ## On occasion I set cluster to 0 which is bash.
+        $runner = Bio::Adventure::Local->new();
+    } else {
+        carp("Could not find sbatch, qsub, nor bash.");
+        print "Assuming this is running on a local shell.\n";
+        $runner = Bio::Adventure::Local->new();
+    }
+    my $result = $runner->Juggle($class, %args);
+}
+
 sub Load_Vars {
     my ($class, %args) = @_;
     my $num_changed = 0;
@@ -1242,35 +1275,6 @@ sub Reset_Vars {
     return($class);
 }
 
-
-=head2 C<Set_Vars>
-
-  Handle the peculiar mix of instance options held in $class->{options},
-  the set of arguments passed to %args, a list of required and potentially
-  missing options, and whatever default values one wishes to set.
-
-  $options = $class->Set_Vars(exclude => 'bob');
-
-This function is likely no longer needed because of the way
-Get_Options now handles the options hash.
-
-=cut
-sub Set_Vars {
-    my ($class, %args) = @_;
-    my $options;
-    if (defined($args{options})) {
-        $options = $args{options};
-    }
-    else {
-        $options = $class->{options};
-    }
-    my $ref = ref($options);
-    foreach my $k (keys %args) {
-        $options->{$k} = $args{$k};
-    }
-    $class->{options} = $options;
-    return($options);
-}
 
 sub Last_Stat {
     my ($class, %args) = @_;

@@ -54,18 +54,6 @@ sub Compress {
         my $in_base = $in->{filebase_compress};
         my $in_full = $in->{fullpath};
         my $output_file = qq"${in_dir}/${in_base}.xz";
-        if (-r $in_full) {
-            my $size = (stat $in_full)[7];
-            ## Skip files less than 1Mb.
-            if ($size < 1000000) {
-                print "The file: ${in_full} is only ${size} bytes, skipping it.\n";
-                next INPUTS;
-            }
-            if (-l $in_full) {
-                print "The file: ${in_full} is a symlink, skipping it.\n";
-                next INPUTS;
-            }
-        }
         $output_string .= qq"${output_file}:";
         $jstring .= qq!
 ## Compressing ${in_full}
@@ -165,6 +153,7 @@ sub Spring {
         comment => '## Recompressing files.',
         jname => 'spring',
         jmem => 12,
+        delete => 0,
         jprefix => '99',
         jwalltime => '12:00:00',);
     my $input_paths = $class->Get_Path_Info($options->{input});
@@ -189,11 +178,20 @@ sub Spring {
         }
         my $size = (stat $in_full)[7];
         unless(defined($size)) {
-            print "The size appears undefined for ${in_full}, skipping it.\n";
+            if ($options->{delete}) {
+                print "The size appears undefined for ${in_full}, deleting it.\n";
+                rm($in_full);
+            } else {
+                print "The size appears undefined for ${in_full}, skipping it.\n";
+            }
             return(undef);
         }
         ## Skip files less than 1Mb.
-        if ($size < 1000000) {
+        if ($options->{delete} && $size == 0) {
+            print "${in_full} is 0 bytes, deleting it.\n";
+            rm($in_full);
+            return(undef);
+        } elsif ($size < 1000000) {
             print "The file: ${in_full} is only ${size} bytes, skipping it.\n";
             return(undef);
         }

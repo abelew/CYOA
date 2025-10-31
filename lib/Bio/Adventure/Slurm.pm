@@ -665,6 +665,8 @@ sub Choose_QOS {
 =cut
 sub Convert_to_Hours {
     my $string = shift;
+    return('UNLIMITED') unless(defined($string));
+    return($string) if ($string eq 'UNLIMITED');
     my $days = 0;
     my $hms = '00:00:00';
     if ($string =~ m/\-/) {
@@ -1156,7 +1158,7 @@ sub Get_Spec {
         $wanted->{mem} = 10;
     }
 
-    my $walltime_string = '00:40:00';
+    my $walltime_string = 'UNLIMITED';
     if (defined($options->{walltime}) && defined($options->{jwalltime})) {
         print "Both walltime and jwalltime are defined, that is confusing, using jwalltime.\n";
         $walltime_string = $options->{jwalltime};
@@ -1200,7 +1202,6 @@ sub Get_Spec {
     } else {
         $wanted->{gpu} = 0;
     }
-
     return($wanted);
 }
 
@@ -1217,21 +1218,44 @@ sub Get_Spec {
 
 =cut
 sub Get_Usage {
+    ## Interesting, it looks like the new slurm fixed the random blank entry in this output
+    ## that is good, but caused this to fail.
     my $usage = FileHandle->new("squeue --me -o '%all' |");
-    my $current = {};           ## Hash of the current usage by user.
+    ## Hash of the current usage by user.
+    ## Here is the output of the above if I have two srun --pty bash jobs:
+    ## I am separating out every 5 entries.
+    ## ACCOUNT|TRES_PER_NODE|MIN_CPUS|MIN_TMP_DISK|END_TIME|
+    ## FEATURES|GROUP|OVER_SUBSCRIBE|JOBID|NAME|
+    ## COMMENT|TIME_LIMIT|MIN_MEMORY|REQ_NODES|COMMAND|
+    ## PRIORITY|QOS|REASON|ST|USER|
+    ## RESERVATION|WCKEY|EXC_NODES|NICE|S:C:T|
+    ## JOBID|EXEC_HOST|CPUS|NODES|DEPENDENCY|
+    ## ARRAY_JOB_ID|GROUP|SOCKETS_PER_NODE|CORES_PER_SOCKET|THREADS_PER_CORE|
+    ## ARRAY_TASK_ID|TIME_LEFT|TIME|NODELIST|CONTIGUOUS|
+    ## PARTITION|PRIORITY|NODELIST(REASON)|START_TIME|STATE|
+    ## UID|SUBMIT_TIME|LICENSES|CORE_SPEC|SCHEDNODES|
+    ## WORK_DIR
+    ##(null)|N/A|1|0|NONE|(null)|hpgl|OK|90782|bash|(null)|UNLIMITED|0||bash|0.00000024121255|normal|None|R|abelew|(null)|(null)||0|*:*:*|90782|localhost|1|1|(null)|90782|18062|*|*|*|N/A|UNLIMITED|3:26|bioi605|0|dpart|1036|bioi605|2025-10-31T11:18:19|RUNNING|52279|2025-10-31T11:18:19|(null)|N/A|(null)|/lab/home/trey
+    ##(null)|N/A|1|0|NONE|(null)|hpgl|OK|90781|bash|(null)|UNLIMITED|0||bash|0.00000024121255|normal|None|R|abelew|(null)|(null)||0|*:*:*|90781|localhost|1|1|(null)|90781|18062|*|*|*|N/A|UNLIMITED|3:32|bioi605|0|dpart|1036|bioi605|2025-10-31T11:18:13|RUNNING|52279|2025-10-31T11:18:13|(null)|N/A|(null)|/lab/home/trey
+
+    my $current = {};
     my $all_jobs = {};
     my $count = 0;
   USAGE: while (my $line = <$usage>) {
         chomp $line;
         next USAGE if ($line =~ /^ACCOUNT/);
         $count++;
-        my ($account, $tres_per_node, $min_cpus, $min_tmp_disk, $end_time, $features, $group,
-            $over_sub, $job_id, $name, $comment, $time_limit, $min_memory, $req_nodes, $command,
-            $priority, $qos, $reason, $blank, $st, $user, $reservation, $wckey, $exclude_nodes,
-            $nice, $sct, $job_id2, $exec_host, $cpus, $nodes, $dependency, $array_job_id, $group2,
-            $sockets_per_node, $cores_per_socket, $threads_per_core, $array_task_id, $time_left,
-            $time, $nodeslist, $contiguous, $partition, $priority2, $nodelist_reason, $start_time,
-            $state, $uid, $submit_time, $licenses, $core_spec, $sched_nodes, $work_dir) = split(/\|/, $line);
+        my ($account, $tres_per_node, $min_cpus, $min_tmp_disk, $end_time,
+            $features, $group, $over_sub, $job_id, $name,
+            $comment, $time_limit, $min_memory, $req_nodes, $command,
+            $priority, $qos, $reason, $st, $user,
+            $reservation, $wckey, $exclude_nodes, $nice, $sct,
+            $job_id2, $exec_host, $cpus, $nodes, $dependency,
+            $array_job_id, $group2, $sockets_per_node, $cores_per_socket, $threads_per_core,
+            $array_task_id, $time_left, $time, $nodeslist, $contiguous,
+            $partition, $priority2, $nodelist_reason, $start_time, $state,
+            $uid, $submit_time, $licenses, $core_spec, $sched_nodes,
+            $work_dir) = split(/\|/, $line);
         ## Some notes about what some of the above variables look like:
         ## tres_per_node: 'gres:gpu:3'
         ## I suspect we can do something fun with the priority information, priority2 looks
@@ -1247,7 +1271,6 @@ sub Get_Usage {
             account => $account,
             array_job_id => $array_job_id,
             array_task_id => $array_task_id,
-            blank => $blank,
             command => $command,
             comment => $comment,
             core_spec => $core_spec,
@@ -1307,7 +1330,7 @@ sub Get_Usage {
                         jobs => 1,
                     }, }, },
         };
-
+        print "TESTME: In Get_User, what is the state of ${job_id}: $state?\n";
         if ($state eq 'RUNNING') {
             $instance->{$partition}->{$account}->{$qos}->{running} = 1;
             $instance->{$partition}->{$account}->{$qos}->{queued} = 0;
@@ -1341,6 +1364,7 @@ sub Get_Usage {
             $current->{$user}->{$partition}->{$account}->{$qos}->{jobs} += 1;
         }
     }
+    $current->{all_jobs} = $all_jobs;
     $usage->close();
     return($current);
 }
@@ -1356,6 +1380,86 @@ sub Get_Usage {
 sub Guess_Time {
     my %args = @_;
     print "Not yet implemented.\n";
+}
+
+=head2 C<Juggle>
+
+  If I submit a few hundred jobs, it is possible that some will get stuck waiting because the
+  account they were queued in got unlucky and went to some slow nodes.  Use this to juggle them
+  about into other accounts/partitions/etc.  This should not touch dependency jobs or array jobs
+ (at least not for now.)
+
+=cut
+sub Juggle {
+    my ($class, $parent, %args) = @_;
+    my $usage = $class->Get_Usage();
+    use Data::Dumper;
+    my $all_jobs = $usage->{all_jobs};
+  JOBS: for my $id (sort keys %{$all_jobs}) {
+        my $info = $all_jobs->{$id};
+        ## Do not juggle jobs which are running.
+        ## next JOBS if ($info->{state} eq 'RUNNING');
+        ## Do not juggle jobs which are waiting because they are dependent on something else.
+        ## Note, jobs without an array ID get the same ID as the current job
+        next JOBS if ($info->{dependency} ne '(null)');
+        ## Now find out some more information about this job, notably
+        ## what it is asking for vis a vis cpus/gpus/memory/time
+        my $job_info = $class->Sjob(job_id => $id);
+        print Dumper $job_info;
+        my $wanted = {
+            jmem => $job_info->{ReqTRES_mem},
+            jcpu => $job_info->{ReqTRES_cpu},
+            jwalltime => $job_info->{TimeLimit},
+            jgpu => 0,
+        };
+        if ($job_info->{GRES}) {
+            $wanted->{gpu} = $job_info->{ReqGRES_gpu};
+        }
+        my $new_qos = $class->Choose_QOS(wanted_spec => $wanted,
+                                         current_usage => $usage);
+        my $new_job = $class->Modify_Job(job => $id, qos => $new_qos);
+        print Dumper $new_qos;
+    }
+}
+
+sub Modify_Job {
+    my ($class, %args) = @_;
+    my $qos = $args{qos};
+    my $changed_parameters = 0;
+    my $scontrol_string = qq"scontrol update JobId=$args{job} ";
+    if ($qos->{chosen_account}) {
+        $changed_parameters++;
+        $scontrol_string .= "Account=$qos->{chosen_account} ";
+    }
+    if ($qos->{chosen_partition}) {
+        $changed_parameters++;
+        $scontrol_string .= "Partition=$qos->{chosen_partition} ";
+    }
+    if ($qos->{chosen_cluster}) {
+        $changed_parameters++;
+        $scontrol_string .= "Cluster=$qos->{chosen_cluster} ";
+    }
+    if ($qos->{chosen_qos}) {
+        $changed_parameters++;
+        $scontrol_string .= "QOS=$qos->{chosen_qos} ";
+    }
+    $scontrol_string =~ s/\s+$//g;
+
+    if ($changed_parameters) {
+        print "Invoking scontrol to change ${changed_parameters} of the job:
+${scontrol_string}
+";
+        my $updated = FileHandle->new("${scontrol_string} |");
+        while (my $line = <$updated>) {
+            chomp $line;
+            print qq"$line\n";
+        }
+        $updated->close();
+    } else {
+        print "No parameters were requested to change, returning.\n";
+        $scontrol_string = undef;
+    }
+    return($scontrol_string);
 }
 
 sub QOS_Accounts {
@@ -1381,6 +1485,70 @@ sub QOS_Accounts {
         } ## End iterating over this cluster
     } ## End iterating over this partition
     return(\@qos_accounts);
+}
+
+=head2 C<Sjob>
+
+  Use scontrol show -jobid -dd ## to get more information about a job.
+
+=cut
+sub Sjob {
+    my ($class, %args) = @_;
+    my $sjob = FileHandle->new("scontrol -o show jobid -dd $args{job_id} |");
+    ## Here is an example output of the above (separated 3 elements/line):
+    ## JobId=90781 JobName=bash UserId=abelew(52279)
+    ## GroupId=hpgl(18062) MCS_label=N/A Priority=1036
+    ## Nice=0 Account=(null) QOS=normal
+    ## JobState=RUNNING Reason=None Dependency=(null)
+    ## Requeue=1 Restarts=0 BatchFlag=0
+    ## Reboot=0 ExitCode=0:0 DerivedExitCode=0:0
+    ## RunTime=00:19:40 TimeLimit=UNLIMITED TimeMin=N/A
+    ## SubmitTime=2025-10-31T11:18:13 EligibleTime=2025-10-31T11:18:13 AccrueTime=Unknown
+    ## StartTime=2025-10-31T11:18:13 EndTime=Unknown Deadline=N/A SuspendTime=None
+    ## SecsPreSuspend=0 LastSchedEval=2025-10-31T11:18:13 Scheduler=Main
+    ## Partition=dpart AllocNode:Sid=localhost:2122674 ReqNodeList=(null)
+    ## ExcNodeList=(null) NodeList=bioi605 BatchHost=bioi605
+    ## NumNodes=1 NumCPUs=1 NumTasks=1
+    ## CPUs/Task=1 ReqB:S:C:T=0:0:*:* ReqTRES=cpu=1,mem=48000M,node=1,billing=1
+    ## AllocTRES=cpu=1,node=1,billing=1 Socks/Node=* NtasksPerN:B:S:C=0:0:*:*
+    ## CoreSpec=* JOB_GRES=(null) Nodes=bioi605
+    ## CPU_IDs=0 Mem=0 GRES=
+    ## MinCPUsNode=1 MinMemoryNode=0 MinTmpDiskNode=0
+    ## Features=(null) DelayBoot=00:00:00 OverSubscribe=OK
+    ## Contiguous=0 Licenses=(null) Network=(null)
+    ## Command=bash WorkDir=/lab/home/trey
+    my %info = ();
+  JOB: while (my $line = <$sjob>) {
+        ## The sjob output is whitespace-separated key-value pairs
+        ## Each key-value is separated by =
+        chomp $line;
+        my @kv = split(/\s+/, $line);
+        for my $kv_pair (@kv) {
+            my ($key, $value) = split(/=/, $kv_pair, 2);
+            if ($value =~ /,/) {
+                ## Then this is another key/value group inside the first, ugh
+                my @internal = split(/\,/, $value);
+                for my $int (@internal) {
+                    my ($in_key, $in_value) = split(/=/, $int);
+                    if ($in_key eq 'mem') {
+                        ## Recast M to G.
+                        $in_value =~ m/^(\d+)([A-Za-z]+)$/;
+                        ## I recast everything in terms of G
+                        my ($memory, $scale) = ($1, $2);
+                        if ($scale eq 'M') {
+                            $in_value = $memory / 1000.0;
+                        }
+                    }
+                    my $new_key = qq"${key}_${in_key}";
+                    $info{$new_key} = $in_value;
+                }
+            }
+            ## Keep the original nested structure as well just in case.
+            $info{$key} = $value;
+        } ## End iterating over space-separated key-value pairs
+    } ## End reading the one line from scontrol
+    $sjob->close();
+    return(\%info);
 }
 
 =head2 C<Submit>

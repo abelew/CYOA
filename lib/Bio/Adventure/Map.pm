@@ -1963,7 +1963,10 @@ Waiting 10 seconds to see if you change your mind.\n";
         return(@result_lst);
     }
 
-    my $ready = $class->Check_Input(files => $options->{input});
+    my $ready;
+    if (!$options->{jdepends}) {
+        $ready = $class->Check_Input(files => $options->{input});
+    }
     my %sa_jobs = ();
     my $libtype = 'genome';
     $libtype = $options->{libtype} if ($options->{libtype});

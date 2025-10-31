@@ -925,7 +925,6 @@ sub Process_DNASeq {
     return($ret);
 }
 
-
 ## FIXME: Change the places where this says 'jobid' to something like
 ## 'job_name' to avoid confusion.
 sub Process_RNAseq {
@@ -934,7 +933,7 @@ sub Process_RNAseq {
         args => \%args,
         required => ['input', 'species'],
         compress => 0,
-        fastp => 0,
+        fastp => 1,
         filter => 0,
         freebayes => 0,
         input_paired => undef,
@@ -1083,6 +1082,7 @@ sub Process_RNAseq {
             gff_tag => $first_id,
             input => $map_input,
             introns => $first_intron,
+            libtype => 'genome',
             species => $first_species,
             jprefix => $prefix,
             jdepends => $map_prereq,
@@ -1100,6 +1100,7 @@ sub Process_RNAseq {
             my $coverage = $class->Bio::Adventure::Assembly::Assembly_Coverage(
                 jdepends => $last_sam_job,
                 input => $trim->{output},
+                libtype => 'genome',
                 jprefix => $prefix,
                 library => $first_species,);
             $jobid = qq"${prefix}bam2cov";
@@ -1166,6 +1167,7 @@ sub Process_RNAseq {
                     jdepends => $last_job,
                     input => $first_map->{unaligned},  ## Not unaligned_comp
                     introns => $nth_intron,
+                    libtype => 'genome',
                     ## because compression is at the end.
                     species => $nth_species,
                     stranded => $options->{stranded},
@@ -1185,6 +1187,7 @@ sub Process_RNAseq {
                         jdepends => $last_sam_job,
                         input => $map_input,
                         introns => $nth_intron,
+                        libtype => 'genome',
                         species => $nth_species,
                         stranded => $options->{stranded},
                         gff_type => $nth_type,
@@ -1201,6 +1204,7 @@ sub Process_RNAseq {
                         my $nth_snp = $class->Bio::Adventure::SNP::Freebayes_SNP_Search(
                             jdepends => $last_sam_job,
                             input => $nth_map->{samtools}->{paired_output},
+                            libtype => 'genome',
                             species => $nth_species,
                             gff_type => $nth_type,
                             gff_tag => $nth_id,
@@ -1218,6 +1222,7 @@ sub Process_RNAseq {
                     $nth_salmon = $class->Bio::Adventure::Map::Salmon(
                         jdepends => $trim->{job_id},
                         input => $map_input,
+                        libtype => 'CDS',
                         species => $nth_species,
                         jprefix => $prefix,);
                     sleep($options->{jsleep});
@@ -1242,6 +1247,7 @@ sub Process_RNAseq {
         my $num_files = scalar(@compress_arr);
         my $hours_guess = 12 * $num_files;
         my $compress_input = $class->Bio::Adventure::Compress::Compress(
+            delete => 0,
             input => $compress_files,
             jdepends => $last_job,
             jname => 'comp_trimmed',
@@ -1254,6 +1260,7 @@ sub Process_RNAseq {
         sleep($options->{jsleep});
         if ($options->{mapper} =~ /hisat/) {
             my $compress_first_map = $class->Bio::Adventure::Compress::Compress(
+                delete => 0,
                 input => $hisat_compress_input,
                 jdepends => $last_job,
                 jname => 'comp_hisat',

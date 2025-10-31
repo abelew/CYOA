@@ -1086,19 +1086,7 @@ sub Samtools {
     ## Add a samtools version check because *sigh*
     my $samtools_version = qx"samtools 2>&1 | grep 'Version'";
     my $samtools_type = 'new';
-    ## If there is a 0.1 in the version string, then use the old syntax.
-#    if ($samtools_version =~ /0\.1/) {
-#        $samtools_first = qq"samtools view -u \\
-#  -t $options->{libdir}/genome/$options->{species}.fasta \\
-#  -S ${input} 1>${output}";
-#        $samtools_second = qq"samtools sort -l 9 ${output} \\
-#  ${sorted_name} \\
-#  2>>${stderr} \\
-#  1>>${stdout}";
-#    }
-
     ## Start out assuming we will use the new samtools syntax.
-
     my $stderr = qq"${output}_samtools.stderr";
     my $stdout = qq"${output}_samtools.stdout";
     my $samtools_first = qq!
@@ -1168,7 +1156,6 @@ ${samtools_first}
 echo "First samtools command finished with \$?"
 ${samtools_second}
 rm ${output}
-rm ${input}
 mv ${sorted_name}.bam ${output}
 echo 'Time for samtools index command.' >> ${output}.time
 /usr/bin/time -v -o ${output}.time -a samtools index ${output} \\
@@ -1218,6 +1205,10 @@ samtools fastq ${output} -f 4 \\
 xz -9e -f ${unmapped}
 ";
     }
+
+    $jstring .= qq"
+rm ${input}
+";
 
     my $comment = qq!## Converting the text sam to a compressed, sorted, indexed bamfile.
 ## Also printing alignment statistics to ${output}.stats

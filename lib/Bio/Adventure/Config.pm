@@ -1317,6 +1317,7 @@ sub Get_TODOs {
         "interproscan+" => \$todo_list->{todo}{'Bio::Adventure::Annotation::Interproscan'},
         "interprolong+" => \$todo_list->{todo}{'Bio::Adventure::Annotation::Interpro_Long2Wide'},
         "jellyfish+" => \$todo_list->{todo}{'Bio::Adventure::Count::Jellyfish'},
+        "juggle+" => \$todo_list->{todo}{'Bio::Adventure::Juggle'},
         "kallisto+" => \$todo_list->{todo}{'Bio::Adventure::Map::Kallisto'},
         "kraken+" => \$todo_list->{todo}{'Bio::Adventure::Count::Kraken'},
         "mash+" => \$todo_list->{todo}{'Bio::Adventure::Count::Mash'},

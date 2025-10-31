@@ -884,7 +884,8 @@ gatk CollectInsertSizeMetrics \\
   -I $options->{input} \\
   -O ${output_file} \\
   -H ${output_pdf} \\
-  -M 0.5 2>$paths->{stderr} 1>$paths->{stdout}
+  -M 0.5 \\
+  2>$paths->{stderr} 1>$paths->{stdout}
 !;
 
     my $comment_string = qq"## Use gatk to collect insert size statistics.";

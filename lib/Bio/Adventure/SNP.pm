@@ -49,14 +49,14 @@ sub Align_SNP_Search {
     my $query_home = dirname(${query});
     my $query_base = basename(${query}, (".bam"));
     $query = qq"${query_home}/${query_base}";
-    print "About to start Bowtie2 search against of ${query} against $options->{species}.\n";
+    ## print "About to start Bowtie2 search against of ${query} against $options->{species}.\n";
     my $bt2_job = $class->Bio::Adventure::Map::Bowtie2(
         gff_type => 'exon',
         input => $query,
         species => $options->{species},
         jprefix => qq"$options->{jprefix}_1",);
     my $bamfile = $bt2_job->{samtools}->{output};
-    print "About to start SNP search of ${bamfile} against $options->{species}\n";
+    ## print "About to start SNP search of ${bamfile} against $options->{species}\n";
     my $search = $class->Bio::Adventure::SNP::Freebayes_SNP_Search(
         input => $bamfile,
         jdepends => $bt2_job->{samtools}->{job_id},
@@ -336,6 +336,7 @@ sub Mpileup_SNP_Search {
         varfilter => 0,
         vcf_cutoff => 5,
         min_value => 0.8,
+        max_value => undef,
         qual => 10,
         jprefix => '50',);
     my $genome = qq"$options->{libpath}/$options->{libtype}/fasta/$options->{species}.fasta";
@@ -346,7 +347,8 @@ sub Mpileup_SNP_Search {
 
     my $varfilter = $options->{varfilter};
     my $vcf_cutoff = $options->{vcf_cutoff};
-    my $vcf_minpct = $options->{min_value};
+    my $min_value = $options->{min_value};
+    my $max_value = $options->{max_value};
 
     my $vcfutils_dir = qq"outputs/$options->{jprefix}vcfutils_$options->{species}";
     my $deduplicate_input = qq"${vcfutils_dir}/${query_base}.bam";
@@ -434,7 +436,8 @@ echo "Successfully finished." >> ${vcfutils_dir}/vcfutils_$options->{species}.ou
         qual => $options->{qual},
         species => $options->{species},
         vcf_cutoff => $vcf_cutoff,
-        vcf_minpct => $vcf_minpct,
+        min_value => $min_value,
+        max_value => $max_value,
         jcpu => 1,
         jname => qq"mpileup_parsenp_${query_base}_$options->{species}",
         jdepends => $pileup->{job_id},
@@ -452,14 +455,17 @@ sub SNP_Ratio {
     my ($class, %args) = @_;
     my $options = $class->Get_Vars(
         args => \%args,
+        gff_tag => 'ID',
+        gff_type => 'gene',
         introns => 0,
         qual => 10,
         vcf_method => 'freebayes',
         vcf_cutoff => 5,
-        vcf_minpct => 0.8,
+        min_value => 0.8,
+        max_value => 1.0,
         jprefix => '80',
         jname => 'parsenp',
-        required => ['input', 'species', 'gff_tag', 'gff_type'],);
+        required => ['input', 'species', 'chosen_tag', 'coverage_tag'],);
     if ($options->{introns}) {
         my $snp_intron = Bio::Adventure::SNP::SNP_Ratio_Intron(%args);
         return($snp_intron);
@@ -475,6 +481,7 @@ sub SNP_Ratio {
     $output_suffix .= qq"_q-$options->{qual}" if ($options->{qual});
     $output_suffix .= qq"_c-$options->{vcf_cutoff}" if ($options->{vcf_cutoff});
     $output_suffix .= qq"_m$options->{min_value}" if ($options->{min_value});
+    $output_suffix .= qq"_M-$options->{max_value}" if ($options->{max_value});
     $output_suffix .= qq"_ctag-$options->{coverage_tag}" if ($options->{coverage_tag});
     $output_suffix .= qq"_mtag-$options->{chosen_tag}" if ($options->{chosen_tag});
     my $stdout = qq"${print_output}/stdout";
@@ -499,14 +506,17 @@ sub SNP_Ratio {
     my $jstring = qq"
 use Bio::Adventure::SNP;
 my \$result = \$h->Bio::Adventure::SNP::SNP_Ratio_Worker(
+  chosen_tag => '$options->{chosen_tag}',
+  coverage_tag => '$options->{coverage_tag}',
+  gff_tag => '$options->{gff_tag}',
+  gff_type => '$options->{gff_type}',
   input => '$print_input',
+  max_value => '$options->{max_value}',
+  min_value => '$options->{min_value}',
+  qual => '$options->{qual}',
   species => '$options->{species}',
   vcf_method => '$options->{vcf_method}',
   vcf_cutoff => '$options->{vcf_cutoff}',
-  vcf_minpct => '$options->{vcf_minpct}',
-  gff_tag => '$options->{gff_tag}',
-  gff_type => '$options->{gff_type}',
-  qual => '$options->{qual}',
   output_dir => '$output_dir',
   output => '${output_all}',
   output_dedup => '${output_dedup}',
@@ -518,7 +528,11 @@ my \$result = \$h->Bio::Adventure::SNP::SNP_Ratio_Worker(
 );
 ";
     my $parse_job = $class->Submit(
+        chosen_tag => $options->{chosen_tag},
         comment => $comment_string,
+        coverage_tag => $options->{coverage_tag},
+        gff_tag => $options->{gff_tag},
+        gff_type => $options->{gff_type},
         jdepends => $options->{jdepends},
         jmem => 48,
         jname => $options->{jname},
@@ -526,6 +540,8 @@ my \$result = \$h->Bio::Adventure::SNP::SNP_Ratio_Worker(
         jstring => $jstring,
         jwalltime => '10:00:00',
         language => 'perl',
+        min_value => $options->{min_value},
+        max_value => $options->{max_value},
         output_dir => $output_dir,
         output => $output_all,
         output_dedup => $output_dedup,
@@ -535,7 +551,10 @@ my \$result = \$h->Bio::Adventure::SNP::SNP_Ratio_Worker(
         output_pkm => $output_pkm,
         qual => $options->{qual},
         stdout => $stdout,
-        stderr => $stderr,);
+        stderr => $stderr,
+        vcf_method => $options->{vcf_method},
+        vcf_cutoff => $options->{vcf_cutoff},
+    );
     return($parse_job);
 }
 
@@ -557,9 +576,13 @@ sub SNP_Ratio_Worker {
         coverage_tag => 'DP',
         gff_tag => 'ID',
         gff_type => 'gene',
+        max_value => 1.0,
         min_value => 0.8,
-        max_value => undef,
         only_point => 1,
+        penetrance_tag => 'SAP',
+        qual => 10,
+        vcf_cutoff => 5,
+        vcf_method => 'freebayes',
         output => 'all.txt',
         output_genome => 'new_genome.fasta',
         output_by_gene => 'counts_by_gene.txt',
@@ -567,10 +590,9 @@ sub SNP_Ratio_Worker {
         output_pkm => 'by_gene_length.txt',
         output_dir => 'outputs/40freebayes',
         output_coverage => 'coverage_summary.txt',
-        penetrance_tag => 'SAP',
-        qual => 10,
-        vcf_cutoff => 5,
-        vcf_method => 'freebayes',);
+    );
+    ##print "Using the $options->{chosen_tag} to filter observed variants.
+##Values must be no larger than $options->{max_value} and no smaller than $options->{min_value}\n";
     my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $species = $options->{species};
     my $out_dir = dirname($options->{output});
@@ -580,9 +602,9 @@ sub SNP_Ratio_Worker {
     my $genome = $paths->{fasta};
     my $gff = $paths->{gff};
     print $log "Reading gff: ${gff}, extracting type: $options->{gff_type} features tagged $options->{gff_tag}.\n";
-    print "Reading gff: ${gff}, extracting type: $options->{gff_type} features tagged $options->{gff_tag}.\n";
+    ##print "Reading gff: ${gff}, extracting type: $options->{gff_type} features tagged $options->{gff_tag}.\n";
     print $log "The reference genome is: $genome.\n";
-    print "The reference genome is: $genome.\n";
+    ##print "The reference genome is: $genome.\n";
     my $in_bcf = FileHandle->new("bcftools view $options->{input} |");
     print $log "The large matrix of data will be written to: $options->{output}\n";
     my $all_out = FileHandle->new(">$options->{output}");
@@ -812,6 +834,7 @@ sub SNP_Ratio_Worker {
     }
 
     print $log "Filtering variant observations and writing a new genome.\n";
+    ##print "Filtering variant observations and writing a new genome.\n";
     my $shifters = 0;
     my $points = 0; ## Number of point mutations observed.
     my $total_delta = 0;
@@ -829,32 +852,37 @@ sub SNP_Ratio_Worker {
           if ($datum->{$depth_tag} < $vcf_cutoff) {
               $insufficient_coverage++;
               print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{$chosen}\n";
+              ##print "Filtering $datum->{position} due to coverage.\n";
               next SHIFTER;
           }
       }
-      if (defined($chosen) && defined($datum->{chosen})) {
-          if (defined($options->{min_value}) && defined($options->{max_value})) {
-              if ($datum->{chosen} > $options->{max_value}) {
-                  print $log "$datum->{position} has exceeded max value: $options->{max_value}\n";
-                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
+      if (defined($chosen) && defined($datum->{$chosen})) {
+          if ($options->{min_value} && $options->{max_value}) {
+              if ($datum->{$chosen} > $options->{max_value}) {
+                  print $log "$datum->{position} has exceeded max value: $options->{max_value} with $datum->{$chosen}\n";
+                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{$chosen}\n";
+                  ##print "$datum->{position} has exceeded max value: $options->{max_value} with $datum->{$chosen}\n";
                   next SHIFTER;
-              } elsif ($datum->{chosen} < $options->{min_value}) {
-                  print $log "$datum->{position} is less than min value: $options->{min_value}\n";
+              } elsif ($datum->{$chosen} < $options->{min_value}) {
+                  print $log "$datum->{position} is less than min value: $options->{min_value} with $datum->{$chosen}\n";
+                  ##print "$datum->{position} is less than min value: $options->{min_value} with $datum->{$chosen}\n";
                   $insufficient_metric++;
-                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
+                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{$chosen}\n";
                   next SHIFTER;
               }
-          } elsif (defined($options->{min_value})) {
-              if ($datum->{chosen} < $options->{min_value}) {
-                  print $log "$datum->{position} is less than min value: $options->{min_value}\n";
-                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
+          } elsif ($options->{min_value}) {
+              if ($datum->{$chosen} < $options->{min_value}) {
+                  print $log "$datum->{position} is less than min value: $options->{min_value} with $datum->{$chosen}\n";
+                  ##print "$datum->{position} is less than min value: $options->{min_value} with $datum->{$chosen}\n";
+                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{$chosen}\n";
                   $insufficient_metric++;
                   next SHIFTER;
               }
-          } elsif (defined($options->{max_value})) {
-              if ($datum->{chosen} > $options->{max_value}) {
-                  print $log "$datum->{position} has exceeded max value: $options->{max_value}\n";
-                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{chosen}\n";
+          } elsif ($options->{max_value}) {
+              if ($datum->{$chosen} > $options->{max_value}) {
+                  print $log "$datum->{position} has exceeded max value: $options->{max_value} with $datum->{$chosen}\n";
+                  ##print "$datum->{position} has exceeded max value: $options->{max_value} with $datum->{$chosen}\n";
+                  print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t$datum->{$chosen}\n";
                   next SHIFTER;
               }
           }
@@ -1063,6 +1091,7 @@ sub SNP_Ratio_Intron {
     $output_suffix .= qq"_q-$options->{qual}" if ($options->{qual});
     $output_suffix .= qq"_c-$options->{vcf_cutoff}" if ($options->{vcf_cutoff});
     $output_suffix .= qq"_m-$options->{min_value}" if ($options->{min_value});
+    $output_suffix .= qq"_M-$options->{max_value}" if ($options->{max_value});
     $output_suffix .= qq"_ctag-$options->{coverage_tag}" if ($options->{coverage_tag});
     $output_suffix .= qq"_mtag-$options->{chosen_tag}" if ($options->{chosen_tag});
     my $genome = qq"$options->{libpath}/$options->{libtype}/$options->{species}${output_suffix}.fasta";
@@ -1304,7 +1333,6 @@ sub SNP_Ratio_Intron_Worker {
 
     ## Read the data base of gff annotations, the genome, and begin
     ## hunting for variants by gene.
-    print "Reading the gff into a DB::SeqFeature Store.\n";
     print $log "Reading the gff into a DB::SeqFeature Store.\n";
     my $db = Bio::DB::SeqFeature::Store->new(
         -index_subfeatures => 1,
@@ -1312,8 +1340,6 @@ sub SNP_Ratio_Intron_Worker {
         -fasta => $genome,
         -gff => $gff);
     print $log "Extracting sequence data.\n";
-    print "Finished the gff reader.\n";
-
     my %gathered_data = ();
     ## The set of @all_mrna provides the start and end points of each exon.
     ## This will need to be cross referenced against the AUG and stop provided by
@@ -1433,20 +1459,20 @@ sub SNP_Ratio_Intron_Worker {
               next SHIFTER;
           }
       }
-      if (defined($chosen) && defined($datum->{chosen})) {
+      if (defined($chosen) && defined($datum->{$chosen})) {
           if (defined($options->{min_value}) && defined($options->{max_value})) {
-              if ($datum->{chosen} > $options->{max_value} ||
-                  $datum->{chosen} < $options->{min_value}) {
+              if ($datum->{$chosen} > $options->{max_value} ||
+                  $datum->{$chosen} < $options->{min_value}) {
                   print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t${chosen}\n";
                   next SHIFTER;
               }
           } elsif (defined($options->{min_value})) {
-              if ($datum->{chosen} < $options->{min_value}) {
+              if ($datum->{$chosen} < $options->{min_value}) {
                   print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t${chosen}\n";
                   next SHIFTER;
               }
           } elsif (defined($options->{max_value})) {
-              if ($datum->{chosen} > $options->{max_value}) {
+              if ($datum->{$chosen} > $options->{max_value}) {
                   print $filtered_coverage "$datum->{position}\t$datum->{$depth_tag}\t${chosen}\n";
                   next SHIFTER;
               }
@@ -1794,7 +1820,7 @@ sub Test_Worker {
     my @tag_observations = @{$bcf_data->{tag_observations}};
     my @tag_order = @{$bcf_data->{tag_order}};
     my %num_observed = %{$bcf_data->{num_observed}};
-    print "Finished read the bcf file, observed: $observations{snp} SNPS\n";
+    print $log "Finished read the bcf file, observed: $observations{snp} SNPS\n";
     ## Now we should have a big array full of little hashes
 
     ## Use the tags from the (v|b)cf file to write the observation tsv header line.
@@ -1815,7 +1841,7 @@ sub Test_Worker {
 
     my $vars_by_gene = {};
     my $all_count = 0;
-    print "Filtering variant observations and writing a new genome.\n";
+    print $log "Filtering variant observations and writing a new genome.\n";
     my $modified = Modify_Features(observations => \@tag_observations,
                                    seqfeatures => $sf_sequences,
                                    contig_features => $contig_features,
@@ -1880,7 +1906,6 @@ sub Test_Worker {
               next TAGS if ($t eq 'source');
               next TAGS if ($t eq 'type');
               my @values = $thingie->get_tag_values($t);
-              print "Hoping to add tag: $t with value: $values[0]\n";
               $suffix .= qq"${t}=$values[0];";
           }
             $suffix =~ s/;$/\n/;
@@ -2066,31 +2091,31 @@ sub Modify_Features {
       if (defined($vcf_cutoff)) {
           if ($datum->{$coverage_tag} < $vcf_cutoff) {
               print "Dropping $datum->{position} because depth ($datum->{$coverage_tag}) is less than $vcf_cutoff.\n" if ($args{verbose});
-              print $filtered_coverage "$datum->{position}\t$datum->{$coverage_tag}\t$datum->{chosen}\n";
+              print $filtered_coverage "$datum->{position}\t$datum->{$coverage_tag}\t$datum->{$chosen}\n";
               next SHIFTER;
           }
       }
-      if (defined($chosen) && defined($datum->{chosen})) {
+      if (defined($chosen) && defined($datum->{$chosen})) {
           if (defined($min_value) && defined($max_value)) {
-              if ($datum->{chosen} > $max_value) {
+              if ($datum->{$chosen} > $max_value) {
                   print "$datum->{position} has exceeded max value: $max_value\n" if ($args{verbose});
-                  print $filtered_coverage "$datum->{position}\t$datum->{$coverage_tag}\t$datum->{chosen}\n";
+                  print $filtered_coverage "$datum->{position}\t$datum->{$coverage_tag}\t$datum->{$chosen}\n";
                   next SHIFTER;
-              } elsif ($datum->{chosen} < $min_value) {
+              } elsif ($datum->{$chosen} < $min_value) {
                   print "$datum->{position} is less than min value: $min_value\n" if ($args{verbose});
-                  print $filtered_coverage "$datum->{position}\t$datum->{$coverage_tag}\t$datum->{chosen}\n";
+                  print $filtered_coverage "$datum->{position}\t$datum->{$coverage_tag}\t$datum->{$chosen}\n";
                   next SHIFTER;
               }
           } elsif (defined($min_value)) {
-              if ($datum->{chosen} < $min_value) {
+              if ($datum->{$chosen} < $min_value) {
                   print "$datum->{position} is less than min value: $min_value\n" if ($args{verbose});
-                  print $filtered_coverage "$datum->{position}\t$datum->{$coverage_tag}\t$datum->{chosen}\n";
+                  print $filtered_coverage "$datum->{position}\t$datum->{$coverage_tag}\t$datum->{$chosen}\n";
                   next SHIFTER;
               }
           } elsif (defined($max_value)) {
-              if ($datum->{chosen} > $max_value) {
+              if ($datum->{$chosen} > $max_value) {
                   print "$datum->{position} has exceeded max value: $max_value\n" if ($args{verbose});
-                  print $filtered_coverage "$datum->{position}\t$datum->{$coverage_tag}\t$datum->{chosen}\n";
+                  print $filtered_coverage "$datum->{position}\t$datum->{$coverage_tag}\t$datum->{$chosen}\n";
                   next SHIFTER;
               }
           }
@@ -2343,7 +2368,7 @@ sub Update_Delta_Position {
         @posits = @{$positions->{$chr}};
     }
     my $current_delta = sum(@delts) + $delta_variant_length;
-    print "Pushing $current_delta to the position arrays.\n";
+    ##print "Pushing $current_delta to the position arrays.\n";
     push(@delts, $current_delta);
     push(@posits, $new_position);
     $deltas->{$chr} = \@delts;
