@@ -52,20 +52,12 @@ sub Check_Pair {
 
 sub ProteinFold {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        jcpu => 8,
-        jgpu => 1,
-        jmem => 20,
-        jwalltime => '4:00:00',
-        jprefix => 79,
-        jname => 'alphafold',
         libtype => 'protein',
         mode => 'separate',
         required => ['input']);
     my $output_name = basename($options->{input}, ('.gbk', '.fsa', '.fasta',));
-    my $paths = $class->Bio::Adventure::Config::Get_Paths(output_name => $output_name);
-    my $comment = '## Iterate over a sequence with Alphafold.';
     my $jname = qq"proteinfold_${output_name}";
     my $jstring = qq?
 use Bio::Adventure::Structure;
@@ -75,20 +67,16 @@ use Bio::Adventure::Structure;
   mode => '$options->{mode}',
   output => '$paths->{output}',
   output_dir => '$paths->{output_dir}',
-  jname => '${jname}',
-  jprefix => '$options->{jprefix}',
   stdout => '$paths->{stdout}',
   stderr => '$paths->{stderr}',);
 ?;
     my $folder = $class->Submit(
         input => $options->{input},
         output => $paths->{output},
-        jname => $jname,
-        jprefix => $options->{jprefix},
         jstring => $jstring,
         libtype => $options->{libtype},
         mode => $options->{mode},
-        comment => $comment,
+        outputs => $outputs,
         output_dir => $paths->{output_dir},
         language => 'perl',
         stdout => $paths->{stdout},
@@ -116,20 +104,13 @@ cyoa --method proteinpair --input hg_top3.txt:lm_top3.txt --species hg38_114:lma
 =cut
 sub ProteinFold_PairIDs {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        jcpu => 8,
-        jgpu => 1,
-        jmem => 36,
-        jwalltime => '12:00:00',
-        jprefix => 79,
-        jname => 'proteinpair',
         libtype => 'protein',
         keys => 'transcript:gene',
         species => 'hg38_111:lmajor_v68',
         input => 'hs_top3.txt:lm_top3.txt',);
     my ($sp1, $sp2) = split(/$options->{delimiter}/, $options->{species});
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $comment = '## Iterate over pairs of seqids with proteinfold.';
     my $jstring = qq?
 use Bio::Adventure::Structure;
@@ -145,17 +126,11 @@ use Bio::Adventure::Structure;
     my $folder = $class->Submit(
         input => $options->{input},
         output => $paths->{output},
-        jname => $options->{jname},
-        jprefix => $options->{jprefix},
-        jwalltime => $options->{jwalltime},
-        jcpu => $options->{jcpu},
-        jgpu => $options->{jgpu},
-        jmem => $options->{jmem},
         jstring => $jstring,
         libtype => $options->{libtype},
         mode => $options->{mode},
-        comment => $comment,
         output_dir => $paths->{output_dir},
+        outputs => $outputs,
         language => 'perl',
         species => $options->{species},
         stdout => $paths->{stdout},
@@ -165,19 +140,12 @@ use Bio::Adventure::Structure;
 
 sub ProteinFold_PairIDs_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        jname => 'proteinpair',
-        jprefix => 80,
-        jcpu => 8,
-        jgpu => 1,
-        jmem => 36,
-        jwalltime => '12:00:00',
         keys => 'transcript:gene',
         species => 'hg38_111:lmajor_v68',
         input => 'hs_top3.txt:lm_top3.txt',);
     $options->{jprefix}++;
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my ($sp1, $sp2) = split(/$options->{delimiter}/, $options->{species});
     my $species1_aa = qq"$options->{libpath}/$options->{libtype}/fasta/${sp1}.fasta";
     my $species2_aa = qq"$options->{libpath}/$options->{libtype}/fasta/${sp2}.fasta";
@@ -253,14 +221,12 @@ ${idfile2}
 =cut
 sub ProteinFold_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         jname => 'alphafold',
-        jprefix => 80,
         mode => 'separate',
         required => ['input']);
     $options->{jprefix}++;
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $output_name = basename($options->{input}, ('.fasta', '.faa', '.fsa', '.ffn'));
     my $log = qq"$paths->{output_dir}/${output_name}_runlog.txt";
     my $log_fh = FileHandle->new(">${log}");
@@ -271,21 +237,18 @@ sub ProteinFold_Worker {
     ## 'separate' mode will submit a separate job for every sequence in the input fasta file.
     if ($options->{mode} eq 'separate') {
         @jobs = $class->Bio::Adventure::Structure::ProteinFold_JSON_Separate(
-            options => $options, paths => $paths);
-    }
-    elsif ($options->{mode} eq 'together') {
+            options => $options, paths => $paths, inputs => $inputs, outputs => $outputs,);
+    } elsif ($options->{mode} eq 'together') {
         @jobs = $class->Bio::Adventure::Structure::ProteinFold_JSON_Together(
-            options => $options, paths => $paths);
-    }
-    elsif ($options->{mode} eq 'pairwise' && $num_inputs == 1) {
+            options => $options, paths => $paths, inputs => $inputs, outputs => $outputs);
+    } elsif ($options->{mode} eq 'pairwise' && $num_inputs == 1) {
         @jobs = $class->Bio::Adventure::Structure::ProteinFold_JSON_Pairwise_OneInput(
-            options => $options, paths => $paths);
-    }
-    elsif ($options->{mode} eq 'pairwise' && $num_inputs == 2) {
+            options => $options, paths => $paths, inputs => $inputs, outputs => $outputs);
+    } elsif ($options->{mode} eq 'pairwise' && $num_inputs == 2) {
         @jobs = $class->Bio::Adventure::Structure::ProteinFold_JSON_Pairwise_TwoInput(
-            options => $options, first => $inputs[0], second => $inputs[1], paths => $paths);
-    }
-    else {
+            options => $options, first => $inputs[0], second => $inputs[1], paths => $paths,
+            outputs => $outputs);
+    } else {
         die("I know not this option.\n");
     }
     return(\@jobs);
@@ -300,6 +263,8 @@ sub ProteinFold_JSON_Separate {
     my ($class, %args) = @_;
     my $options = $args{options};
     my $paths = $args{paths};
+    my $inputs = $args{inputs};
+    my $outputs = $args{outputs};
     my $cif_directory = $paths->{cif_output_dir} unless (-d $paths->{cif_output_dir});
     make_path($cif_directory);
     my $molecule_type = $options->{libtype};
@@ -366,11 +331,7 @@ fi
 !;
         my $job = $class->Submit(
             jdepends => $options->{jdepends},
-            jname => qq"$options->{jname}_${seqid}",
             jstring => $jstring,
-            jprefix => $options->{jprefix},
-            jmem => $options->{jmem},
-            jwalltime => $options->{jwalltime},
             language => 'bash',
             stderr => $paths->{stderr},
             stdout => $paths->{stdout},
@@ -389,6 +350,8 @@ sub ProteinFold_JSON_Together {
     my ($class, %args) = @_;
     my $options = $args{options};
     my $paths = $args{paths};
+    my $inputs = $args{inputs};
+    my $outputs = $args{outputs};
     my $molecule_type = $options->{libtype};
     my $in = Bio::Adventure::Get_FH(input => $options->{input});
     my $seqio = Bio::SeqIO->new(-format => 'fasta', -fh => $in);
@@ -479,12 +442,9 @@ fi
 !;
     my $job = $class->Submit(
         jdepends => $options->{jdepends},
-        jname => qq"$options->{jname}_${run_id}",
         jstring => $jstring,
-        jprefix => $options->{jprefix},
-        jmem => $options->{jmem},
-        jwalltime => $options->{jwalltime},
         language => 'bash',
+        outputs => $outputs,
         stderr => $paths->{stderr},
         stdout => $paths->{stdout},
         output => $paths->{output_dir},);
@@ -501,7 +461,9 @@ fi
 sub ProteinFold_JSON_Pairwise_OneInput {
     my ($class, %args) = @_;
     my $options = $args{options};
-    my $paths = $options->{paths};
+    my $paths = $args{paths};
+    my $inputs = $args{inputs};
+    my $outputs = $args{outputs};
     my $molecule_type = $options->{libtype};
     my $in = Bio::Adventure::Get_FH(input => $options->{input});
     my $seqio = Bio::SeqIO->new(-format => 'fasta', -fh => $in);
@@ -582,12 +544,9 @@ fi
             }
             $inner_job = $class->Submit(
                 jdepends => $options->{jdepends},
-                jname => qq"$options->{jname}_${id_string}",
                 jstring => $jstring,
-                jprefix => $options->{jprefix},
-                jmem => $options->{jmem},
-                jwalltime => $options->{jwalltime},
                 language => 'bash',
+                outputs => $outputs,
                 stderr => $paths->{stderr},
                 stdout => $paths->{stdout},
                 output => $json_base,);
@@ -601,11 +560,13 @@ fi
 sub ProteinFold_JSON_Pairwise_TwoSeq {
     my ($class, %args) = @_;
     my $options = $args{options};
-    my $molecule_type = $options->{libtype};
-    $molecule_type = 'protein' unless(defined($molecule_type));
+    my $paths = $args{paths};
+    my $inputs = $args{inputs};
+    my $outputs = $args{outputs};
     my $first = $args{first};
     my $second = $args{second};
-    my $paths = $args{paths};
+    my $molecule_type = $options->{libtype};
+    $molecule_type = 'protein' unless(defined($molecule_type));
     return(undef) unless (defined($first) and defined($second));
     my $first_id = $first->id;
     my $first_sequence = $first->seq;
@@ -680,13 +641,7 @@ echo "${first_id},${second_id}" >> $paths->{output_dir}/finished.txt
 !;
     my $job = $class->Submit(
         jdepends => $options->{jdepends},
-        jname => qq"proteinfold_twoseq_${id_string}",
         jstring => $jstring,
-        jprefix => $options->{jprefix},
-        jmem => $options->{jmem},
-        jcpu => $options->{jcpu},
-        jgpu => $options->{jgpu},
-        jwalltime => $options->{jwalltime},
         language => 'bash',
         stderr => $paths->{stderr},
         stdout => $paths->{stdout},
@@ -698,10 +653,12 @@ echo "${first_id},${second_id}" >> $paths->{output_dir}/finished.txt
 sub ProteinFold_JSON_Pairwise_TwoInput {
     my ($class, %args) = @_;
     my $options = $args{options};
+    my $paths = $args{paths};
+    my $inputs = $args{inputs};
+    my $outputs = $args{outputs};
     my $molecule_type = $options->{libtype};
     my $first = $args{first};
     my $second = $args{second};
-    my $paths = $args{paths};
     my $first_in = Bio::Adventure::Get_FH(input => $first);
     my $first_seqio = Bio::SeqIO->new(-format => 'fasta', -fh => $first_in);
     my $second_in = Bio::Adventure::Get_FH(input => $second);
@@ -774,14 +731,9 @@ fi
 !;
             my $job = $class->Submit(
                 jdepends => $options->{jdepends},
-                jname => qq"$options->{jname}_${id_string}",
                 jstring => $jstring,
-                jprefix => $options->{jprefix},
-                jmem => $options->{jmem},
-                jcpu => $options->{jcpu},
-                jgpu => $options->{jgpu},
-                jwalltime => $options->{jwalltime},
                 language => 'bash',
+                outputs => $outputs,
                 stderr => $paths->{stderr},
                 stdout => $paths->{stdout},
                 output => $paths->{output_dir},);
@@ -801,16 +753,12 @@ fi
 =cut
 sub RNAFold_Windows {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        jcpu => 1,
-        jprefix => 80,
-        jname => 'vienna',
         length => 201,
         required => ['input'],
         step => 3,);
     my $output_name = basename($options->{input}, ('.gbk', '.fsa', '.fasta',));
-    my $paths = $class->Bio::Adventure::Config::Get_Paths(output_name => $output_name);
     my $comment = '## Iterate over a sequence with RNAfold.';
     my $jstring = qq?
 use Bio::Adventure::Structure;
@@ -820,19 +768,16 @@ use Bio::Adventure::Structure;
   step => '$options->{step}',
   output => '$paths->{output}',
   output_dir => '$paths->{output_dir}',
-  jprefix => '$options->{jprefix}',
   stdout => '$paths->{stdout}',
   stderr => '$paths->{stderr}',);
 ?;
     my $folder = $class->Submit(
         input => $options->{input},
         output => $paths->{output},
-        jname => 'vienna',
-        jprefix => $options->{jprefix},
         length => $options->{length},
         step => $options->{step},
         jstring => $jstring,
-        comment => $comment,
+        outputs => $outputs,
         output_dir => $paths->{output_dir},
         language => 'perl',
         stdout => $paths->{stdout},
@@ -847,16 +792,13 @@ use Bio::Adventure::Structure;
 =cut
 sub RNAFold_Windows_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         length => 201,
         step => 3,
-        jname => 'vienna',
-        jprefix => 80,
         required => ['input', 'output'],
         modules => ['vienna']);
     my $loaded = $class->Module_Loader(modules => $options->{modules});
-    my $input_paths = $class->Get_Path_Info($options->{output});
     ## Put the data here!  First key is location, second is structure/mfe.
     my $output = $options->{output};
     my $out_dir = dirname($output);
@@ -874,11 +816,9 @@ sub RNAFold_Windows_Worker {
     my $seqio;
     if ($options->{input} =~ /\.fasta|\.fsa/) {
         $seqio = Bio::SeqIO->new(-format => 'fasta', -fh => $in);
-    }
-    elsif ($options->{input} =~ /\.gb|\.gbff|\.gbk|\.gbf/) {
+    } elsif ($options->{input} =~ /\.gb|\.gbff|\.gbk|\.gbf/) {
         $seqio = Bio::SeqIO->new(-format => 'genbank', -fh => $in);
-    }
-    else {
+    } else {
         die("I do not understand the format for $options->{input}");
     }
     my $results = {};
@@ -895,8 +835,7 @@ sub RNAFold_Windows_Worker {
         ## Make the sequence length divisible by 3 to simplify logic later
         if (($seq_length % 3) == 1) {
             $circular = $circular->trunc(1, ($seq_length - 1));
-        }
-        elsif (($seq_length % 3) == 2) {
+        } elsif (($seq_length % 3) == 2) {
             $circular = $circular->trunc(1, ($seq_length - 2));
         }
         my $post_length = $circular->length;
@@ -919,8 +858,7 @@ sub RNAFold_Windows_Worker {
             if ($start <= 0 && $end <= 0) {
                 ## This should not happen, but we can handle it easily enough
                 print "Somehow got a zero on start or end, this should not happen\n";
-            }
-            elsif ($start <= 0) {
+            } elsif ($start <= 0) {
                 my $pre_start = $post_length + $start;
                 my $pre_end = $post_length;
                 my $remaining = ($length + $start);
@@ -929,12 +867,10 @@ sub RNAFold_Windows_Worker {
                 my $pre = $circular->subseq($pre_start, $pre_end);
                 my $post = $circular->subseq($post_start, $post_end);
                 $sub_sequence = $pre . $post;
-            }
-            elsif ($end <= 0) {
+            } elsif ($end <= 0) {
                 ## This really shouldn't happen.
                 print "end is less than zero, that is weird.\n";
-            }
-            else {
+            } else {
                 $sub_sequence = $circular->subseq($start, $end);
             }
 

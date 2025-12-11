@@ -23,9 +23,8 @@ use File::Basename;
 =cut
 sub Gubbins {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        jcpu => 8,
         required => ['input', 'outgroup', 'starting_tree'],);
     my $bname = basename($options->{input});
     my $gub_dir = qq"outputs/gubbins_${bname}";
@@ -44,14 +43,9 @@ run_gubbins.py \\
     $jstring .= qq"  2>${gub_dir}/gubbins.stderr 1>${gub_dir}/gubbins.stdout";
     my $gubbins = $class->Submit(
         basename => 'gubbins',
-        comment => 'This should remove recombination events from bacterial genomes.',
         jdepends => $options->{jdepends},
         job_output => 'filtered_polymorphic_sites.fasta',
-        jprefix => '30',
-        jmem => 50,
-        jcpu => $options->{jcpu},
-        jstring => $jstring,
-        jname => 'gub',);
+        jstring => $jstring,);
     return($gubbins);
 }
 

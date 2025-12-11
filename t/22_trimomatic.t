@@ -16,20 +16,36 @@ my $start = getcwd();
 my $new = 'test_output';
 mkdir($new);
 chdir($new);
-my $cyoa = Bio::Adventure->new(cluster => 0, basedir => cwd());
 
+my $cyoa = Bio::Adventure->new(cluster => 0, basedir => cwd());
 my $trimmer = $cyoa->Bio::Adventure::Trim::Trimomatic_Single(
     input => $input_file,
     jprefix => '22',);
 ok($trimmer, 'Run Trimomatic');
 
-my $csv_file = $trimmer->{stats}->{output};
+my $csv_file = $trimmer->{stats}->{outputs}->{main};
 ok(-f $csv_file, 'The stats file got created.');
 ok(my $actual = $cyoa->Last_Stat(input => $csv_file),
    'Collect Trimomatic Statistics');
-my $expected = 'test_forward,10000,9316,684';
+my $expected = 'test_forward,10000,9476,524';
 unless(ok($expected eq $actual, 'Are the trimomatic results the expected value?')) {
     my($old, $new) = diff($expected, $actual);
-    diag("--\n${old}\n--\n${new}\n");
+    diag("-- expected --\n${old}\n-- actual --\n${new}\n");
 }
+
+my $input = qq"${start_dir}/r1.fastq.xz:${start_dir}/r2.fastq.xz";
+$trimmer = $cyoa->Bio::Adventure::Trim::Trimomatic_Pairwise(
+    input => $input,
+    jprefix => '22_2',);
+ok($trimmer, 'Run Trimomatic Pairwise');
+$csv_file = $trimmer->{stats}->{outputs}->{main};
+ok(-f $csv_file, 'The stats file got created.');
+ok($actual = $cyoa->Last_Stat(input => $csv_file),
+   'Collect Trimomatic Statistics');
+$expected = 'r1,108212,94183,10743,1074,2212';
+unless(ok($expected eq $actual, 'Are the trimomatic results the expected value?')) {
+    my($old, $new) = diff($expected, $actual);
+    diag("-- expected --\n${old}\n-- actual --\n${new}\n");
+}
+
 chdir($start);

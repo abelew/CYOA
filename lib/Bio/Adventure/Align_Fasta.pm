@@ -53,25 +53,19 @@ use POSIX qw"ceil";
 =cut
 sub Make_Fasta_Job {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         align_jobs => 1,
-        cluster => 'slurm',
         fasta_tool => 'ggsearch36',
         fasta_format => '9',
-        jdepends => '',
-        jmem => 8,
-        jprefix => '90',
-        modules => ['fasta', 'cyoa'],
         output_type => undef,
         split => 0,
         type => 'protein',);
     my $dep = $options->{jdepends};
     my $split = $options->{split};
-    my $output_type = $options->{output_type};
     my $fasta_args = $class->Passthrough_Args(arbitrary => $options->{fasta_args});
     my $library;
-    my $array_end = $options->{array_start} + $args{align_jobs};
+    my $array_end = $options->{array_start} + $options->{align_jobs};
     my $array_string = qq"$options->{array_start}-${array_end}";
     my $jstring = '';
     my $type_string = '';
@@ -81,14 +75,10 @@ sub Make_Fasta_Job {
     } elsif ($options->{cluster} eq 'torque') {
         $array_id_string = '${PBS_ARRAYID}';
     }
-
-    my $job_basename = $class->Get_Job_Name();
-    if (defined($output_type)) {
-        $type_string = "-m ${output_type}";
+    if (defined($options->{output_type})) {
+        $type_string = "-m $options->{output_type}";
     }
     my $output = '';
-    my $stdout = qq"$options->{workdir}/split_align.stdout";
-    my $stderr = qq"$options->{workdir}/split_align.stderr";
     my $query_flag = '-n';
     if ($options->{type} eq 'protein') {
         $query_flag = '-p';
@@ -97,53 +87,45 @@ sub Make_Fasta_Job {
     }
 
     ## Important Note:  fasta36's command line parsing fails on path names > 128 or 256 characters.
-    ## Thus my usual '$options->{workdir}' will cause this to fail in many instances
-    ## because it introduces many characters to the pathnames.
+    ## In addition, for reasons I do not understand, using the -O argument
+    ## results in an output file containing only 1 result; but if one just
+    ## redirects its stdout to a file, everything is correct...
     if ($options->{cluster}) {
-        $output = qq"$options->{workdir}/split/*/*.out";
-        make_path(qq"$options->{workdir}/split") unless (-d qq"$options->{workdir}/split");
+        $output = qq"$paths->{output_dir}/split/*/*.out";
+        make_path(qq"$paths->{output_dir}/split") unless (-d qq"$paths->{output_dir}/split");
         $jstring = qq!
-export IN="$options->{workdir}/split/${array_id_string}/in.fasta"
+export IN="$paths->{output_dir}/split/${array_id_string}/in.fasta"
 echo "This job is: ${array_id_string}"
 if [[ -r "\${IN}" ]]; then
   $options->{fasta_tool} ${query_flag} -m $options->{fasta_format} \\
    $options->{fasta_args} ${type_string} -T $options->{jcpu} \\
    \${IN} \\
    $options->{library} \\
-   1>$options->{workdir}/split/${array_id_string}/${array_id_string}.out \\
-   2>>${stderr}
+   1>$paths->{output_dir}/split/${array_id_string}/${array_id_string}.out \\
+   2>>$outputs->{stderr}
 else
   echo "The input file does not exist: \${IN}"
   exit 0
 fi
 !;
     } else {
-        $output = qq"$options->{workdir}/$options->{fasta_tool}.out";
         $jstring = qq!
 $options->{fasta_tool} -m $options->{fasta_format} \\
   ${query_flag} $options->{fasta_args} ${type_string} -T $options->{jcpu} \\
   $options->{input} \\
   $options->{library} \\
-  1>${output} \\
-  2>>${stderr}
+  1>$outputs->{fasta} \\
+  2>>$outputs->{stderr}
+xz -9e -f $outputs->{fasta}
 !;
     }
-    my $comment = qq!## Running $options->{align_jobs} fasta job(s).!;
-
     my $fasta_jobs = $class->Submit(
         array_string => $array_string,
         cluster => $options->{cluster},
-        comment => $comment,
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => $job_basename,
         jstring => $jstring,
-        language => 'bash',
-        jprefix => qq"$options->{jprefix}_1",
-        modules => $options->{modules},
-        output => $output,
-        stdout => $stdout,
-        stderr => $stderr,);
+        jprefix => qq"$options->{jprefix}",
+        outputs => $outputs,);
     return($fasta_jobs);
 }
 
@@ -172,7 +154,26 @@ $options->{fasta_tool} -m $options->{fasta_format} \\
 =cut
 sub Parse_Fasta {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
+        args => \%args,
+        required => ['input'],);
+    my $jstring = qq!use Bio::Adventure::Align;
+use Bio::Adventure::Align_Fasta;
+my \$result = \$h->Bio::Adventure::Align_Fasta::Parse_Fasta_Worker(
+  input => '$options->{input}',
+);
+!;
+    my $parse = $class->Submit(
+        input => $options->{input},
+        jstring => $jstring,
+        subjob => 'perl',
+        outputs => $outputs,);
+    return($parse);
+}
+
+sub Parse_Fasta_Worker {
+    my ($class, %args) = @_;
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         best_only => 0,
@@ -180,13 +181,8 @@ sub Parse_Fasta {
     my $best_only = $options->{best_only};
     my $evalue = $options->{evalue};
     my $input = $options->{input};
-    my $output = $options->{output};
-    unless ($output) {
-        $output = $input;
-        $output =~ s/\..+//g;
-        $output .= "_parsed.txt";
-    }
-    my $out = FileHandle->new(">${output}");
+    print "Writing parsed output to: $outputs->{main}\n";
+    my $out = FileHandle->new(">$outputs->{main}");
     ## This works, other attempts I've used for zipped input fail.
     my $f = $class->Get_FH(input => $input);
     my $searchio = Bio::SearchIO->new(-format => 'fasta',
@@ -273,7 +269,7 @@ sub Parse_Fasta {
 =cut
 sub Parse_Fasta_Global {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         best_only => 0,
         fasta_format => 'fasta',
@@ -282,20 +278,7 @@ sub Parse_Fasta_Global {
         min_score => undef,
         check_all_hits => 0,
         min_percent => undef,
-        output => 'parsed.txt',
-        output_counts => 'parsed_counts.txt',
-        output_singles => 'parsed_singles.txt',
-        output_doubles => 'parsed_doubles.txt',
-        output_few => 'parsed_few.txt',
-        output_many => 'parsed_many.txt',
-        output_zero => 'parsed_zero.txt',
-        output_all => 'parsed_all.txt',
         jmem => 8);
-    my $output = $options->{input};
-    my $outdir = dirname($output);
-    $output = basename($output, ('.gz', '.xz'));
-    $output = basename($output, ('.txt'));
-
     my $in = $class->Get_FH(input => $options->{input});
     my $searchio = Bio::SearchIO->new(
         -format => $options->{fasta_format},
@@ -305,15 +288,14 @@ sub Parse_Fasta_Global {
         -check_all_hits => $options->{check_all_hits},
         -min_score => $options->{min_score},);
 
-    my $counts = FileHandle->new(qq">$options->{output_counts}");
-    my $parsed = FileHandle->new(qq">$options->{output}");
-    my $singles = FileHandle->new(qq">$options->{output_singles}");
-    my $doubles = FileHandle->new(qq">$options->{output_doubles}");
-    my $few = FileHandle->new(qq">$options->{output_few}");
-    my $many = FileHandle->new(qq">$options->{output_many}");
-    my $zero = FileHandle->new(qq">$options->{output_zero}");
-    my $all = FileHandle->new(qq">$options->{output_all}");
-
+    my $counts = FileHandle->new(qq">$outputs->{counts}");
+    my $parsed = FileHandle->new(qq">$outputs->{output}");
+    my $singles = FileHandle->new(qq">$outputs->{singles}");
+    my $doubles = FileHandle->new(qq">$outputs->doubles}");
+    my $few = FileHandle->new(qq">$outputs->{few}");
+    my $many = FileHandle->new(qq">$outputs->{many}");
+    my $zero = FileHandle->new(qq">$outputs->{zero}");
+    my $all = FileHandle->new(qq">$outputs->{all}");
     my $seq_count = 0;
     print $parsed "Query Name\tQuery length\tHit ID\tHit Length\tScore\tE\tIdentity\tHit length\tHit Matches\n";
     while (my $result = $searchio->next_result()) {
@@ -378,23 +360,15 @@ sub Parse_Fasta_Global {
 
 sub Parse_Fasta_Mismatches {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         jprefix => 50,
         modules => ['fasta', 'cyoa'],
         required => ['input', 'library'],);
     my $loaded = $class->Module_Loader(modules => $options->{modules},
                                        exe => ['fasta36']);
-    my $in_base = basename($options->{input}, ('.fsa', '.faa', '.ffn', '.gbk'));
-    my $lib_base = basename($options->{library}, ('.fsa', '.faa', '.ffn', '.gbk'));
-    my $output_base = qq"${in_base}_vs_${lib_base}";
-    my $outdir = qq"outputs/$options->{jprefix}pairwisedelta";
-    make_path("${outdir}") unless(-d ${outdir});
-    my $gg_output = qq"${outdir}/${output_base}.txt";
-    my $gg_error = qq"${outdir}/${output_base}.err";
-    my $variant_output = qq"${outdir}/${output_base}_mismatches.txt";
-    my $variant_numbers = qq"${outdir}/${output_base}_mismatch_nums.txt";
-    my $runner = qq"ggsearch36 -b 1 -d 1 $options->{library} $options->{input} 1>${gg_output} 2>${gg_error}";
+    my $runner = qq"ggsearch36 -b 1 -d 1 $options->{library} $options->{input} \\
+  1>$outputs->{output} 2>$outputs->{stderr}";
     my $handle = IO::Handle->new;
     open($handle, "$runner |");
     while (my $line = <$handle>) {
@@ -402,13 +376,13 @@ sub Parse_Fasta_Mismatches {
     }
     close($handle);
     print "Comparing: $options->{library} and $options->{input}\n";
-    my $out = FileHandle->new(">${variant_output}");
-    my $numbers = FileHandle->new(">${variant_numbers}");
+    my $out = FileHandle->new(">$outputs->{variants}");
+    my $numbers = FileHandle->new(">$outputs->{variant_numbers}");
     ## Write a header for the output tsv.
     print $out "RefID\tQueryID\tposition\ttype\treference\thit\n";
     my $results = 0;
     my $indices = {};
-    my $searchio = Bio::SearchIO->new(-format => 'fasta', -file => $gg_output);
+    my $searchio = Bio::SearchIO->new(-format => 'fasta', -file => $out);
   SEARCHLOOP: while (my $result = $searchio->next_result()) {
       $results++;
       ## There is only ever 1 hit.
@@ -598,25 +572,16 @@ sub Parse_Fasta_Mismatches {
 =cut
 sub Split_Align_Fasta {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         align_jobs => 40,
         align_parse => 0,
         best_only => 0,
         fasta_tool => 'ggsearch36',
         interactive => 0,
-        jmem => 8,
-        jprefix => 90,
         num_dirs => 0,
         required => ['input', 'library'],
-        type => 'dna',
-        modules => ['fasta', 'cyoa']);
-    my $loaded = $class->Module_Loader(modules => $options->{modules},
-                                       exe => ['fasta36']);
-    my $job_basename = $class->Get_Job_Name();
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
-    my $jname = qq"${job_basename}_fasta";
-    my $comment = qq'## Running a split alignment with $options->{fasta_tool}.';
+        type => 'dna',);
     my $jstring = qq!use Bio::Adventure::Align;
 use Bio::Adventure::Align_Fasta;
 my \$result = \$h->Bio::Adventure::Align_Fasta::Split_Align_Fasta_Worker(
@@ -626,85 +591,59 @@ my \$result = \$h->Bio::Adventure::Align_Fasta::Split_Align_Fasta_Worker(
   fasta_tool => '$options->{fasta_tool}',
   input => '$options->{input}',
   interactive => '$options->{interactive}',
-  jname => '${jname}',
-  jprefix => '$options->{jprefix}',
   library => '$options->{library}',
   num_dirs => '$options->{num_dirs}',
-  output => '$paths->{output}',
-  output_counts => '$paths->{output_counts}',
-  output_singles => '$paths->{output_singles}',
-  output_doubles => '$paths->{output_doubles}',
-  output_few => '$paths->{output_few}',
-  output_many => '$paths->{output_many}',
-  output_zero => '$paths->{output_zero}',
-  output_all => '$paths->{output_all}',
   type => '$options->{type}',);
 !;
     my $align = $class->Submit(
         align_jobs => $options->{align_jobs},
         align_parse => $options->{align_parse},
         best_only => $options->{best_only},
-        comment => $comment,
         fasta_tool => $options->{fasta_tool},
         input => $options->{input},
         interactive => $options->{interactive},
-        jname => $jname,
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        language => 'perl',
+        subjob => 'perl',
         library => $options->{library},
         num_dirs => $options->{num_first},
-        output => $paths->{output},
-        output_counts => $paths->{output_counts},
-        output_singles => $paths->{output_singles},
-        output_doubles => $paths->{output_doubles},
-        output_few => $paths->{output_few},
-        output_many => $paths->{output_many},
-        output_zero => $paths->{output_zero},
-        output_all => $paths->{output_all},
-        type => $options->{type},
-        stdout => $paths->{stdout},
-        stderr => $paths->{stderr});
+        outputs => $outputs,
+        type => $options->{type},);
     return($align);
 }
 
 sub Split_Align_Fasta_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         align_jobs => 40,
         align_parse => 0,
         best_only => 0,
         fasta_tool => 'ggsearch36',
         interactive => 0,
-        jmem => 8,
-        jprefix => 90,
         num_dirs => 0,
         required => ['input', 'library'],
-        type => 'dna',
-        modules => ['fasta', 'cyoa']);
-    my $loaded = $class->Module_Loader(modules => $options->{modules},
-                                       exe => ['fasta36']);
+        type => 'dna',);
     my $search_type = 'local_fasta';
     my $search_function = 'Parse_Fasta';
     if ($options->{fasta_tool} =~ /^gg/) {
         $search_type = 'global_fasta';
         $search_function = 'Parse_Fasta_Global';
-
     }
-    my $job_basename = $class->Get_Job_Name();
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
-    my $lib = basename($options->{library}, $class->{suffixes});
-    my $que = basename($options->{input}, $class->{suffixes});
-    my $outdir = $paths->{output_dir};
-    my $output = $paths->{output};
-    my $jname = qq"${job_basename}_fasta",
+    my $lib = basename($options->{library}, @{$options->{suffix_array}});
+    my $que = basename($options->{input}, @{$options->{suffix_array}});
     my $split_info = $class->Bio::Adventure::Align::Get_Split(
-        %args, align_jobs => $options->{align_jobs});
-    my $actual = $class->Bio::Adventure::Align::Make_Directories(
-        workdir => $outdir,
-        num_per_split => $split_info->{num_per_split},);
-    print "Actually used ${actual} directories to write files.\n";
+        %args,
+        paths => $paths,
+        jprefix => $options->{jprefix},
+        align_jobs => $options->{align_jobs});
+    my $actual = $split_info->{jobs};
+    if ($actual > 1) {
+        $actual = $class->Bio::Adventure::Align::Make_Directories(
+            paths => $paths,
+            jprefix => $options->{jprefix},
+            num_per_split => $split_info->{num_per_split},);
+        print "Actually used ${actual} directories to write files.\n";
+    }
     my $alignment = $class->Bio::Adventure::Align_Fasta::Make_Fasta_Job(
         align_jobs => $actual,
         cluster => $options->{cluster},
@@ -712,62 +651,31 @@ sub Split_Align_Fasta_Worker {
         input => abs_path($options->{input}),
         library => abs_path($options->{library}),
         jdepends => $options->{jdepends},
-        jname => $jname,
-        jprefix => qq"$options->{jprefix}_1",
-        type => $options->{type},
-        workdir => $outdir,);
-    my $concat_job = $class->Bio::Adventure::Align::Concatenate_Searches(
-        cluster => $options->{cluster},
-        input => $alignment->{output},
-        jdepends => $alignment->{job_id},
-        jname => qq"${job_basename}_concatfasta",
-        jprefix => qq"$options->{jprefix}_2",
-        workdir => $outdir,);
+        jprefix => $options->{jprefix},
+        paths => $paths,
+        type => $options->{type},);
+    my $last_jobid = $alignment->{job_id};
+    if ($actual > 1) {
+        my $concat_job = $class->Bio::Adventure::Align::Concatenate_Searches(
+            input => $outputs->{fasta},
+            jdepends => $alignment->{job_id},
+            cluster => $options->{cluster},
+            jname => qq"$paths->{output_base}_concatfasta",
+            jprefix => $options->{jprefix},
+            paths => $paths,);
+        $alignment->{concatenated} = $concat_job->{main};
+        $last_jobid = $concat_job->{job_id};
+    }
     ## Make sure that the alignment job gets the final output
-    $alignment->{output} = $concat_job->{output};
-    my $parse_input = $alignment->{output};
-    my $comment_string = qq!## I don't know if this will work.!;
-    my $jstring = qq?
-use Bio::Adventure;
-use Bio::Adventure::Align;
-use Bio::Adventure::Align_Fasta;
-my \$result = \$h->Bio::Adventure::Align_Fasta::${search_function}(
-  input => '$parse_input',
-  best_only => '$options->{best_only}',
-  output => '$paths->{output}',
-  output_counts => '$paths->{output_counts}',
-  output_singles => '$paths->{output_singles}',
-  output_doubles => '$paths->{output_doubles}',
-  output_few => '$paths->{output_few}',
-  output_many => '$paths->{output_many}',
-  output_zero => '$paths->{output_zero}',
-  output_all => '$paths->{output_all}',
-  search_type => '${search_type}',);
-?;
-    my $parse_job = $class->Submit(
-        best_only => $options->{best_only},
-        comment => $comment_string,
+    my $parse_job = $class->Bio::Adventure::Align_Fasta::Parse_Fasta(
+        input => $outputs->{fasta_comp},
+        jdepends => $last_jobid,
         cluster => $options->{cluster},
-        input => $parse_input,
-        jdepends => $concat_job->{job_id},
-        jmem => $options->{jmem},
-        jname => qq"${job_basename}_parsefasta",
-        jprefix => qq"$options->{jprefix}_3",
-        jstring => $jstring,
-        output => $paths->{output},
-        output_counts => $paths->{output_counts},
-        output_singles => $paths->{output_singles},
-        output_doubles => $paths->{output_doubles},
-        output_few => $paths->{output_few},
-        output_many => $paths->{output_many},
-        output_zero => $paths->{output_zero},
-        output_all => $paths->{output_all},
-        stdout => $paths->{stdout},
-        stderr => $paths->{stderr},
-        language => 'perl',);
-    $parse_job->{align} = $alignment;
-    $parse_job->{concat} = $concat_job;
-    return($parse_job);
+        jprefix => $options->{jprefix},
+        jname => qq"$paths->{output_base}_parse",
+        paths => $paths,);
+    $alignment->{parse} = $parse_job;
+    return($alignment);
 }
 
 =head1 AUTHOR - atb

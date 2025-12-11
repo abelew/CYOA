@@ -55,6 +55,7 @@ use Bio::Tools::GuessSeqFormat;
  keep_both(0): Keep the union of the sources.
 
 =back
+
 =cut
 sub Combine_CDS_Features {
     my %args = @_;
@@ -209,7 +210,7 @@ sub Combine_CDS_Features {
 =cut
 sub Extract_Features {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         term => 'tail',
@@ -297,7 +298,7 @@ sub Extract_Features {
 
 sub Extract_Notes {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         note_tag => 'note',
         gff_tag => 'locus_tag',
@@ -395,15 +396,13 @@ sub Filter_Edge_Features {
 =cut
 sub Merge_CDS_Predictions {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         input_glimmer => '',
         input_phanotate => '',
         input_prodigal => '',
-        primary_key => 'locus_tag',
-        jmem => 8,
-        jprefix => '19',);
+        primary_key => 'locus_tag',);
     ## Even though it is a bit redundant, record all the output filenames now
     ## so that they are easily accessible for the various downstream search tools.
     my $output_dir =  qq"outputs/$options->{jprefix}merge_cds_predictions";
@@ -433,8 +432,6 @@ sub Merge_CDS_Predictions {
     ## After we do the various annotation searches, we will add
     ## the metadata template file (sbt), the tsv, and xlsx outputs.
     my $output_log = qq"${output_dir}/${output_basename}_runlog.txt";
-    my $comment = '## This will hopefully merge CDS predictions from prodigal/glimmer/prokka.';
-
     my $jstring = qq?
 use Bio::Adventure::Annotation;
 my \$result = \$h->Bio::Adventure::Annotation_Genbank::Merge_CDS_Predictions_Worker(
@@ -460,17 +457,14 @@ my \$result = \$h->Bio::Adventure::Annotation_Genbank::Merge_CDS_Predictions_Wor
   primary_key => '$options->{primary_key}',);
 ?;
     my $merge_orfs = $class->Submit(
-        comment => $comment,
         input => $options->{input},
         input_glimmer => $options->{input_glimmer},
         input_phanotate => $options->{input_phanotate},
         input_prodigal => $options->{input_prodigal},
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => 'merge_orfs',
-        jprefix => $options->{jprefix},
         jstring => $jstring,
         language => 'perl',
+        outputs => $outputs,
         output_dir => $output_dir,
         output_basename => $output_basename,
         output_genome => $output_genome,
@@ -529,7 +523,7 @@ my \$result = \$h->Bio::Adventure::Annotation_Genbank::Merge_CDS_Predictions_Wor
 =cut
 sub Merge_CDS_Predictions_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         input_glimmer => '',
@@ -546,8 +540,7 @@ sub Merge_CDS_Predictions_Worker {
         output_gbf => 'assembly.gbf',
         output_gbk => 'assembly.gbk',
         output_tsv => 'assembly.tsv',
-        output => 'assembly.gbk',
-        jprefix => '19',);
+        output => 'assembly.gbk',);
 
     ## Start gathering features from each of the annotation methods:
     ## Phanotate first.

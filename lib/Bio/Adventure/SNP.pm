@@ -41,7 +41,7 @@ use Bio::Seq;
 =cut
 sub Align_SNP_Search {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species'],);
     my $genome = qq"$options->{libpath}/$options->{libtype}/$options->{species}.fasta";
@@ -72,7 +72,7 @@ sub Align_SNP_Search {
 =cut
 sub Dantools_RNASeq {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['species', 'input',],
         chosen_tag => 'PAIRED',
@@ -86,12 +86,7 @@ sub Dantools_RNASeq {
         qual => 10,
         max_value => undef,
         min_value => 0.8,
-        vcf_cutoff => 5,
-        jmem => 36,
-        jcpu => 4,
-        jprefix => '50',
-        jwalltime => '48:00:00',);
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+        vcf_cutoff => 5,);
     my $input_fasta = $paths->{fasta};
     my $dantools_dir = $paths->{output_dir};
     my $stdout = qq"${dantools_dir}/$options->{species}.stdout";
@@ -119,7 +114,6 @@ sub Dantools_RNASeq {
     my $shift_input_basename = qq"$paths->{output_dir}/output/${input_base}_on_$options->{species}";
     my $shift_input_filename = qq"${shift_input_basename}.vcf";
     my $label_input_fasta = qq"${shift_input_basename}.fasta";
-    my $comment = qq!## This is a dantools search for variant against $options->{species}!;
     my $jstring = qq!
 mkdir -p ${dantools_dir}
 echo "Starting pseudogen using the ${input_fasta} genome."
@@ -166,7 +160,13 @@ dantools summarize-aa \\
   --output $paths->{output_dir}/summarized_aa.tsv \\
   1>>$paths->{output_dir}/summarize_aa.stdout \\
   2>>$paths->{output_dir}/summarize_aa.stderr
-echo "Starting transloc?"
+echo "Starting transloc."
+dantools transloc -l 100 \\
+  -s $paths->{output_dir}/output/alignment.bam \\
+  -v ${shift_input_filename} \\
+  -o $paths->{output_dir}/transloc.txt \\
+  1>>$paths->{output_dir}/transloc.stdout \\
+  2>>$paths->{output_dir}/transloc.stderr
 xz -9e -f $paths->{output_dir}/depth_summary.tsv  $paths->{output_dir}/metadata.tsv \\
   $paths->{output_dir}/modified_aa.tsv $paths->{output_dir}/modified_nt.tsv \\
   $paths->{output_dir}/original_bins.tsv $paths->{output_dir}/summarized_aa.tsv \\
@@ -174,13 +174,9 @@ xz -9e -f $paths->{output_dir}/depth_summary.tsv  $paths->{output_dir}/metadata.
 !;
     my $comment_string = '## Use dantools to examine RNASeq data vs a reference.';
     my $dantools = $class->Submit(
-        comment => $comment_string,
         jdepends => $options->{jdepends},
-        jname => "dantools_$options->{species}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        stderr => $stderr,
-        stdout => $stdout,);
+        outputs => $outputs,);
     return($dantools);
 }
 
@@ -197,7 +193,7 @@ xz -9e -f $paths->{output_dir}/depth_summary.tsv  $paths->{output_dir}/metadata.
 =cut
 sub Freebayes_SNP_Search {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['species', 'input',],
         chosen_tag => 'PAIRED',
@@ -210,12 +206,7 @@ sub Freebayes_SNP_Search {
         qual => 10,
         max_value => undef,
         min_value => 0.8,
-        vcf_cutoff => 5,
-        jmem => 36,
-        jcpu => 4,
-        jprefix => '50',
-        jwalltime => '48:00:00',);
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+        vcf_cutoff => 5,);
     my $input_fasta = $paths->{fasta};
     my $freebayes_dir = $paths->{output_dir};
     my $output_file = qq"${freebayes_dir}/$options->{species}.vcf";
@@ -231,8 +222,6 @@ sub Freebayes_SNP_Search {
     my $query_base = basename($options->{input}, ('.bam'));
     my $deduplicate_input = qq"${freebayes_dir}/${query_base}_sorted.bam";
     my $deduplicated = qq"${freebayes_dir}/${query_base}_deduplicated.bam";
-
-    my $comment = qq!## This is a freebayes search for variant against ${input_fasta}!;
     my $jstring = qq!
 mkdir -p ${freebayes_dir}
 samtools sort -l 9 -@ 4 $options->{input} -o ${deduplicate_input} \\
@@ -265,21 +254,11 @@ bcftools index ${output_bcf} \\
 echo "Finished bcftools index." >> ${stdout}
 rm ${output_file}
 !;
-
-    my $comment_string = '## Use freebayes, bcftools, and vcfutils to get some idea about how many variant positions are in the data.';
     my $freebayes = $class->Submit(
-        comment => $comment_string,
         jdepends => $options->{jdepends},
-        jname => "freebayes_$options->{species}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        stderr => $stderr,
-        stdout => $stdout,
+        outputs => $outputs,
         output => $output_bcf,);
-    $comment_string = qq!## This little job should make unique IDs for every detected
-## SNP and a ratio of snp/total for all snp positions with > 20 reads.
-## Further customization may follow.
-!;
     my $parse;
     if ($options->{introns}) {
         $parse = $class->Bio::Adventure::SNP::SNP_Ratio_Intron(
@@ -290,9 +269,7 @@ rm ${output_file}
             gff_cds_parent_type => $options->{gff_cds_parent_type},
             gff_cds_type => $options->{gff_cds_type},
             input => $output_bcf,
-            jcpu => 1,
             jdepends => $freebayes->{job_id},
-            jname => qq"freebayes_parsenp_intron_${query_base}",
             jprefix => qq"$options->{jprefix}_1",
             min_value => $options->{min_value},
             max_value => $options->{max_value},
@@ -314,7 +291,6 @@ rm ${output_file}
             species => $options->{species},
             vcf_cutoff => $options->{vcf_cutoff},
             vcf_method => 'freebayes',
-            jcpu => 1,
             jdepends => $freebayes->{job_id},
             jname => qq"freebayes_parsenp_${query_base}",
             jprefix => qq"$options->{jprefix}_1",);
@@ -330,15 +306,14 @@ rm ${output_file}
 =cut
 sub Mpileup_SNP_Search {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species', 'gff_tag', 'gff_type'],
         varfilter => 0,
         vcf_cutoff => 5,
         min_value => 0.8,
         max_value => undef,
-        qual => 10,
-        jprefix => '50',);
+        qual => 10,);
     my $genome = qq"$options->{libpath}/$options->{libtype}/fasta/$options->{species}.fasta";
     my $query = $options->{input};
     my $query_home = dirname(${query});
@@ -406,29 +381,17 @@ fi
 bcftools index ${final_output} 2>${vcfutils_dir}/bcftools_index.err
 echo "Successfully finished." >> ${vcfutils_dir}/vcfutils_$options->{species}.out
 !;
-
-    my $comment_string = qq"## Use samtools, bcftools, and vcfutils to get some
-## idea about how many variant positions are in the data.";
     my $pileup = $class->Submit(
-        comment => $comment_string,
         input_pileup => $pileup_input,
         jdepends => $options->{jdepends},
-        jcpu => 4,
-        jmem => 48,
-        jname => qq"mpileup_${query_base}",
-        jprefix => qq"$options->{jprefix}",
         jstring => $jstring,
-        jwalltime => '10:00:00',
+        outputs => $outputs,
         output_call => $call_output,
         output_filter => $filter_output,
         output_final => $final_output,
         output_pileup => $pileup_output,
         stderr => $gatk_stderr,
         stdout => $gatk_stdout,);
-    $comment_string = qq!## This little job should make unique IDs for every detected
-## SNP and a ratio of snp/total for all snp positions with > 20 reads.
-## Further customization may follow.
-!;
     my $parse = $class->Bio::Adventure::SNP::SNP_Ratio(
         gff_tag => $options->{gff_tag},
         gff_type => $options->{gff_type},
@@ -438,7 +401,6 @@ echo "Successfully finished." >> ${vcfutils_dir}/vcfutils_$options->{species}.ou
         vcf_cutoff => $vcf_cutoff,
         min_value => $min_value,
         max_value => $max_value,
-        jcpu => 1,
         jname => qq"mpileup_parsenp_${query_base}_$options->{species}",
         jdepends => $pileup->{job_id},
         jprefix => $options->{jprefix} + 1,);
@@ -453,7 +415,7 @@ echo "Successfully finished." >> ${vcfutils_dir}/vcfutils_$options->{species}.ou
 =cut
 sub SNP_Ratio {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         gff_tag => 'ID',
         gff_type => 'gene',
@@ -463,14 +425,11 @@ sub SNP_Ratio {
         vcf_cutoff => 5,
         min_value => 0.8,
         max_value => 1.0,
-        jprefix => '80',
-        jname => 'parsenp',
         required => ['input', 'species', 'chosen_tag', 'coverage_tag'],);
     if ($options->{introns}) {
         my $snp_intron = Bio::Adventure::SNP::SNP_Ratio_Intron(%args);
         return($snp_intron);
     }
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $print_input = $options->{input};
     my $output_dir = dirname($print_input);
     my $print_output = qq"${output_dir}";
@@ -529,21 +488,16 @@ my \$result = \$h->Bio::Adventure::SNP::SNP_Ratio_Worker(
 ";
     my $parse_job = $class->Submit(
         chosen_tag => $options->{chosen_tag},
-        comment => $comment_string,
         coverage_tag => $options->{coverage_tag},
         gff_tag => $options->{gff_tag},
         gff_type => $options->{gff_type},
         jdepends => $options->{jdepends},
-        jmem => 48,
-        jname => $options->{jname},
-        jprefix => qq"$options->{jprefix}_1",
         jstring => $jstring,
-        jwalltime => '10:00:00',
         language => 'perl',
         min_value => $options->{min_value},
         max_value => $options->{max_value},
         output_dir => $output_dir,
-        output => $output_all,
+        outputs => $outputs,
         output_dedup => $output_dedup,
         output_genome => $output_genome,
         output_by_gene => $output_by_gene,
@@ -569,7 +523,7 @@ my \$result = \$h->Bio::Adventure::SNP::SNP_Ratio_Worker(
 =cut
 sub SNP_Ratio_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['species', 'input'],
         chosen_tag => 'PAIRED',
@@ -593,12 +547,12 @@ sub SNP_Ratio_Worker {
     );
     ##print "Using the $options->{chosen_tag} to filter observed variants.
 ##Values must be no larger than $options->{max_value} and no smaller than $options->{min_value}\n";
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $species = $options->{species};
     my $out_dir = dirname($options->{output});
     my $log_file = qq"${out_dir}/snp_ratio.stdout";
     my $log = FileHandle->new(">${log_file}");
-    my $subst_matrix = $class->Bio::Adventure::Align::Get_Substitution_Matrix(matrix => $options->{matrix});
+    my $subst_matrix = $class->Bio::Adventure::Align::Get_Substitution_Matrix(
+        matrix => $options->{matrix});
     my $genome = $paths->{fasta};
     my $gff = $paths->{gff};
     print $log "Reading gff: ${gff}, extracting type: $options->{gff_type} features tagged $options->{gff_tag}.\n";
@@ -1065,7 +1019,7 @@ ${insufficient_metric} positions failed the metric.
 
 sub SNP_Ratio_Intron {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species'],
         chosen_tag => 'PAIRED',
@@ -1075,8 +1029,6 @@ sub SNP_Ratio_Intron {
         gff_type => 'gene',
         gff_cds_parent_type => 'mRNA',
         gff_cds_type => 'CDS',
-        jprefix => '80',
-        jname => 'parsenp',
         min_value => 0.1,
         qual => 10,
         vcf_cutoff => 5,
@@ -1136,7 +1088,6 @@ my \$result = \$h->Bio::Adventure::SNP::SNP_Ratio_Intron_Worker(
 );
 ";
     my $parse_job = $class->Submit(
-        comment => $comment_string,
         chosen_tag => $options->{chosen_tag},
         coverage_tag => $options->{coverage_tag},
         filter_type => $options->{filter_type},
@@ -1145,15 +1096,12 @@ my \$result = \$h->Bio::Adventure::SNP::SNP_Ratio_Intron_Worker(
         gff_cds_parent_type => $options->{gff_cds_parent_type},
         gff_cds_type => $options->{gff_cds_type},
         jdepends => $options->{jdepends},
-        jmem => 64,
-        jname => $options->{jname},
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        jwalltime => '10:00:00',
         language => 'perl',
         min_value => $options->{min_value},
         output_dir => $output_dir,
         qual => $options->{qual},
+        outputs => $outputs,
         output => $output_all,
         output_genome => $output_genome,
         output_by_gene => $output_by_gene,
@@ -1168,7 +1116,7 @@ my \$result = \$h->Bio::Adventure::SNP::SNP_Ratio_Intron_Worker(
 
 sub SNP_Ratio_Intron_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['species', 'input'],
         chosen_tag => 'PAIRED',
@@ -1192,7 +1140,6 @@ sub SNP_Ratio_Intron_Worker {
         vcf_cutoff => 5,
         vcf_method => 'freebayes',);
     my $species = $options->{species};
-    my $paths = $class->Bio::Adventure::Config::Get_Paths(species => $species);
     my $output_dir = $paths->{output_dir};
     my $log_file = qq"${output_dir}/snp_ratio_intron.stdout";
     my $log = FileHandle->new(">${log_file}");
@@ -1693,7 +1640,7 @@ sub Swap_Sequence {
 =cut
 sub Snippy {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species'],);
     my $species = $options->{species};
@@ -1734,15 +1681,9 @@ snippy --force \\
   --ref ${genome} \\
   ${snippy_input}
 !;
-    my $comment_string = '## Invoke snippy on some reads.';
     my $snippy = $class->Submit(
-        comment => $comment_string,
         jdepends => $options->{jdepends},
-        jname => $snippy_name,
-        jprefix => $options->{jprefix},
-        jstring => $jstring,
-        jwalltime => '10:00:00',
-        jmem => 48,
+        outputs => $outputs,
         output => qq"${snippy_dir}",
         stdout => $stdout,
         stderr => $stderr,);
@@ -1761,7 +1702,7 @@ L<samtools> L<snippy> L<vcfutils>
 
 sub Test_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         ## required => ['species', 'input'],
         chosen_tag => 'PAIRED',
@@ -1782,158 +1723,11 @@ sub Test_Worker {
         vcf_cutoff => 1,
         vcf_method => 'freebayes',
         verbose => 1,);
-    $options->{input} = 'phix.vcf';
-    my $genome = 'phix.fasta';
-    my $species_gff = 'phix.gff';
-    $class->{species} = 'phix';
-    $options->{species} = 'phix';
-    my $reader = qq"<$options->{input}";
-    if ($options->{input} =~ /\.bcf$/) {
-        $reader = qq"bcftools view $options->{input} |";
-    }
-    my $out_dir = dirname($options->{output});
-    my $log_file = qq"${out_dir}/snp_ratio.stdout";
-    my $log = FileHandle->new(">${log_file}");
-    my $gff = Bio::Adventure::Get_FH(input => $species_gff, suffix => qq"| grep -v '^#'");
-    print $log "Reading gff: ${species_gff}, extracting type: $options->{gff_type} features tagged $options->{gff_tag}.\n";
-    print $log "The large matrix of data will be written to: $options->{output}\n";
-    my $all_out = FileHandle->new(">$options->{output}");
-    my $filtered_coverage_log = qq"${out_dir}/filtered_coverage.tsv";
-    my $output_by_gene = FileHandle->new(">$options->{output_by_gene}");
-    print $output_by_gene qq"gene\tchromosome\tposition\tfrom_to\taa_subst\n";
-    my $output_penetrance = FileHandle->new(">$options->{output_penetrance}");
-    print $output_penetrance qq"chromosome\tposition\tfrom_to\tpenetrance\n";
-    my $filtered_coverage = FileHandle->new(">${filtered_coverage_log}");
-
-    ## This function returns a 3 element hash:
-    ##  contigs: 1 feature / contig
-    ##  sf_sequences: The seq objects for each contig (should not be needed)
-    ##  sf_by_contig: The seqfeatures which effectively combine the above.
-    my $species2sf = $class->Bio::Adventure::Convert::Species2SF();
-    my $contig_features = $species2sf->{contigs};
-    my $sf_sequences = $species2sf->{sf_sequences};
-    my $seqfeatures = $species2sf->{sf_by_contig};
-
-    ## The following funciton dumps the observed variants in a (v|b)cf file into memory.
-    my $bcf_data = Extract_Variants(input => $reader, vcf_method => 'freebayes', qual => $options->{qual});
-    my %observations = %{$bcf_data->{observations}};
-    my @tag_observations = @{$bcf_data->{tag_observations}};
-    my @tag_order = @{$bcf_data->{tag_order}};
-    my %num_observed = %{$bcf_data->{num_observed}};
-    print $log "Finished read the bcf file, observed: $observations{snp} SNPS\n";
-    ## Now we should have a big array full of little hashes
-
-    ## Use the tags from the (v|b)cf file to write the observation tsv header line.
-    my @used_tags = ('position', );
-    ## First collect the set of tags of interest.
-    my $header_line = "position\t";
-    for my $k (@tag_order) {
-        if ($num_observed{$k} > 0) {
-            push(@used_tags, $k);
-            $header_line .= "$k\t";
-        }
-    }
-    $header_line =~ s/\t$/\n/;
-    ## Write out the observations, starting with a header line comprised of the position information
-    ## followed by the tags.
-    print $all_out qq"${header_line}\n";
-
-
-    my $vars_by_gene = {};
-    my $all_count = 0;
-    print $log "Filtering variant observations and writing a new genome.\n";
-    my $modified = Modify_Features(observations => \@tag_observations,
-                                   seqfeatures => $sf_sequences,
-                                   contig_features => $contig_features,
-                                   penetrance_tag => $options->{penetrance_tag},
-                                   chosen_tag => $options->{chosen_tag},
-                                   coverage_tag => $options->{coverage_tag},
-                                   vcf_cutoff => $options->{vcf_cutoff},
-                                   filtered_coverage => $filtered_coverage,
-                                   min_value => $options->{min_value},
-                                   max_value => $options->{max_value},
-                                   used_tags => \@used_tags,
-                                   all_out => $all_out,
-                                   output_by_gene => $output_by_gene,
-                                   output_penetrance => $output_penetrance,
-                                   verbose => $options->{verbose},);
-
-    $all_out->close();  ## Close out the matrix of observations.
-    $output_by_gene->close();
-    my $var_by_genelength = FileHandle->new(">$options->{output_pkm}");
-    print $var_by_genelength qq"gene\tvars_by_length\n";
-    foreach my $geneid (keys %{$vars_by_gene}) {
-        my $gene_ratio = 0;
-        my $good = 1;
-        $good = 0 if (! $vars_by_gene->{$geneid}->{count});
-        $good = 0 if (! $vars_by_gene->{$geneid}->{length});
-        $good = 0 if (! $vars_by_gene->{$geneid}->{length});
-        if ($good) {
-            $gene_ratio = ($vars_by_gene->{$geneid}->{count} / $vars_by_gene->{$geneid}->{length}) * 1000.0;
-        }
-        print $var_by_genelength "${geneid}\t${gene_ratio}\n";
-    }
-    $var_by_genelength->close();
-
-    my $output_genome = new Bio::SeqIO(-file => ">$options->{output_genome}",
-                                       -format => 'Fasta');
-    my $string = qq!##gff-version 3
-!;
-    my $final_write = new FileHandle(">$options->{output_gff}");
-    my $stringio = new IO::String($string);
-    for my $ch (sort keys %{$sf_sequences}) {
-        ## my $formatted = $text->format($input_genome->{$ch}->{sequence});
-        my $seq_obj = $sf_sequences->{$ch};
-        my $written = $output_genome->write_seq($seq_obj);
-        my $seq_string = $seq_obj->seq;
-        my $seq_id = $seq_obj->id;
-        my $seq_name = $seq_obj->display_name;
-        ## Take from: https://www.biostars.org/p/70448/
-        #foreach my $seq_line (unpack('(a[80])*', $seq_string)) {
-        #    print $output_genome "${seq_line}\n";
-        #}
-        my $contig_sf = $contig_features->{$ch};
-        ##for my $top_feature ($contig_sf->get_SeqFeatures()) {
-        ##}
-        my $all_sf = $seqfeatures->{$ch};
-        for my $thingie (@{$all_sf}) {
-            my @tags = sort $thingie->get_all_tags();
-            my $suffix = '';
-          TAGS: for my $t (@tags) {
-              next TAGS if ($t eq 'phase');
-              next TAGS if ($t eq 'score');
-              next TAGS if ($t eq 'seq_id');
-              next TAGS if ($t eq 'source');
-              next TAGS if ($t eq 'type');
-              my @values = $thingie->get_tag_values($t);
-              $suffix .= qq"${t}=$values[0];";
-          }
-            $suffix =~ s/;$/\n/;
-            my $gffout = new Bio::FeatureIO(-fh => $stringio,
-                                            -format => 'GFF',
-                                            -version => 3);
-            ## This sends the gff to my string IO, so I can add the tags to it...
-            my $written = $gffout->write_feature($thingie);
-            $string =~ s/$/$suffix/;
-        }  ## End for every feature
-    } ## End for every contig
-    print $final_write $string;
-    $final_write->close();
-    $output_penetrance->close();
-
-    ## Write the modified gff with the sequence features
-    print $log "Compressing matrix of all metrics.\n";
-    qx"xz -9e -f $options->{output}";
-    print $log "Compressing output by gene.\n";
-    qx"xz -9e -f $options->{output_by_gene}";
-    qx"xz -9e -f $options->{output_penetrance}";
-    print $log "Compressing output pkm file.\n";
-    qx"xz -9e -f $options->{output_pkm}";
-    $log->close();
-    $filtered_coverage->close();
-    return(@tag_observations);
+    my $jstring = qq!echo "Hello world from Test_Worker."!;
+    my $test = $class->Submit(
+        jstring => $jstring);
+    return($test);
 }
-
 
 sub Extract_Variants {
     my %args = @_;

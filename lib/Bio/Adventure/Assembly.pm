@@ -53,12 +53,10 @@ no warnings 'experimental::try';
 sub Abyss {
     my ($class, %args) = @_;
     ## abyss-pe k=41 name=EAb01 in="r1_trimmed-corrected.fastq.gz r2_trimmed-corrected.fastq.gz"
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
-        k => 41,
-        jmem => 12,);
-    my $job_name = $class->Get_Job_Name();
+        k => 41,);
     my %abyss_jobs = ();
     my $outname = basename(cwd());
     my $output_dir = qq"outputs/abyss_${outname}";
@@ -76,7 +74,6 @@ sub Abyss {
         $input_string = qq!in=${r1} "!;
         $executable = "abyss-se"
     }
-    my $comment = '## This is a abyss submission script.';
     my $jstring = qq!start=\$(pwd)
 mkdir -p ${output_dir}
 cd ${output_dir}
@@ -89,13 +86,9 @@ ${executable} -C \$(pwd) \\
 cd \${start}
 !;
     my $abyss = $class->Submit(
-        comment => $comment,
-        jcpu => 6,
         jdepends => $options->{jdepends},
-        jname => "abyss_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        jmem => $options->{jmem},
+        outputs => $outputs,
         output => qq"${output_dir}/${outname}.fasta",
         prescript => $options->{prescript},
         postscript => $options->{postscript},);
@@ -136,13 +129,10 @@ cd \${start}
 =cut
 sub Assembly_Coverage {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        required => ['input', 'library'],
-        ## input is the corrected/filtered reads, library is the assembly
-        jmem => 18,
-        jprefix => 14,);
-    my $job_name = $class->Get_Job_Name();
+        required => ['input', 'library'],);
+    ## input is the corrected/filtered reads, library is the assembly
     my $outname = basename(cwd());
     my $output_dir = qq"outputs/$options->{jprefix}assembly_coverage_${outname}";
     my $input_string = '';
@@ -161,9 +151,6 @@ sub Assembly_Coverage {
             $input_string = qq" -1 ${r1} ";
         }
     }
-    my $comment = qq!## This is a script to remap the reads against an assembly
-## and calculate the coverage by contig.
-!;
     my $stdout = qq"${output_dir}/coverage.stdout";
     my $stderr = qq"${output_dir}/coverage.stderr";
     my $jstring = qq!start=\$(pwd)
@@ -198,14 +185,9 @@ samtools index ${output_dir}/coverage.bam \\
   1>>${stdout}
 !;
     my $coverage = $class->Submit(
-        comment => $comment,
-        jcpu => 6,
         jdepends => $options->{jdepends},
-        jname => qq"coverage_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        jmem => $options->{jmem},
-        jwalltime => '4:00:00',
+        outputs => $outputs,
         output => qq"${output_dir}/coverage.txt",
         output_bam => qq"${output_dir}/coverage.bam",
         output_tsv => qq"${output_dir}/coverage.tsv",
@@ -251,16 +233,13 @@ samtools index ${output_dir}/coverage.bam \\
 =cut
 sub Collect_Assembly {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         input_fsa => '',
         input => '',
         input_genbank => '',
         input_tsv => '',
-        output => '',
-        jmem => 2,
-        jprefix => 81,
-        jname => 'collect',);
+        output => '',);
     my $output_dir = qq"outputs/$options->{jprefix}$options->{jname}";
     my @output_files = split(/:/, $options->{output});
     my $jstring = qq!
@@ -274,32 +253,23 @@ cp $options->{input_tsv} ${output_dir}
         $jstring .= qq"cp ${o} ${output_dir}
 ";
     }
-
     my $collect = $class->Submit(
-        jcpu => 1,
         jdepends => $options->{jdepends},
-        jname => $options->{jname},
         jstring => $jstring,
-        jprefix => $options->{jprefix},
-        jmem => $options->{jmem},
+        outputs => $outputs,
         output => $output_dir,);
     return($collect);
 }
 
 sub Contig_Reorder {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        required => ['input', 'reference'],
-        jmem => 24,
-        jprefix => '19',);
-    my $jname = 'mreorder';
+        required => ['input', 'reference'],);
     my $outdir = qq"outputs/$options->{jprefix}mreorder";
     make_path(qq"${outdir}");
     my $stderr = qq"${outdir}/mauve_reorder.stderr";
     my $stdout = qq"${outdir}/mauve_reorder.stdout";
-    my $comment = qq!## Attempting to run mauve's contig reorder function of $options->{input} vs. $options->{reference}.
-!;
     my $mem = $options->{jmem} * 1000;
     my $renamed = basename($options->{input}, ('.fsa', '.fasta'));
     my $jstring = qq!
@@ -315,14 +285,11 @@ target_dir=\$(/bin/ls -d ${outdir}/align* | tail -n 1)
 cp \${target_dir}/$options->{input} ${outdir}/${renamed}_reordered.fasta
 !;
     my $mauve = $class->Submit(
-        comment => $comment,
         input => $options->{input},
         library => $options->{library},
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => $jname,
-        jprefix => $options->{jprefix},
         jstring => $jstring,
+        outputs => $outputs,
         output => qq"${outdir}/${renamed}_reordered.fasta",
         stderr => $stderr,
         stdout => $stdout,);
@@ -359,19 +326,15 @@ cp \${target_dir}/$options->{input} ${outdir}/${renamed}_reordered.fasta
 =cut
 sub Unicycler_Filter_Depth {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         coverage => 0.2,  ## The ratio of each sequence's coverage / the maximum coverage observed.
-        jmem => 4,
-        jprefix => '13',
         output => 'final_assembly.fasta',);
-    my $job_name = $class->Get_Job_Name();
     my $outname = basename(cwd());
     my $output_dir = qq"outputs/$options->{jprefix}filter_depth";
     my $output_log = qq"${output_dir}/filter_depth.log";
     my $output = qq"${output_dir}/$options->{output}";
-    my $comment = '## This is a submission script for a depth filter.';
     my $jstring = qq!
 use Bio::Adventure;
 use Bio::Adventure::Assembly;
@@ -382,14 +345,10 @@ my \$result = Bio::Adventure::Assembly::Unicycler_Filter_Worker(\$h,
   output_log => '${output_log}',);
 !;
     my $depth_filtered = $class->Submit(
-        jcpu => 1,
         jdepends => $options->{jdepends},
-        comment => $comment,
-        jmem => $options->{jmem},
-        jname => qq"filter_depth_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
         language => 'perl',
+        outputs => $outputs,
         output => $output,
         output_log => $output_log,
         prescript => $options->{prescript},
@@ -423,15 +382,12 @@ my \$result = Bio::Adventure::Assembly::Unicycler_Filter_Worker(\$h,
 =cut
 sub Unicycler_Filter_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         coverage => 0.2,
-        jcpu => 1,
         output_log => '',
         output => '',
         required => ['input',],);
-
-    my $paths = $class->Get_Path_Info($options->{output});
     my $log = FileHandle->new(">$options->{output_log}");
     my $input_contigs = Bio::SeqIO->new(-file => $options->{input}, -format => 'Fasta');
     my $output_contigs = Bio::SeqIO->new(-file => ">$options->{output}", -format => 'Fasta');
@@ -539,14 +495,11 @@ Writing filtered contigs to $options->{output}
 =cut
 sub Shovill {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         depth => 40,
-        jmem => 12,
-        jprefix => '13',
         arbitrary => '',);
-    my $job_name = $class->Get_Job_Name();
     my $outname = basename(cwd());
     my $output_dir = qq"outputs/$options->{jprefix}shovill";
     my $input_string = "";
@@ -556,7 +509,6 @@ sub Shovill {
     } else {
         $input_string = qq" -R1 $options->{input}";
     }
-    my $comment = '## This is a shovill submission script.';
     my $jstring = qq!mkdir -p ${output_dir}
 shovill $options->{arbitrary} --force --keepfiles --depth $options->{depth} \\
    --outdir ${output_dir} \\
@@ -572,13 +524,10 @@ else
 fi
 !;
     my $shovill_job = $class->Submit(
-        comment => $comment,
         jcpu => $options->{jcpu},
         jdepends => $options->{jdepends},
-        jname => qq"shovill_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        jmem => $options->{jmem},
+        outputs => $outputs,
         output => qq"${output_dir}/final_assembly.fasta",
         prescript => $options->{prescript},
         postscript => $options->{postscript},);
@@ -611,16 +560,12 @@ fi
 =cut
 sub Trinity {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         clean => 1,
-        contig_length => 600,
-        jcpu => 8,
-        jmem => 80,
-        jprefix => '60',);
-    my $job_name = $class->Get_Job_Name();
-    my $output_dir = qq"outputs/$options->{jprefix}trinity_${job_name}";
+        contig_length => 600,);
+    my $output_dir = qq"outputs/$options->{jprefix}trinity_$options->{job_basename}";
     my $input_string = '';
     if ($options->{input} =~ /$options->{delimiter}/) {
         my @in = split(/$options->{delimiter}/, $options->{input});
@@ -636,14 +581,13 @@ sub Trinity {
         $trim_flag = '--trimmomatic';
     }
     my $arbitrary_args = $class->Passthrough_Args(arbitrary => $options->{arbitrary});
-    my $comment = '## This is a trinity submission script.';
     my $jstring = qq!mkdir -p ${output_dir}
 Trinity --seqType fq --min_contig_length $options->{contig_length} --normalize_reads ${arbitrary_args} \\
   ${trim_flag} --max_memory $options->{jmem}G --CPU $options->{jcpu} \\
   --output ${output_dir} \\
   ${input_string} \\
-  2>${output_dir}/trinity_${job_name}.stderr \\
-  1>${output_dir}/trinity_${job_name}.stdout
+  2>${output_dir}/trinity_$options->{job_basename}.stderr \\
+  1>${output_dir}/trinity_$options->{job_basename}.stdout
 !;
     if ($options->{clean}) {
         $jstring .= qq"
@@ -653,25 +597,18 @@ rm -rf chrysalis insilico_read_normalization read_partitions \\
 ";
     }
     my $trinity = $class->Submit(
-        comment => $comment,
-        jcpu => $options->{jcpu},
         jdepends => $options->{jdepends},
-        jname => qq"trin_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        jmem => $options->{jmem},
+        outputs => $outputs,
         output => qq"${output_dir}/Trinity.tsv",
         prescript => $options->{prescript},
         postscript => $options->{postscript},);
     my $rsem = $class->Bio::Adventure::Assembly::Trinity_Post(
         %args,
-        jcpu => $options->{jcpu},
         jdepends => $trinity->{job_id},
-        jname => qq"1trin_rsem",
         input => $options->{input},);
     my $trinotate = $class->Bio::Adventure::Annotation::Trinotate(
         %args, jdepends => $trinity->{job_id},
-        jname => qq"2trinotate",
         input => qq"${output_dir}/Trinity.fasta",);
     $trinity->{rsem_job} = $rsem;
     $trinity->{trinotate_job} = $trinotate;
@@ -705,13 +642,9 @@ rm -rf chrysalis insilico_read_normalization read_partitions \\
 =cut
 sub Trinity_Post {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        required => ['input'],
-        jmem => 24,
-        jname => 'trin_rsem',
-        jprefix => '61',);
-    my $job_name = $class->Get_Job_Name();
+        required => ['input'],);
     my $trinity_out_dir = dirname($options->{input});
     my $rsem_input = qq"${trinity_out_dir}/Trinity.fasta";
     my $trinity_path = which('Trinity');
@@ -724,7 +657,6 @@ sub Trinity_Post {
         $input_string = qq"--single $options->{input} ";
     }
 
-    my $comment = '## This is a trinity post-processing submission script.';
     my $jstring = qq!
 start=\$(pwd)
 cd ${trinity_out_dir}
@@ -758,13 +690,11 @@ ${trinity_exe_dir}/util/SAM_nameSorted_to_uniq_count_stats.pl \\
 cd \${start}
 !;
     my $trinpost = $class->Submit(
-        comment => $comment,
         input => $options->{input},
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => qq"$options->{jprefix}trinpost_${job_name}",
         jprefix => $options->{jprefix},
         jstring => $jstring,
+        outputs => $outputs,
         output => qq"${trinity_out_dir}/RSEM.isoform.results",
         prescript => $options->{prescript},
         postscript => $options->{postscript},);
@@ -806,18 +736,13 @@ cd \${start}
 =cut
 sub Unicycler {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         arbitrary => '',
         depth => 20,
         min_length => 1000,
-        mode => 'bold',
-        jmem => 24,
-        jprefix => '13',
-        jwalltime => '72:00:00',);
-    my $job_name = $class->Get_Job_Name();
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+        mode => 'bold',);
     my $outname = basename(cwd());
     my $output_dir = $paths->{output_dir};
     my $input_string = '';
@@ -849,7 +774,6 @@ cp $in[1] ${output_dir}/r2.fastq\n";
             $ln_string = qq"cp $options->{input} ${output_dir}/r1.fastq\n";
         }
     }
-    my $comment = '## This is a unicycler submission script.';
     my $stdout = qq"${output_dir}/unicycler_${outname}.stdout";
     my $stderr = qq"${output_dir}/unicycler_${outname}.stderr";
     my $jstring = qq!mkdir -p ${output_dir}
@@ -882,15 +806,12 @@ rm -f ${output_dir}/r1.fastq.gz ${output_dir}/r2.fastq.gz ${output_dir}/r1.fastq
 ln -sf ${output_dir}/${outname}_final_assembly.fasta unicycler_assembly.fasta
 !;
     my $unicycler = $class->Submit(
-        comment => $comment,
         cpus => $options->{jcpu},
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => qq"unicycler_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
         prescript => $options->{prescript},
         postscript => $options->{postscript},
+        outputs => $outputs,
         output => qq"${output_dir}/${outname}_final_assembly.fasta",
         output_gfa => qq"${output_dir}/assembly.gfa",
         output_log => qq"${output_dir}/unicycler.log",
@@ -926,15 +847,11 @@ ln -sf ${output_dir}/${outname}_final_assembly.fasta unicycler_assembly.fasta
 =cut
 sub Velvet {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        jmem => 24,
-        jprefix => '20',
         kmer => 31,
         required => ['input'],
         species => '',);
-    my $job_name = $class->Get_Job_Name();
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $output_dir = $paths->{output_dir};
     my $input_string = "";
     if ($options->{input} =~ /$options->{delimiter}/) {
@@ -946,16 +863,15 @@ sub Velvet {
         my $r1_fd = $class->Get_FD(input => $options->{input});
         $input_string = qq" -fastq -short ${r1_fd}";
     }
-    my $comment = '## This is a velvet submission script.';
     my $jstring = qq!mkdir -p ${output_dir} && \\
   velveth ${output_dir} $options->{kmer} \\
     $input_string \\
-    2>${output_dir}/velveth_${job_name}.stderr \\
-    1>${output_dir}/velveth_${job_name}.stdout
+    2>${output_dir}/velveth_$options->{job_basename}.stderr \\
+    1>${output_dir}/velveth_$options->{job_basename}.stdout
   velvetg ${output_dir} \\
     -exp_cov auto -cov_cutoff auto \\
-    2>${output_dir}/velvetg_${job_name}.stderr \\
-    1>${output_dir}/velvetg_${job_name}.stdout
+    2>${output_dir}/velvetg_$options->{job_basename}.stderr \\
+    1>${output_dir}/velvetg_$options->{job_basename}.stdout
   new_params=\$(velvet-estimate-exp_cov.pl ${output_dir}/stats.txt |\\
     { grep velvetg || test \$? = 1; } |\\
     sed 's/velvetg parameters: //g')
@@ -970,13 +886,9 @@ sub Velvet {
 !;
     }
     my $velvet = $class->Submit(
-        comment => $comment,
-        jcpu => $options->{jcpu},
         jdepends => $options->{jdepends},
-        jname => qq"velveth_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        jmem => $options->{jmem},
+        outputs => $outputs,
         output => qq"$output_dir/Sequences",
         prescript => $options->{prescript},
         postscript => $options->{postscript},

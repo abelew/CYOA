@@ -56,7 +56,7 @@ Invoke qsub with (hopefully) appropriate parameters for various jobs on our Torq
 =cut
 sub Submit {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args);
 
     my $log = qq"$options->{logdir}/outputs/$options->{jname}.qsubout";
 

@@ -20,6 +20,7 @@ use Bio::Tools::GFF;
 use Capture::Tiny qw":all";
 use Carp qw"croak carp confess cluck longmess";
 use Cwd qw"abs_path getcwd cwd";
+use Data::Dumper;
 use Env qw"COMPRESSION XZ_OPTS XZ_DEFAULTS HOME";
 use Env::Modulecmd;
 use File::Basename;
@@ -41,6 +42,7 @@ use Term::ReadLine;
 use Term::UI;
 
 use Bio::Adventure::Config;
+use Bio::Adventure::Languages;
 use Bio::Adventure::Slurm;
 use Bio::Adventure::Local;
 
@@ -76,242 +78,54 @@ use Bio::Adventure::Trim;
 use Bio::Adventure::Visualization;
 use Bio::Adventure::Pipeline;
 
-has adventure => (is => 'rw', default => undef);
-has slots_ignored => (is => 'ro', default => 'slots_ignored,methods_to_run,menus,term,todos,variable_getvars_args,variable_function_overrides,variable_getopt_overrides,variable_current_state'); ## Ignore these slots when poking at the class.
-## These last are used by Get_Vars()
-has variable_iterations => (is => 'rw', default => 0); ## After the first iteration of Get_Vars()
-## We should clear out getopt_overrides so they don't mess things up.
-has variable_getvars_args => (is => 'rw', default => undef); ## One step higher precedence than defaults.
-has variable_function_overrides => (is => 'rw', default => undef); ## One step higher than getvars_args.
-has variable_getopt_overrides => (is => 'rw', default => undef); ## Highest precedence
-has variable_current_state => (is => 'rw', default => undef); ## Current variable state
-## Test to see if I can move defaults to the bottom
-
-
-## Lets move all the default values here.
-has adapter_file => (is => 'rw', default => undef);
-has align_blast_format => (is => 'rw', default => 5); ## Which alignment type should we use? (5 is blastxml)
-has align_jobs => (is => 'rw', default => 40); ## How many blast/fasta alignment jobs should we make when splitting alignments across nodes?
-has align_parse => (is => 'rw', default => 1); ## Parse blast searches into a table?
-has arbitrary => (is => 'rw', default => ''); ## Extra arbitrary arguments to pass
-has array_start => (is => 'rw', default => 100);
-has bamfile => (is => 'rw', default => undef); ## Default bam file for converting/reading/etc.
-has basedir => (is => 'rw', default => cwd()); ## This was cwd() but I think that may cause problems.
-has bash_path => (is => 'rw', default => scalar_which('bash'));
-has best_only => (is => 'rw', default => 0); ## keep only the best search result when performing alignments?
-has blast_args => (is => 'rw', default => ' -evalue 10 '); ## Default blast parameters
-has blast_tool => (is => 'rw', default => 'blastn'); ## Default blast tool to use
-has bt_default => (is => 'rw', default => '--best'); ## Default bt1 arguments.
-has bt_varg => (is => 'rw', default => '-v 0');
-has bt_marg => (is => 'rw', default => '-M 0');
-has bt_larg => (is => 'rw', default => '-y -l 15');
-has bt2_args => (is => 'rw', default => ' --very-sensitive -L 14 '); ## My favorite bowtie2 arguments
-has btmulti => (is => 'rw', default => 0); ## Perform multiple bowtie searches?
-has bwa_method => (is => 'rw', default => 'mem,aln'); ## Default bwa method to use.
-has chosen_tag => (is => 'rw', default => 'ODDS');
-has clean => (is => 'rw', default => 0); ## Cleanup after yourself?
-has cluster => (is => 'rw', default => undef); ## Are we running on a cluster?
-has comment => (is => 'rw', default => undef); ## Set a comment in running slurm/bash/etc scripts.
-has complexity => (is => 'rw', default => 1);
-has compress => (is => 'rw', default => 1); ## Compress output files?
-has conda_string => (is => 'rw', default => undef);
-has condition_column => (is => 'rw', default => undef);
-has config => (is => 'rw', default => undef); ## Not sure
-has count => (is => 'rw', default => 1); ## Quantify reads after mapping?
-has correction => (is => 'rw', default => 1); ## Perform correction when using fastp?
-has coverage => (is => 'rw', default => undef); ## Provide a coverage cutoff
-has coverage_tag => (is => 'rw', default => 'DP');
-has csv_file => (is => 'rw', default => 'all_samples.csv'); ## Default csv file to read/write.
-has cutoff => (is => 'rw', default => 0.05); ## Default cutoff (looking at your vcftools, e.g. I haven't changed those yet).
-has decoy => (is => 'rw', default => 1);     ## Add decoys
-has debug => (is => 'rw', default => 0); ## Print debugging information.
-has deduplicate => (is => 'rw', default => 1); ## Perform deduplication when using fastp
-has delimiter => (is => 'rw', default => '[;:,]');
-has denominator => (is => 'rw', default => undef);
-has directories => (is => 'rw', default => undef); ## Apply a command to multiple input directories.
-has download => (is => 'rw', default => 1);
-has duplicate => (is => 'rw', default => 0);
-has email => (is => 'rw', default => 'abelew@umd.edu');
-has end => (is => 'rw', default => 10000);
-has evalue => (is => 'rw', default => 0.001); ## Default e-value cutoff
-has fasta_args => (is => 'rw', default => '-b 20 -d 20'); ## Default arguments for the fasta36 suite
-has fasta_tool => (is => 'rw', default => 'ggsearch36'); ## Which fasta36 program to run?
-has fastp => (is => 'rw', default => 'check'); ## Perform fastqc in a pipeline?
-has fastqc => (is => 'rw', default => 'check'); ## Perform fastqc in a pipeline?
-has file_column => (is => 'rw', default => undef);
-has filter => (is => 'rw', default => 1); ## When performing an assembly, do a host filter?
-has filtered => (is => 'rw', default => 'unfiltered'); ## Whether or not Fastqc is running on filtered data.
-has freebayes => (is => 'rw', default => 0);
-has fsa_input => (is => 'rw'); ## fsa genome output file for creating a genbank file
-has gcode => (is => 'rw', default => '11'); ## Choose a genetic code
-has genome => (is => 'rw', default => undef); ## Choose a genome to work on.
-has genus => (is => 'rw', default => undef); ## Choose a genus when using prokka and potentially others like kraken
-has gff => (is => 'rw', default => undef); ## Feature file to read/write
-has gff_tag => (is => 'rw', default => 'ID'); ## Likely redundant with htseq_id
-## Ahh I remember, htseq_type was added to facilitate performing multiple htseq counts on multiple gff files.
-## Notably the interCDS for bacterial genomes.
-has gff_type => (is => 'rw', default => 'gene'); ## When blank, do it on the whole gff file, otherwise use that suffix.
-has gff_cds_parent_type => (is => 'rw', default => 'mRNA');
-has gff_cds_type => (is => 'rw', default => 'CDS');
-has help => (is => 'rw', default => undef); ## Ask for help?
-has hisat_args => (is => 'rw', default => ' --sensitive ');
-has htseq_args => (is => 'rw', default => ' --order=name --idattr=gene_id --minaqual=10 --type=exon --stranded=yes --mode=union '); ## Most likely htseq options
-has identity => (is => 'rw', default => 70); ## Alignment specific identity cutoff
-has index_file => (is => 'rw', default => 'indexes.txt'); ## File containing indexes:sampleIDs when demultiplexing samples - likely tnseq
-has index_hash => (is => 'rw', default => undef);
-has informat => (is => 'rw', default => '.fastq');
-has initial_input => (is => 'rw', default => undef);
-has input => (is => 'rw', default => undef); ## Generic input argument
-has inputs => (is => 'rw', default => undef); ## Generic input argument
-has input_abricate => (is => 'rw', default => 'outputs/12abricate_10prokka_09termreorder_08phageterm_07rosalind_plus/abricate_combined.tsv'); ## Used when merging annotation files into a xlsx/tbl/gbk file.
-has input_aragorn => (is => 'rw', default => 'outputs/21aragorn/aragorn.txt'); ## Used when merging annotation files into a xlsx/tbl/gbk file.
-has input_classifier => (is => 'rw', default => 'outputs/18classifier/ictv_filtered.tsv'); ## Similar taxa detected by tblastx
-has input_genbank => (is => 'rw', default => undef); ## Existing genbank file for merging annotations.
-has input_glimmer => (is => 'rw', default => 'outputs/16glimmer/glimmer.predict');
-has input_fastq => (is => 'rw', default => undef);
-has input_interpro => (is => 'rw', default => 'outputs/13_interproscan_10prokka_09termreorder_08phageterm_07rosalind_plus/interproscan.tsv'); ## interpro output file when merging annotations.
-has input_phageterm => (is => 'rw', default => 'outputs/08phageterm_07rosalind_plus/direct-term-repeats.fasta'); ## phageterm output file when merging annotations.
-has input_phanotate => (is => 'rw', default => 'outputs/16phanotate/phanotate.tsv.xz');
-has input_prodigal => (is => 'rw', default => 'outputs/17prodigal/predicted_cds.gff');
-has input_prokka_tsv => (is => 'rw', default => undef); ## Prokka tsv file for merging annotations.
-has input_trinotate => (is => 'rw', default => '11trinotate_10prokka_09termreorder_08phageterm_07rosalind_plus/Trinotate.tsv'); ## trinotate output, used when merging annotations.
-has input_umi => (is => 'rw', default => 'umi.txt');
-has interactive => (is => 'rw', default => 0); ## Is this an interactive session?
-has introns => (is => 'rw', default => 1); ## Is this method intron aware? (variant searching).
-has iterate => (is => 'rw', default => undef);
-has jobs => (is => 'rw', default => undef); ## List of currently active jobs, possibly not used right now.
-has jobids => (is => 'rw', default => ''); ## A place to put running jobids, resurrected!
-has jobnames => (is => 'rw', default => ''); ## A place to put running jobids, resurrected!
-has jbasename => (is => 'rw', default => basename(cwd())); ## Job basename
-has jcpu => (is => 'rw', default => 2); ## Number of processors to request in jobs
-has jgpu => (is => 'rw', default => 0);
-has jdepends => (is => 'rw', default => ''); ## Flag to start a dependency chain
-has jmem => (is => 'rw', default => 20); ## Number of gigs of ram to request
-has jname => (is => 'rw', default => undef); ## Job name on the cluster
-has jnice => (is => 'rw', default => 10); ## Set the niceness of a job, if it starts positive, we can set a lower nice to preempt
-has jpartition => (is => 'rw', default => 'dpart');
-has jprefix => (is => 'rw', default => ''); ## Prefix number for the job
-has jqueue => (is => 'rw', default => ''); ## What queue will jobs default to?
-has jqueues => (is => 'rw', default => ''); ## Other possible queues
-has jsleep => (is => 'rw', default => '0.5'); ## Set a sleep between jobs
-has jstring => (is => 'rw', default => undef); ## String of the job
-has jtemplate => (is => 'rw', default => undef);
-has jwalltime => (is => 'rw', default => '10:00:00'); ## Default time to request
-has keys => (is => 'rw', default => undef);
-has kingdom => (is => 'rw', default => undef); ## Taxonomic kingdom, prokka/kraken
-has language => (is => 'rw', default => 'bash'); ## What kind of script is this?
-has last_job => (is => 'rw', default => ''); ## Last job in a chain.
-has length => (is => 'rw', default => 17); ## kmer length, other stuff too.
-has libdir => (is => 'rw', default => "\${HOME}/libraries"); ## Directory containing genomes/gff/indexes
-has libpath => (is => 'rw', default => "$ENV{HOME}/libraries");
-has library => (is => 'rw', default => undef); ## The library to be used for fasta36/blast searches
-has libtype => (is => 'rw', default => 'genome'); ## Type of sequence to map against, genomic/rRNA/contaminants
-has locus_tag => (is => 'rw', default => undef); ## Used by prokka to define gene prefixes
-has logdir => (is => 'rw', default => 'outputs/logs'); ## place to dump logs
-has loghost => (is => 'rw', default => 'localhost'); ## Host to which to send logs
-has mapper => (is => 'rw', default => 'hisat:salmon'); ## Use this aligner if none was chosen.
-has mature_fasta => (is => 'rw', default => undef); ## Database of mature miRNA sequences to search
-has maximum => (is => 'rw', default => undef); ## catchall maximum threshold
-has maxlength => (is => 'rw', default => 42); ## Maximum sequence length when trimming
-has max_reads => (is => 'rw', default => 1000000);
-has max_value => (is => 'rw', default => undef);
-has method => (is => 'rw', default => undef);
-has mi_genome => (is => 'rw', default => undef); ## Set a miRbase genome to hunt for mature miRNAs
-has min_depth => (is => 'rw', default => 5); ## Default use: variant searching, depth limit
-has min_value => (is => 'rw', default => 0.5); ## Also variant searching.
-has minimum => (is => 'rw', default => undef); ## catchall minimum threshold
-has minlength => (is => 'rw', default => 8); ## Minimum length when trimming
-has mirbase_data => (is => 'rw', default => undef); ## miRbase annotation dataset.
-has mode => (is => 'rw', default => 'union');
-has modulecmd => (is => 'rw', default => '');
-has modules => (is => 'rw', default => undef); ## Environment modules to load
-has module_string => (is => 'rw', default => '');
-has numerator => (is => 'rw', default => undef);
-has option_file => (is => 'rw', default => undef);
-has orientation => (is => 'rw', default => 'start'); ## Default orientation when normalizing riboseq reads
-has outformat => (is => 'rw', default => '.fasta');
-has outgroup => (is => 'rw', default => undef); ## Outgroup for phylogenetic tools
-has output => (is => 'rw', default => undef); ## Generic output argument
-has output_base => (is => 'rw', default => 'outputs');
-has outdir => (is => 'rw', default => undef);
-has overlap => (is => 'rw', default => 20);
-has overwrite => (is => 'rw', default => 1);
-has paired => (is => 'rw', default => 1); ## Is the input paired?
-has pdata => (is => 'rw', default => 'options.pdata');
-has phred => (is => 'rw', default => 33); ## Minimum quality score when trimming
-has postscript => (is => 'rw', default => undef); ## String to put after a cluter job.
-has preprocess_dir => (is => 'rw', default => 'preprocessing');
-has prescript => (is => 'rw', default => undef); ## String to put before a cluster job.
-has primary_key => (is => 'rw', default => 'locus_tag'); ## Choose a keytype for merging data
-has product_columns => (is => 'rw', default => 'trinity_sprot_Top_BLASTX_hit,inter_Pfam,inter_TIGRFAM'); ## When merging annotations, choose the favorites when upgrading an annotation to 'product'
-has product_transmembrane => (is => 'rw', default => 'inter_TMHMM'); ## Column containing transmembrane domain data when upgrading annotations to 'product'
-has product_signal => (is => 'rw', default => 'inter_signalp'); ## Column containing signal peptide domain data when upgrading annotations to 'product'
-has protocol => (is => 'rw', default => 'Sassetti'); ## TNSeq protocol for TPP
-has pval => (is => 'rw', default => undef); ## Pvalue cutoffs.
-has qsub_args => (is => 'rw', default => '-j oe -V -m n'); ## What arguments will be passed to qsub by default?
-has qsub_depends => (is => 'rw', default => 'depend=afterok:'); ## String to pass for dependencies
-has qsub_dependsarray => (is => 'rw', default => 'depend=afterokarray:'); ## String to pass for an array of jobs
-has qsub_path => (is => 'rw', default => scalar_which('qsub'));
-has qual => (is => 'rw', default => undef); ## cutadapt quality string
-has query => (is => 'rw', default => undef); ## Used for searches when input is already taken, most likely blast/fasta
-has remove => (is => 'rw', default => 1);
-has reference => (is => 'rw', default => undef);
-has release => (is => 'rw', default => undef);
-has requeue => (is => 'rw', default => 0); ## requeue failed jobs?
-has restart => (is => 'rw', default => 0); ## Restart job(s) in the middle of a group
-has riboanchor => (is => 'rw', default => 'start'); ## When correcting, use the start or end position as an anchor
-has riboasite => (is => 'rw', default => 1); ## Count riboseq A site positions?
-has ribopsite => (is => 'rw', default => 1); ## Count riboseq P site positions?
-has riboesite => (is => 'rw', default => 1); ## Count riboseq E site positions?
-has ribominsize => (is => 'rw', default => 24); ## Minimum size to search for ribosome positions (riboseq)
-has ribomaxsize => (is => 'rw', default => 36); ## Maximum size to search for ribosome positions (riboseq)
-has ribominpos => (is => 'rw', default => -30); ## Minimum position for counting (riboseq)
-has ribomaxpos => (is => 'rw', default => 30); ## Maximum position for counting (riboseq)
-has ribocorrect => (is => 'rw', default => 1); ## Correct ribosome positions for biases
-has sizes => (is => 'rw', default => '25,26,27,28,29,30,31,32,33,34'); ## Use these sizes for riboseq reads
-has runs => (is => 'rw', default => 1000); ## Number of runs for bayesian methods.
-has sampleid => (is => 'rw', default => undef); ## Identifier to use for a sample.
-has samtools_mapped => (is => 'rw', default => 0); ## Extract mapped reads with samtools.
-has samtools_unmapped => (is => 'rw', default => 0); ## Extract unmapped reads with samtools.
-has sbatch_depends => (is => 'rw', default => 'afterok:');
-has sbatch_dependsarray => (is => 'rw', default => 'afterok:'); ## String to pass for an array of jobs
-has sbatch_path => (is => 'rw', default => scalar_which('sbatch'));
-has script_dir => (is => 'rw', default => 'scripts');
-has search_string => (is => 'rw', default => 'tail');
-has secondary => (is => 'rw', default => 'ignore');  ## Or ignore, use by htseq-count.
-has separation => (is => 'rw', default => '10');
-has seqid => (is => 'rw', default => undef);
-has shell => (is => 'rw', default => '/usr/bin/bash'); ## Default qsub shell
-has sort => (is => 'rw', default => 'pos'); ## Explicitly set the sorting type for htseq
-has species => (is => 'rw', default => undef); ## Primarily for getting libraries to search against
-has sra => (is => 'rw', default => 0);
-has start => (is => 'rw', default => 1);
-has starting_tree => (is => 'rw', default => undef); ## Starting tree for phylogenetic analyses
-## Note 202212: Now most of the sequencing kits used by our sequencer are reverse.
-has stranded => (is => 'rw', default => 'reverse'); ## Did this data come from a stranded library kit?
-has suffixes => (is => 'rw', default => '.bam,.bigwig,.bw,.count,.csfasta,.csv,.fa,.faa,.fasta,.fastq,.ffn,.fna,.fsa,.gb,.gba,.gbf,.gbk,.genbank,.gff,.gz,.qual,.sam,.sf,.tbl,.tsv,.xz'); ## Suffixes to remove when invoking basename
-has supplementary => (is => 'rw', default => 'ignore'); ## or ignore, used by htseq-count.
-has ta_offset => (is => 'rw', default => 0); ## When counting TAs, this is either 0 or 2 depending on if the TA was removed.
-has task => (is => 'rw', default => 'unknown');
-has taxid => (is => 'rw', default => '353153'); ## Default taxonomy ID, unknown for now.
-has test_file => (is => 'rw', default => 'direct-term-repeasts.fasta'); ## There are a few places where testing for the existence of a test file is useful.
-has threshold => (is => 'rw', default => 0.05); ## A second cutoff value (looking at you, glimmer.)
-has translate => (is => 'rw', default => 1);
-has trim => (is => 'rw', default => 1); ## Perform trimming (rnaseq pipeline, trinity)
-has type => (is => 'rw', default => undef); ## Possibly superceded by htseq_type
-has varfilter => (is => 'rw', default => 1); ## use a varfilter when performing variant searches.
-has verbose => (is => 'rw', default => 0); ## Print extra information while running?
-has version => (is => 'rw', default => undef);
-has vcf_cutoff => (is => 'rw', default => 5); ## Minimum depth cutoff for variant searches
-has vcf_method => (is => 'rw', default => 'freebayes');
-has vcf_minpct => (is => 'rw', default => 0.8); ## Minimum percent agreement for variant searches.
-has write => (is => 'rw', default => 1);        ## Write outputs?
-## A few variables which are by definition hash references and such
-has methods_to_run => (is => 'rw', default => undef); ## Set of jobs to run.
-has menus => (is => 'rw', default => undef); ## The menus when in an interactive session.
-has term => (is => 'rw', default => undef); ## A fun Readline terminal for tab completion.
-has todos => (is => 'rw', default => undef); ## Set of TODOs to perform.
-has umi => (is => 'rw', default => 0);
+## The current function.
+has caller => (is => 'rw', default => undef);
+## Arguments provided by the commandline.
+has cmdline_args => (is => 'rw', default => sub { {} });
+## The current merged state of the various arguments.
+has current_state => (is => 'rw', default => sub{ {} });
+## Default file from which to acquire function-specfic defaults
+has function_file => (is => 'rw', default => 'functions.json');
+## Arguments provided in the function declaration.
+has function_defaults => (is => 'rw', default => sub { {} });
+## Default file from which to acquire global defaults.
+## If the file is not found, check in the dist-share directory.
+has global_file => (is => 'rw', default => 'defaults.json');
+## Global default arguments.
+has global_defaults => (is => 'rw', default => sub { {} });
+## Arguments provided by an ini file.
+has ini_file => (is => 'rw', default => 'cyoa.conf');
+has ini_args => (is => 'rw', default => sub{ {} });
+has instance_args => (is => 'rw', default => sub{ {} });
+## Information about the inputs used over time by cyoa.  I am changing
+## this to an array ref for which every element is the result
+## of Get_Input_Info (which is also an array ref); but this way
+## we can track all inputs from beginning->end of a pipeline.
+has inputs => (is => 'rw', default => sub{ [] });
+## Information about each submitted job.
+has jobs => (is => 'rw', default => sub{ [] });
+## Arbitrary json file containing arguments
+has json_file => (is => 'rw', default => undef);
+## Arguments provided by a json file.
+has json_args => (is => 'rw', default => sub{ {} });
+## A menu of possible adventures.
+has menu => (is => 'rw', default => sub{ {} });
+## The set of currently loaded modules.
+has modules => (is => 'rw', default => sub{ [] });
+## Similar to inputs, have options be a list of the option state
+## during each invoked job.
+has options => (is => 'rw', default => sub{ [] });
+## Information about the current outputs.
+has outputs => (is => 'rw', default => sub{ {} });
+## json file containing path information
+has path_file => (is => 'rw', default => 'paths.json');
+## Useful paths for the current job.
+has paths => (is => 'rw', default => sub{ {} });
+## A specification defining expected cpu/memory/time/etc usage for a
+## single job.
+has spec => (is => 'rw', default => sub{ {} });
+## Set of things to do.
+has todos => (is => 'rw', default => sub{ []} );
 
 =head1 NAME
 
@@ -358,7 +172,7 @@ has umi => (is => 'rw', default => 0);
 =cut
 our $AUTOLOAD;
 ##our @EXPORT_OK = qw"";
-$VERSION = '202308';
+$VERSION = '202601';
 $COMPRESSION = 'xz';
 $XZ_OPTS = '-9e';
 $XZ_DEFAULTS = '-9e';
@@ -371,6 +185,28 @@ if (!defined($ENV{PERL_INLINE_DIRECTORY})) {
     my $filename = File::Temp::tempnam($ENV{TMPDIR}, "inline_$ENV{USER}");
     $ENV{PERL_INLINE_DIRECTORY} = $filename;
     my $made = make_path($filename);
+}
+
+sub Append_Inputs {
+    my ($class, $input) = @_;
+    use Data::Dumper;
+    my @current = @{$class->inputs};
+    print Dumper @current;
+    push(@current, $input);
+    print Dumper @current;
+    my $current_num = scalar(@current);
+    $class->inputs(\@current);
+    return($current_num);
+}
+
+sub Get_Last_Input {
+    my ($class, %args) = @_;
+
+    use Data::Dumper;
+    print Dumper $class->inputs;
+    my @in = @{$class->inputs};
+    my $last = $in[$#in];
+    return($last);
 }
 
 sub Extra_Options {
@@ -415,138 +251,154 @@ the first place to look.
 =cut
 sub BUILD {
     my ($class, $args) = @_;
-    ## There are a few default variables which we cannot fill in with MOO defaults.
-    ## Make a hash of the defaults in order to make pulling command line arguments easier
-    my %defaults;
-    ## The modulecmd comand is kind of a hard-prerequisite for this to work.
-    my $check = which('modulecmd');
-    die("Could not find environment modules in your PATH:
-$ENV{PATH}.") unless($check);
+    ## I made some pretty big changes to the logic of cyoa, I now want
+    ## to gather all of my options/arguments/etc into a few hash/array
+    ## references and pass them about from function to function rather
+    ## than have the morass of individual variables.
 
-    my @ignored;
-    if (defined($class->slots_ignored)) {
-        @ignored = split(/[,]/, $class->slots_ignored);
-    }
-  #DEF: foreach my $k (keys %{$default_vars}) {
-  #      for my $ignore (@ignored) {
-  #          next DEF if ($k eq $ignore);
-  #      }
-  #      $defaults{$k} = $default_vars->{$k};
-  #      $class->{$k} = $default_vars->{$k};
-  #  }
-    if (defined($class->{slots_ignored})) {
-        @ignored = split(/[,]/, $class->{slots_ignored});
-    }
-  IGN: foreach my $k (keys %{$class}) {
-        for my $ignore (@ignored) {
-            next IGN if ($k eq $ignore);
-        }
-        $defaults{$k} = $class->{$k};
-    }
+    ## I therefore created the file defaults.json in share/ from which
+    ## I would like to acquire the global defaults.  I will then
+    ## gather function-specific parameters from functions.json, etc.
 
-    ## Make a log of command line arguments passed.
-    if ($#ARGV > 0) {
-        my $arg_string = '';
-        foreach my $a (@ARGV) {
-            $arg_string .= "$a ";
-        }
-        make_path($class->{output_base}, {verbose => 0}) unless (-d $class->{output_base});
-        my $out = FileHandle->new(qq">>$class->{output_base}/log.txt");
-        my $d = qx'date';
-        chomp $d;
-        print $out "# Started CYOA at ${d} with arguments: ${arg_string}.\n";
-        ## print "# Started CYOA at ${d} with arguments: ${arg_string}.\n";
-        $out->close();
-    }
+    ## In theory, this should give a hash of arguments passed to new()
+    ## It needs testing.
+    my $set = $class->instance_args($args);
 
-    ## Now pull an arbitrary set of command line arguments
-    ## Options set in the config file are trumped by those placed on the command line.
-    my (%override, %conf_specification, %conf_specification_temp);
-    foreach my $spec (keys %defaults) {
-        ## This line tells Getopt::Long to use as a string argument anything in the set of defaults.
-        ## Every option which gets set here will get put into $override->{} thing
-        my $def_string = qq"${spec}:s";
-        $conf_specification{$def_string} = \$override{$spec};
+    ## Read the global defaults json filend extract variables from it.
+    if (!%{$class->global_defaults}) {
+        my $defaults = Bio::Adventure::Config::Get_JSON(
+            input_file => $class->global_file,);
+        my $set = $class->global_defaults($defaults);
     }
-    ## For some command line options, one might want shortcuts etc, set those here:
-    %conf_specification_temp = (
-        "de|d" => \$override{debug},
-        "hp|h:s" => \$override{hpgl},
-        "in|i:s" => \$override{input},
-        "sp|s:s" => \$override{species},);
-    ## This makes both of the above groups command-line changeable
-    foreach my $name (keys %conf_specification_temp) {
-        $conf_specification{$name} = $conf_specification_temp{$name};
-    }
-    undef(%conf_specification_temp);
-    my $argv_result = GetOptions(%conf_specification);
-    ## Finally move the override hash to $class->{variable_getopt_overrides};
-    $class->{variable_getopt_overrides} = \%override;
+    ##if ($class->global_defaults) {
+    ##    say "The global defaults exist.";
+    ##}
 
-    ## Take a moment to create a simplified job basename
-    ## Eg. if the input file is 'hpgl0523_forward-trimmed.fastq.gz'
-    ## Take just hpgl0523 as the job basename
-    my $job_basename = '';
+    ## Pull anything from ARGV into the cmdline_args slot.
+    if (!%{$class->cmdline_args}) {
+        my $cmdline_args = Bio::Adventure::Config::Get_ARGV();
+        my $set = $class->cmdline_args($cmdline_args);
+    }
+    ##if ($class->cmdline_args) {
+    ##    say "The commandline args exist.";
+    ##    print Dumper $class->cmdline_args;
+    ##}
+
+    ## Read the json file of function-specific default values.
+    ## Ideally I should be pulling quite a lot out of the global
+    ## defaults into this.
+    if (!%{$class->function_defaults}) {
+        ## print "The function-specific defaults are undefined.\n";
+        my $defaults = Bio::Adventure::Config::Get_JSON(
+            input_file => $class->function_file);
+        my $set = $class->function_defaults($defaults);
+    }
+    ##if ($class->function_defaults) {
+    ##    say "The function defaults exist.";
+    ##    print Dumper $class->function_defaults;
+    ##}
+
+    ## If there is an ini file in the current-working-tree
+    ## Use variables from it.
+    if (!%{$class->ini_args}) {
+        ## print "Arguments from an ini file are undefined.\n";
+        my $ini = Bio::Adventure::Config::Get_Ini(
+            input_file => $class->ini_file);
+        my $set = $class->ini_args($ini);
+    }
+    ##if ($class->ini_args) {
+    ##    say "The ini file options exist.";
+    ##    print Dumper $class->ini_args;
+    ##}
+
+    ## Similarly to the ini file, pull json options.
+    if (!%{$class->json_args}) {
+        my $json = Bio::Adventure::Config::Get_JSON(
+            input_file => $class->json_file);
+        my $set = $class->json_args($json);
+    }
+    ##if ($class->json_args) {
+    ##    say "The local json file options exist.";
+    ##    print Dumper $class->json_args;
+    ##}
+
+    ## Create the current state of cyoa from the various
+    ## arguments/ini/etc above.
+    my $current_state = Bio::Adventure::Config::Merge_Args(
+        global => $class->global_defaults,
+        cmdline => $class->cmdline_args,
+        ini => $class->ini_args,
+        json => $class->json_args);
+    ## Coerce a few values from strings here
     my @suffixes = ('.gz', '.xz', '.bz2');
-    if (defined($class->{suffixes})) {
-        @suffixes = split(/[;:,]/, $class->{suffixes});
+    if (defined($current_state->{suffixes})) {
+        @suffixes = split(/[;:,]/, $current_state->{suffixes});
     }
-    $class->{suffix_array} = \@suffixes;
-    if (defined($class->{inputs})) {
-        $class->{input} = $class->{inputs};
-    }
-    if (defined($class->{input})) {
-        $job_basename = $class->{input};
-        ## Start by pulling apart any colon/comma separated inputs
-        if ($job_basename =~ /[;:,]/) {
-            my @tmp = split(/[;:,]/, $job_basename);
-            ## Remove likely extraneous information
-            $job_basename = $tmp[0];
-        }
-        $job_basename = basename($job_basename, @suffixes);
-        $job_basename = basename($job_basename, @suffixes);
-    } elsif (defined($class->{basedir})) {
-        $job_basename = basename($class->{basedir}, @suffixes);
-    }
-    $job_basename =~ s/_forward.*//g;
-    $job_basename =~ s/_R1.*//g;
-    $job_basename =~ s/-trimmed.*//g;
-    $class->{jbasename} = $job_basename;
-
-    ## Remove backslashes from arbitrary arguments
-    if ($class->{arbitrary}) {
-        $class->{arbitrary} =~ s/\\//g;
+    $current_state->{suffix_array} = \@suffixes;
+    my $path_agrees = Check_Libpath(libdir => $current_state->{libdir},
+                                    libpath => $current_state->{libpath});
+    $current_state->{libpath} = $path_agrees->{libpath};
+    $current_state->{libdir} = $path_agrees->{libdir};
+    if (!defined($current_state->{modulecmd}) ||
+        $current_state->{modulecmd} eq 'guess') {
+        my $modulecmd = Bio::Adventure::Config::Get_Modulecmd();
+        $current_state->{modulecmd} = $modulecmd;
     }
 
-    if (!defined($class->{initial_input})) {
-        $class->{initial_input} = $class->{input};
+    $class->current_state($current_state);
+    ## Add the first element to inputs
+    my @inputs = @{$class->inputs};
+    if ($current_state->{input}) {
+        my $first = $class->Bio::Adventure::Config::Get_Input_Info(
+            $current_state->{input});
+        push(@inputs, $first);
+    } else {
+        ## If no input was provided, send a blank.
+        push(@inputs, []);
     }
+    $class->inputs(\@inputs);
+    my $menus = {};
+    if ($current_state->{interactive}) {
+        $menus = Bio::Adventure::Config::Get_Menus();
+    }
+    $class->menu($menus);
 
-    ## These are both problematic when (n)storing the data.
-    if (defined($class->{interactive}) && $class->{interactive}) {
-        $class->{menus} = Get_Menus();
-    }
-    $class->{methods_to_run} = Get_TODOs(%{$class->{variable_getopt_overrides}});
-    my $path_agrees = Check_Libpath(libdir => $class->{libdir}, libpath => $class->{libpath});
-    $class->{libpath} = $path_agrees->{libpath};
-    $class->{libdir} = $path_agrees->{libdir};
+    my $todos = Bio::Adventure::Config::Get_TODOs(
+        %{$class->cmdline_args});
+    $class->todos($todos);
 
-    ## Check that the module command is available as a bash function.
-    ## I was initially going to do this in BUILD(), but I think that might mess up jobs
-    ## which set the jprefix parameter.
-    my $modulecmd_handle = IO::Handle->new;
-    ## This command, if run via bash, requires a controlling pty in order to find the
-    ## bash function 'module'.  slurm and the various managers will not provide that
-    ## so, we can use typescript to allocate one post-facto.
-    my $modulecmd_pid = open($modulecmd_handle, qq!/usr/bin/script -q -c 'bash -i -c "type module"' |!);
-    my $modulecmd_text = '';
-  MOD: while (my $line = <$modulecmd_handle>) {
-        next MOD if ($line =~ /is a function/);
-        $modulecmd_text .= $line;
-    }
-    $modulecmd_handle->close();
-    $class->{modulecmd} = $modulecmd_text;
     return($args);
+}
+
+sub Add_Config_File {
+    my ($class, %args) = @_;
+    my $defaults = $args{defaults};
+    my $steps = $args{steps};
+    my $input = $args{input};
+    my $config = AppConfig->new({ CREATE => '.*' , GLOBAL => { ARGCOUNT => AppConfig::ARGCOUNT_ONE } });
+    my $info = $config->file($input);
+    my $variable = q{};
+    my $step = '0';
+    my %data = $config->varlist(".*");
+    for my $config_option (keys %data) {
+        my $step = 'defaults';
+        $variable = $config_option;
+        my $config_value = $data{$config_option};
+        if ($config_option =~ /^defaults_/) {
+            $variable =~ s/^defaults_//g;
+        }
+        if ($config_option =~ /^(\d+)_(.+)$/) {
+            $step = $1;
+            $variable = $2;
+            if (!defined($steps->{$step})) {
+                $steps->{$step} = {};
+            }
+            $steps->{$step}->{$variable} = $config_value;
+        } else {
+            $defaults->{$variable} = $config_value;
+        }
+    }
+    return($defaults, $steps);
 }
 
 =head2 C<Check_Input>
@@ -561,7 +413,7 @@ that or it should be improved a little and propagated.
 sub Check_Input {
     my ($class, %args) = @_;
     my $file_list;
-    if (ref($args{files}) eq 'SCALAR' || ref($args{files}) eq '') {
+    if (ref($args{files}) eq 'SCALAR' || ref($args{files}) eq q{}) {
         if ($args{files} =~ /[:,;]/) {
             $args{files} =~ s/[:,;]$//g;
             my @tmp = split(/[:,;]/, $args{files});
@@ -598,7 +450,7 @@ sub Check_Input {
 
 sub Check_Job {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args);
     my $result;
     if ($options->{cluster} eq 'slurm') {
@@ -634,11 +486,15 @@ sub Check_Libpath {
 
     my $interpolated_libdir = $args{libdir};
     if ($args{libdir} =~ /\$/) {
-        $interpolated_libdir =~ /^(.*)?\$\{*([A-Z]+)\}*(.*)$/;
-        my $prefix = $1;
-        my $varname = $2;
-        my $suffix = $3;
-        $interpolated_libdir = qq"${prefix}$ENV{$varname}${suffix}";
+        if ($interpolated_libdir =~ /^(.*)?\$\{*([A-Z]+)\}*(.*)$/) {
+            my $prefix = $1;
+            my $varname = $2;
+            my $suffix = $3;
+            print "TESTME: Libpath: prefix: $prefix varname: $varname suffix $suffix .\n";
+            $interpolated_libdir = qq"${prefix}$ENV{$varname}${suffix}";
+        } else {
+            $interpolated_libdir = $args{libdir};
+        }
     }
 
     my $ret = {
@@ -822,66 +678,6 @@ sub Get_FH {
     return($fh);
 }
 
-=head2 C<Get_Path_Info>
-
-Given a file/directory name, provide a set of paths which will
-hopefully prove useful for the various functions in CYOA.  I think
-this function is a good candidate for replacing Check_Input() below.
-
-=cut
-sub Get_Path_Info {
-    my ($class, @inputs) = @_;
-    my %ret = ();
-    if (!defined($inputs[0])) {
-        die("This requires an input filename.");
-    }
-    if ($inputs[0] =~ /[:;,\s]+/) {
-        @inputs = split(/[:;,\s]+/, $inputs[0]);
-    }
-    my $num_inputs = scalar(@inputs);
-    if ($num_inputs == 0) {
-        die("This requires an input filename.");
-    }
-    my @outputs = ();
-    for my $in (@inputs) {
-        my $filename = basename($in);
-        my $filebase_compress = basename($in, ('.gz', '.xz', '.bz2'));
-        my @exts = ('.fastq', '.fasta', '.fsa', '.faa', 'fna', '.fa', '.ffn',
-                    'gff', '.gff3', '.gbk', '.gbf', '.sqn', 'tbl', '.tsv', '.txt');
-        my $filebase_extension = basename($filebase_compress, @exts);
-        my $directory = dirname($in);
-        my $dirname = basename($directory);
-        ## Check that doing basename(dirname(input)) leaves us with something interesting
-        if ($dirname eq '.') {
-            $dirname = undef;
-        }
-        ## This test/path build is because abs_path only works on stuff which exists.
-        if (! -e $directory) {
-            make_path($directory);
-        }
-        my $full_path = abs_path($directory);
-        $full_path .= "/${filename}";
-
-        ## Make a new job_basename which doesn't have some cruft
-        my $jbasename = $filebase_extension;
-        $jbasename =~ s/_forward.*//g;
-        $jbasename =~ s/_R1.*//g;
-        $jbasename =~ s/-trimmed.*//g;
-        $jbasename =~ s/_trimmed.*//g;
-
-        my %ret = (
-            filename => $filename,
-            filebase_compress => $filebase_compress,
-            filebase_extension => $filebase_extension,
-            directory => $directory,
-            dirname => $dirname,
-            fullpath => $full_path,
-            jbasename => $jbasename);
-        push(@outputs, \%ret);
-    }
-    return(\@outputs);
-}
-
 =head2 C<Get_Term>
 
 Used to get a useful interactive terminal when more options are required.
@@ -911,17 +707,18 @@ file(s) and uses that.
 
 =cut
 sub Get_Job_Name {
-    my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args);
+    my ($class, $args) = @_;
     my $name = 'unknown';
-    $name = $options->{input} if ($options->{input});
+    $name = $args->{input} if ($args->{input});
     if ($name =~ /[:;,\s+]/) {
         my @namelst = split(/[:;,\s+]/, $name);
         $name = $namelst[0];
     }
     $name = basename($name, split(/,/, $class->{suffixes}));
     $name = basename($name, split(/,/, $class->{suffixes}));
-    $name =~ s/\-trimmed//g;
+    $name =~ s/\-trimmed_*//g;
+    $name =~ s/_*forward_*//g;
+    $name =~ s/_*[R|r]1_*//g;
     return($name);
 }
 
@@ -982,229 +779,10 @@ sub Get_Input {
   my $options = $class->Get_Vars(args => \%args, required => ['input', 'genome'], bob => 'jane');
 
 =cut
-sub Get_Vars {
-    my ($class, %args) = @_;
-    ## I finally figured out why things are inconsistent.
-    ## I need to separate the default values from the argv values.
-    ## Then the order of operations should be:
-    ##  1. Check for the default value
-    ##  2. Overwrite with %args provided to Get_Vars() if they exist.
-    ##  3. Overwrite with args from argv if they exist.
-    ## Currently, I am putting argv into the defaults and then letting them
-    ## get overwritten.
-
-    ## First, the defaults, we will set this to the current_state if it is defined.
-    my %default_vars;
-    ## We will grab out the default variables or current state, depending on what is available.
-    if (defined($class->{variable_current_state})) {
-        %default_vars = %{$class->{variable_current_state}};
-    }
-    else {
-        foreach my $k (keys %{$class}) {
-            my @ignored = split(/,/, $class->{slots_ignored});
-            for my $ignore (@ignored) {
-                next if ($k eq $ignore);
-            }
-            $default_vars{$k} = $class->{$k};
-        }
-    }
-    ## Then the set of variables passed to Get_Vars();
-    ## These are effectively function defaults
-    my %getvars_default_vars = %args; ## This guy has jprefix...
-    ## The parent function's variables.
-    my %function_override_vars = ();
-    if (defined($getvars_default_vars{args})) {
-        %function_override_vars = %{$getvars_default_vars{args}};
-    }
-    ## Keep count of how often we come here.
-    $class->{variable_iterations}++;
-    if ($class->{variable_iterations} > 1) {
-        $class->{variable_getopt_overrides} = undef;
-    }
-    ## If we have come here more than 1 time, then we should stop using the getopt
-    ## overrides, because that will totally fubar chains of functioncalls.
-
-    my %getopt_override_vars = ();
-    if (defined($class->{variable_getopt_overrides})) {
-        %getopt_override_vars = %{$class->{variable_getopt_overrides}};
-    }
-
-    ## The returned args will be a hopefully useful combination of the above.
-    my %returned_vars = ();
-
-    ## Get the variablenames which are required, these are defined by the 'required' tag
-    ## in the argument list to this function.
-    my @required_varnames;
-    if (defined($getvars_default_vars{required})) {
-        @required_varnames = @{$getvars_default_vars{required}};
-    }
-    ## Check to see if the required options are defined in any of the above...
-    foreach my $needed (@required_varnames) {
-        my $found = {
-            sum => 0,
-            default => undef,
-            this => undef,
-            override => undef,
-        };
-        if (defined($default_vars{$needed})) {
-            $found->{sum}++;
-            $found->{default} = $default_vars{$needed};
-        }
-        ## This one should not be needed, because it implies
-        ## that the function caller set both required and the option.
-        if (defined($getvars_default_vars{$needed})) {
-            print "It appears you defined the variable in required => [] and as an option.\n";
-            $found->{sum}++;
-            $found->{this} = $getvars_default_vars{$needed};
-        }
-        if (defined($function_override_vars{$needed})) {
-            $found->{sum}++;
-            $found->{override} = $function_override_vars{$needed};
-        }
-        if (defined($getopt_override_vars{$needed})) {
-            $found->{sum}++;
-            $found->{override} = $getopt_override_vars{$needed};
-        }
-
-        ## Now see if sum got incremented...
-        if ($found->{sum} == 0) {
-            ## Nope, ask for the value:
-            my $query = qq"The option: ${needed} was missing, please fill it in:";
-            if (!defined($default_vars{term})) {
-                ## This may need to go back to $class
-                $default_vars{term} = Get_Term();
-            }
-            my $response = $default_vars{term}->readline($query);
-            $response =~ s/\s+$//g;
-            $response =~ s/\@|\*|\+//g;
-            $getopt_override_vars{$needed} = $response;
-        }
-    } ## Done looking for required varnames.
-
-    ## Use this for loop to fill in default values from the class.
-    for my $varname (keys %default_vars) {
-        $returned_vars{$varname} = $default_vars{$varname};
-    }
-
-    ## The set of arguments passed to the function includes:
-    ## $this_function_vars{args} which contains args to the parent.
-    ## Now let us iterate over this_function_vars
-    my %defined_in_this_funcall = ();
-    for my $varname (keys %getvars_default_vars) {
-        ## required and args are provided in the function call, so skip them.
-        next if ($varname eq 'required' || $varname eq 'args');
-        $returned_vars{$varname} = $getvars_default_vars{$varname};
-        $defined_in_this_funcall{$varname} = 1;
-    }
-    ## Pick up options passed in the parent function call, e.g.
-    ## my $bob = $class->Function(bob => 'jane');
-  PARENT_ARG: for my $varname (keys %function_override_vars) {
-        ## required and args are provided in the function call, so skip them.
-        next PARENT_ARG if ($varname eq 'required' || $varname eq 'args');
-        ## Do not redefine variables which were defined in the current functioncall.
-        if ($defined_in_this_funcall{$varname}) {
-
-        }
-        #next PARENT_ARG if ($defined_in_this_funcall{$varname});
-        $returned_vars{$varname} = $function_override_vars{$varname};
-        ## Try to ensure that the shell reverts to the default 'bash'
-        ## I think the following 4 lines are no longer needed.
-    }
-    ## Final loop to pick up options from the commandline or a TERM prompt.
-    ## These supercede everything else.
-    for my $varname (keys %getopt_override_vars) {
-        next if ($varname eq 'required' || $varname eq 'args');
-        next unless (defined($getopt_override_vars{$varname}));
-        $returned_vars{$varname} = $getopt_override_vars{$varname};
-    }
-
-    ## I previously had the cluster check in the BUILD() function.
-    ## I think this is the wrong place and should instead be here?
-    my $torque_test = which('qsub');
-    my $slurm_test = which('sbatch');
-    if (defined($returned_vars{cluster})) {
-        if ($returned_vars{cluster} ne 'bash') {
-            $returned_vars{qsub_path} = $torque_test;
-            $returned_vars{sbatch_path} = $slurm_test;
-        }
-        else {
-            $returned_vars{sbatch_path} = '';
-            $returned_vars{qsub_path} = '';
-            $returned_vars{cluster} = 'bash';
-        }
-    }
-    else {
-        if ($slurm_test) {
-            $returned_vars{cluster} = 'slurm';
-            $returned_vars{sbatch_path} = $slurm_test;
-        }
-        elsif ($torque_test) {
-            $returned_vars{cluster} = 'torque';
-            $returned_vars{qsub_path} = $torque_test;
-        }
-        else {
-            $returned_vars{cluster} = 'bash';
-        }
-    }
-
-    ## Final sanity check(s)
-    for my $varname (keys %returned_vars) {
-        next unless (defined($returned_vars{$varname}));
-        $returned_vars{$varname} =~ s/^\~/${HOME}/g;
-        ## Finally, fill in a few special cases here.
-        if ($varname eq 'jname') {
-            if ($returned_vars{jname} eq '') {
-                my $name = 'unknown';
-                $name = $returned_vars{input} if ($returned_vars{input});
-                if ($name =~ /[:;,\s+]/) {
-                    my @namelst = split(/[:;,\s+]/, $name);
-                    $name = $namelst[0];
-                }
-                $name = basename($name, (".gz", ".xz", ".bz2", ".bai", ".fai"));
-                $name = basename($name, (".fasta", ".fastq", ".bam", ".sam", ".count"));
-                $name =~ s/_forward//g;
-                $returned_vars{jname} = $name;
-            }
-        }               ## End checking on job name
-    }                   ## End final iteration over the options keeps.
-    ## End special cases.
-
-    ## A Little sanity checking:
-    if (defined($returned_vars{input})) {
-        $returned_vars{input} =~ s/[:;,]+$//g;
-        ## Add a quick check for reversed R1/R2 or forward/reverse
-        my @tmp = split(/[:;,]+/, $returned_vars{input});
-        if (scalar(@tmp) == 2 && $tmp[0] =~ /R2|reverse/ && $tmp[1] =~ /R1|forward/) {
-            warn("It seriously looks like forward and reverse are flipped: $returned_vars{input}.\n");
-            warn("Flipping the inputs and waiting 5 seconds to see if you kill this.\n");
-            $returned_vars{input} = qq"$tmp[1]:$tmp[0]";
-            warn("The input has been changed to: $returned_vars{input}\n");
-            sleep(5);
-        }
-    }
-
-    ## So at this point we should have the full set of defaults + function + overrides.
-    ## However, we need to ensure that child functions get this information, but
-    ## unfortunately we are currently calling those functions with:
-    ## Bio::Adventure::Something::Something($class, %args);
-
-    ## After the global defaults, these are the lowest priority
-    $class->{variable_getvars_args} = \%getvars_default_vars;
-    ## Then the function overrides
-    $class->{variable_function_overrides} = \%function_override_vars;
-    ## And last, the getopt overrides
-    $class->{variable_getopt_overrides} = \%getopt_override_vars;
-    $class->{variable_current_state} = \%returned_vars;
-    ## Quick sanitization of the input.
-    if ($returned_vars{input}) {
-        $returned_vars{input} =~ s/[:;,\s\.]+$//g;
-    }
-    return(\%returned_vars);
-}
 
 sub Juggle {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args);
     ## I really ought to make a ForkManager type, that could be super-fun to play with
     my $runner;
     if ($options->{cluster} eq 'slurm') {
@@ -1254,33 +832,42 @@ sub Reset_Vars {
     my ($class, %args) = @_;
     my %original_values = (
         array_string => undef,
-        jbasename => basename(cwd()),
-        jdepends => '',
-        jmem => 12,
-        jname => 'undefined',
-        jprefix => '01',
-        jstring => '',
-        jwalltime => '10:00:00',
+        jbasename => undef,
+        jdepends => undef,
+        jmem => undef,
+        jname => undef,
+        jname_prefix => undef,
+        jprefix => undef,
+        jstring => undef,
+        jwalltime => undef,
         language => 'bash',
-        prescript => '',
-        postscript => '',
+        prescript => q{},
+        postscript => q{},
         modules => [],
+        subjob => undef,
         shell => '/usr/bin/env bash',);
+    $class->{last_prefix} = $class->{jprefix};
     for my $k (keys %original_values) {
         $class->{$k} = $original_values{$k};
         $class->{variable_current_state}->{$k} = $original_values{$k};
-        $class->{variable_function_overrides}->{$k} = $original_values{$k};
-        $class->{variable_getvars_args}->{$k} = $original_values{$k};
     }
     return($class);
 }
 
-
 sub Last_Stat {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args, required => ['input']);
-    my $input_filename = $options->{input};
-    my $input = FileHandle->new("<${input_filename}");
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
+        args => \%args,
+        required => ['input']);
+    if (!defined($options->{input})) {
+        print "Input for Last_Stat was undefined.\n";
+        return(undef);
+    }
+    my $input = FileHandle->new("<$options->{input}");
+    if (!defined($input)) {
+        print "The input file for Last_Stat appears to be empty.\n";
+        return(undef);
+    }
     my ($line, $last);
     while ($line = <$input>) {
         chomp $line;
@@ -1289,6 +876,27 @@ sub Last_Stat {
     }
     $input->close();
     return($last);
+}
+
+sub Process_Input_String {
+    my ($class, %args) = @_;
+    my $input_datum = $args{input};
+    my $input_string = $input_datum->{input};
+    my $interpreter = undef;
+    if ($input_string =~ /^(\w+\s*:)?\s*(.+)$/) {
+        $interpreter = $1;
+        my $input_command = $2;
+        $interpreter =~ s/:$//g;
+        my $inputter = FileHandle->new("${input_command} |");
+        my $in_string = q{};
+      IN: while (my $line = <$inputter>) {
+            chomp $line;
+            $in_string .= qq"$line:";
+        }
+        $inputter->close();
+        $input_string = $in_string;
+    }
+    return($input_string);
 }
 
 =head2 C<Module_Loader>
@@ -1312,36 +920,29 @@ sub Module_Loader {
     my $test_class = ref($args{exe});
     if ($mod_class eq 'SCALAR') {
         push(@mod_lst, $args{modules});
-    }
-    elsif ($mod_class eq 'ARRAY') {
+    } elsif ($mod_class eq 'ARRAY') {
         @mod_lst = @{$args{modules}};
-    }
-    elsif ($mod_class eq 'HASH') {
+    } elsif ($mod_class eq 'HASH') {
         my %mods = %{$args{modules}};
         @mod_lst = keys %mods;
         for my $k (@mod_lst) {
             push(@test_lst, $mods{$k});
         }
-    }
-    elsif (!$mod_class) {
+    } elsif (!$mod_class) {
         push(@mod_lst, $args{modules});
-    }
-    else {
+    } else {
         print "I do not know this class: $mod_class, $args{modules}\n";
     }
 
     if ($test_class eq 'SCALAR') {
         push(@test_lst, $args{exe});
-    }
-    elsif ($test_class eq 'ARRAY') {
+    } elsif ($test_class eq 'ARRAY') {
         for my $e (@{$args{exe}}) {
             push(@test_lst, $e);
         }
-    }
-    elsif (!$test_class) {
+    } elsif (!$test_class) {
         push(@test_lst, $args{exe});
-    }
-    else {
+    } else {
         print "I do not know this class: $test_class, $args{exe}\n";
     }
 
@@ -1360,8 +961,7 @@ sub Module_Loader {
                 push(@loads, $mod);
                 if ($action eq 'load') {
                     $test = Env::Modulecmd::load($mod);
-                }
-                else {
+                } else {
                     $test = Env::Modulecmd::unload($mod);
                 }
             }
@@ -1384,14 +984,14 @@ sub Module_Loader {
         }
     }
     $class->{modules} = \@mod_lst;
-    return(%old_env);
+    return(\%old_env);
 }
 
 sub Module_Reset {
     my ($class, %args) = @_;
-    my %old_env = %args{env};
-    for my $k (keys %old_env) {
-        $ENV{$k} = $old_env{$k};
+    my $orig_env = $args{env};
+    for my $k (keys %{$orig_env}) {
+        $ENV{$k} = $orig_env->{$k};
     }
 }
 
@@ -1418,7 +1018,7 @@ Will get the following arguments passed to your downstream tool:
 sub Passthrough_Args {
     my ($class, %args) = @_;
     my $argstring = $args{arbitrary};
-    my $new_string = '';
+    my $new_string = q{};
     return($new_string) unless (defined($argstring));
     my $splitter = qr/[:;,]/;
     for my $arg (split($splitter, $argstring)) {
@@ -1445,13 +1045,13 @@ Read a fasta file and return the chromosomes.
 =cut
 sub Read_Genome_Fasta {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         extra => 0);
     my $chromosomes = {};
     ## FIXME: This should be removed and I need to
     ## ensure that all calls use either fasta or genome.
-    my $input_file = '';
+    my $input_file = q{};
     if (defined($options->{genome})) {
         $input_file = $options->{genome};
     } else {
@@ -1500,7 +1100,7 @@ Now that I am more comfortable with the various gff parsers, this seems dumb.
 =cut
 sub Read_Genome_GFF {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['gff'],
         gff_type => 'gene',
@@ -1611,7 +1211,7 @@ sub Record_Options {
         push(@written, $result->{stdout});
     }
     for my $k (keys %{$result}) {
-        if ($k =~ /output/) {
+        if ($k =~ /main|output/) {
             if (!defined($result->{$k})) {
                 warn("When writing options, ${k} has an undefined result.");
                 print $arg_fh "${method}\t${k}\tundefined_result\n";
@@ -1634,7 +1234,7 @@ sub Record_Options {
 =cut
 sub Reorder_Fasta {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args);
     my $genome = $class->Read_Genome_Fasta(%args);
 
     my @chromosomes = sort { $a cmp $b } keys %$genome;
@@ -1664,133 +1264,28 @@ sub scalar_which {
 =cut
 sub Submit {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args);
-    my %modules = Get_Modules(caller => 2);
-    my $loaded = $class->Module_Loader(%modules);
-    my $modulecmd_check = $class->{modulecmd};
-    make_path("$options->{logdir}", {verbose => 0}) unless (-r "$options->{logdir}");
-    my $module_string = '';
-    my @module_lst = ();
-    @module_lst = @{$modules{modules}} if (defined($modules{modules}));
-    if ($options->{language} eq 'perl') {
-        push(@module_lst, 'cyoa');
-    }
-    if (scalar(@module_lst) > 0) {
-        $module_string = 'mod=$( { type -t module || true; } )
-if [[ -z "${mod}" ]]; then
-  module() {
-  # shellcheck disable=SC2086
-    { eval "$(/usr/bin/modulecmd bash $*)" || true; }
-  }
-  export -f module
-fi
-{ module add ';
-        for my $m (uniq @module_lst) {
-            $module_string .= qq"${m} " if (defined($m));
-        }
-        $module_string .= '2>/dev/null 1>&2 || true; }';
-        $options->{module_string} = $module_string;
-    }
-
-    my $conda_string;
-    my @conda_lst = ();
-    @conda_lst = @{$modules{conda}} if (defined($modules{conda}));
-    if (scalar(@conda_lst) > 0) {
-        for my $c (@conda_lst) {
-            $conda_string .= qq"conda activate ${c}
-";
-        }
-        $options->{conda_string} = $conda_string;
-    }
-
-    ## If we are invoking an indirect job, we need a way to serialize the options
-    ## in order to get them passed to the eventual interpreter
-    my $option_file = '';
-    if ($options->{language} eq 'perl') {
-        my $pd_dir = qq"$options->{basedir}/$options->{script_dir}/pdata";
-        if (!-d $pd_dir) {
-            my $created = make_path($pd_dir);
-        }
-        ## I think this might be required as per:
-        ## https://metacpan.org/pod/release/AMS/Storable-2.21/Storable.pm#CODE_REFERENCES
-        $Storable::Deparse = 1;
-        $Storable::Eval = 1;
-        if ($options->{pdata}) {
-            my $jname = 'unknown';
-            $jname = $options->{jname} if (defined($options->{jname}));
-            $option_file = File::Temp->new(
-                TEMPLATE => qq"${jname}XXXX",
-                DIR => qq"$options->{basedir}/$options->{script_dir}/pdata",
-                UNLINK => 0,
-                SUFFIX => '.pdata',);
-            my $option_filename = $option_file->filename;
-            $options->{option_file} = $option_filename;
-            $class->{option_file} = $option_filename;
-            ## Code references are invalid for these things...
-            ## Why is it that periodically I get this error?
-            ## The result of B::Deparse::coderef2text was empty - maybe you're trying to serialize an XS function?
-            my %saved_options = ();
-          SAVED: foreach my $k (keys %{$options}) {
-                my $r = ref($options->{$k});
-                next SAVED if ($r eq 'ARRAY' || $r eq 'HASH' || $r eq 'GLOB');
-                $saved_options{$k} = $options->{$k};
-            }
-            try {
-                my $stored = lock_store(\%saved_options, $option_file);
-            }
-            catch ($e) {
-                warn "An error occurred when storing the options: $e";
-            }
-        }
-    }
     my $runner;
-    if ($options->{cluster} eq 'slurm') {
-        $runner = Bio::Adventure::Slurm->new();
-    } elsif ($options->{cluster} eq 'torque') {
-        $runner = Bio::Adventure::Torque->new();
-    } elsif ($options->{cluster} eq 'bash') {
-        ## I should probably have something to handle gracefully bash jobs.
-        $runner = Bio::Adventure::Local->new();
-    } elsif ($options->{cluster} eq '0') {
-        ## On occasion I set cluster to 0 which is bash.
-        $runner = Bio::Adventure::Local->new();
-    } else {
-        carp("Could not find sbatch, qsub, nor bash.");
-        print "Assuming this is running on a local shell.\n";
-        $runner = Bio::Adventure::Local->new();
-    }
-
+    my $current_spec = $class->spec;
+    my $modules = $current_spec->{modules};
+    ## Before creating the runner, add the required modules.
+    print "Adventure::Submit, loading modules\n";
+    use Data::Dumper;
+    print Dumper $modules;
+    my $orig_env = $class->Module_Loader(action => 'load',
+                                         modules => $modules);
+    $runner = Bio::Adventure::Local->new();
     ## Add the current options to the runner:
-    for my $k (keys %{$options}) {
-        $runner->{$k} = $options->{$k};
-    }
     my $result = $runner->Submit($class, %args);
-    ## $runner gets the outputs etc
-    ## What does $result get?
-    my $recorded = $class->Record_Options(result => $result, runner => $runner);
-    my $unloaded = $class->Module_Reset(env => $loaded);
-    if (!defined($class->{jobnames}) || $class->{jobnames} eq '') {
-        $class->{jobnames} = [$result->{jname}];
-    } else {
-        my @tmp = @{$class->{jobnames}};
-        push(@tmp, $result->{jname});
-        $class->{jobnames} = \@tmp;
-    }
-    if ($class->{jobids} eq '') {
-        $class->{jobids} = [$result->{job_id}];
-    } else {
-        my @tmp = @{$class->{jobids}};
-        push(@tmp, $result->{job_id});
-        $class->{jobids} = \@tmp;
-    }
-    $class->{last_job} = $class->{job_id};
-    $class = $class->Reset_Vars();
+    ## After the runner is finished, unload the modules.
+    my $reset = $class->Module_Reset(env => $orig_env);
+    my @jobs = @{$class->jobs};
+    push(@jobs, $result);
+    $class->jobs(\@jobs);
     return($result);
 }
 
 sub Test_Job {
     my ($class, %args) = @_;
-    my $cyoa = Bio::Adventure->new();
     my $test = $class->Bio::Adventure::SNP::Test_Worker(%args);
 }
 
@@ -1801,7 +1296,7 @@ sub Test_Job {
 =cut
 sub Wait {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args);
     my $status = undef;
     if ($options->{cluster} eq 'slurm') {
         $status = $class->Bio::Adventure::Slurm::Wait(%args);

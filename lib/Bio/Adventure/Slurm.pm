@@ -6,6 +6,7 @@ use warnings qw"all";
 use Moo;
 extends 'Bio::Adventure';
 
+use Bio::Adventure::Languages;
 use Cwd;
 use File::Basename qw"basename dirname";
 use File::Path qw"make_path remove_tree";
@@ -148,7 +149,7 @@ sub BUILD {
 =cut
 sub Check_Job {
     my ($class, %args) = @_;
-    my $options = $class->Bio::Adventure::Get_Vars(args => \%args);
+    my ($options, $paths, $inputs, $outputs) = $class->Bio::Adventure::Get_Vars(args => \%args);
     my $id = $options->{input};
     my $write = $options->{write};
     $write = 0 if (!defined($write));
@@ -428,13 +429,13 @@ sub Choose_Among_Potential_QOS {
 =cut
 sub Choose_QOS {
     my ($class, %args) = @_;
-    my $wanted_spec = $args{wanted_spec};
     my $current_usage = $args{current_usage};
+    my $wanted_spec = $class->{spec};
     my $associations = $class->{association_data};
     my $allowed = $class->{allowed_qos};
     my $qos_accounts = $class->{qos_accounts};
     my $qos_info = $class->{qos_data};
-    $wanted_spec->{walltime_hours} = Convert_to_Hours($wanted_spec->{walltime});
+    $wanted_spec->{walltime_hours} = Convert_to_Hours($wanted_spec);
     my $chosen_cluster = '';
     my $chosen_account = '';
     my $chosen_partition = '';
@@ -1178,30 +1179,6 @@ sub Get_Spec {
         $wanted->{walltime_hours} = $walltime_string;
     }
 
-    if (defined($options->{cpu}) && defined($options->{jcpu})) {
-        print "Both cpu and jcpu are defined, that is confusing, using jcpu.\n";
-        $wanted->{cpu} = $options->{jcpu};
-    } elsif (defined($options->{cpu})) {
-        print "Cpu is defined, ideally this should be jcpu.\n";
-        $wanted->{cpu} = $options->{cpu};
-    } elsif (defined($options->{jcpu})) {
-        $wanted->{cpu} = $options->{jcpu};
-    } else {
-        print "Neither cpu nor jcpu is defined, defaulting to 1.\n";
-        $wanted->{cpu} = 1;
-    }
-
-    if (defined($options->{gpu}) && defined($options->{jgpu})) {
-        print "Both gpu and jgpu are defined, that is confusing, using jgpu.\n";
-        $wanted->{gpu} = $options->{jgpu};
-    } elsif (defined($options->{gpu})) {
-        print "Gpu is defined, ideally this should be jgpu.\n";
-        $wanted->{gpu} = $options->{gpu};
-    } elsif (defined($options->{jgpu})) {
-        $wanted->{gpu} = $options->{jgpu};
-    } else {
-        $wanted->{gpu} = 0;
-    }
     return($wanted);
 }
 
@@ -1330,7 +1307,6 @@ sub Get_Usage {
                         jobs => 1,
                     }, }, },
         };
-        print "TESTME: In Get_User, what is the state of ${job_id}: $state?\n";
         if ($state eq 'RUNNING') {
             $instance->{$partition}->{$account}->{$qos}->{running} = 1;
             $instance->{$partition}->{$account}->{$qos}->{queued} = 0;
@@ -1393,7 +1369,6 @@ sub Guess_Time {
 sub Juggle {
     my ($class, $parent, %args) = @_;
     my $usage = $class->Get_Usage();
-    use Data::Dumper;
     my $all_jobs = $usage->{all_jobs};
   JOBS: for my $id (sort keys %{$all_jobs}) {
         my $info = $all_jobs->{$id};
@@ -1405,12 +1380,11 @@ sub Juggle {
         ## Now find out some more information about this job, notably
         ## what it is asking for vis a vis cpus/gpus/memory/time
         my $job_info = $class->Sjob(job_id => $id);
-        print Dumper $job_info;
         my $wanted = {
-            jmem => $job_info->{ReqTRES_mem},
-            jcpu => $job_info->{ReqTRES_cpu},
-            jwalltime => $job_info->{TimeLimit},
-            jgpu => 0,
+            mem => $job_info->{ReqTRES_mem},
+            cpu => $job_info->{ReqTRES_cpu},
+            walltime => $job_info->{TimeLimit},
+            gpu => 0,
         };
         if ($job_info->{GRES}) {
             $wanted->{gpu} = $job_info->{ReqGRES_gpu};
@@ -1418,7 +1392,6 @@ sub Juggle {
         my $new_qos = $class->Choose_QOS(wanted_spec => $wanted,
                                          current_usage => $usage);
         my $new_job = $class->Modify_Job(job => $id, qos => $new_qos);
-        print Dumper $new_qos;
     }
 }
 
@@ -1561,25 +1534,39 @@ sub Sjob {
 sub Submit {
     my ($class, $parent, %args) = @_;
     my $class_jprefix = $class->{jprefix};
-    my $options = $parent->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $parent->Get_Vars(
         args => \%args,
         jname => 'unknown',);
     my $sbatch = $class->Check_Sbatch();
+    ## I think this is no longer needed
+    ## Note that Get_Args now includes a call to Get_Spec
+    ## my $wanted = $class->Get_Spec(options => $options);
+    my $wanted = $parent->{spec};
+
     my $depends_prefix = '--dependency=afterok';
     ## For arguments to sbatch, start with the defaults in the constructor in $class
     ## then overwrite with any application specific requests from %args
     my $sbatch_log = qq"$options->{basedir}/outputs/log.txt";
+
+    if (defined($wanted->{jcomment})) {
+        unless ($wanted->{jcomment} =~ /^#/) {
+            ## One day, add a function to comment-ize arbitrary languages
+            $wanted->{jcomment} = qq"## $options->{jcomment}";
+        }
+    } else {
+        print "No comment was defined for this function.\n";
+    }
 
     ## Get my current usage, which fills in a hash of:
     ## usage->{user}->{partition}->{account}->{qos}->{mem, cpu, jobs, running, queued, failed}
     ## This at least in theory could also hold the various 50+ pieces of information acquired from
     ## $(squeue --me -o '%all')
     my $usage = $class->Get_Usage();
-    ## Get_Spec takes the putative requirements of the job, which reside in $options->{jmem, jcpu, jwalltime}
+    ## Get_Spec takes the putative requirements of the job, which reside in $options->{mem, cpu, walltime}
     ## and return a fully numeric specification of time, cpus, gpus, memory.
     ## I state 'fully numeric' because the walltime is written as a string and I convert it to hours
     ## with a minimum of 1.
-    my $wanted = $class->Get_Spec(options => $options);
+
     ## Choose_QOS should take the current usage and spec for this job and find a combination of
     ## cluster/partition/account/qos which will work and return that information.
     ## with the caveat that scavenger is a weirdo special case.
@@ -1587,8 +1574,7 @@ sub Submit {
     ## Reminder, this is a hash of assoc->{cluster}->{account}->{qos} -- which may be a bad organizational
     ## choice because the partition is inside this innermost hash.  I don't yet fully understand
     ## slurm queueing and organization, so keep this in mind until I do...
-    my $chosen_qos = $class->Choose_QOS(wanted_spec => $wanted,
-                                        current_usage => $usage);
+    my $chosen_qos = $class->Choose_QOS(current_usage => $usage);
 
     $class->{chosen_cluster} = $chosen_qos->{chosen_cluster};
     $class->{chosen_partition} = $chosen_qos->{chosen_partition};
@@ -1599,23 +1585,16 @@ sub Submit {
     if ($options->{jdepends}) {
         $depends_string = qq"${depends_prefix}:$options->{jdepends}";
     }
-    if (!defined($options->{jname})) {
-        $options->{jname} = $class->Get_Job_Name();
-    }
-    if (!defined($options->{jprefix})) {
-        $options->{jprefix} = '';
-    }
-    my $jname = qq"$options->{jprefix}$options->{jname}";
-    my $finished_file = qq"$options->{logdir}/${jname}.finished";
+    my $finished_file = qq"$options->{logdir}/$options->{jname}.finished";
 
     my $job = {};
     foreach my $k (keys %args) {
         next if ($k eq 'jstring');
-        next if ($k eq 'comment');
+        next if ($k eq 'jcomment');
         $job->{$k} = $args{$k};
     }
     my @wanted_vars = ('basedir', 'depends_string', 'input',
-                       'jcpu', 'jmem', 'jname', 'jqueue', 'jwalltime', 'output');
+                       'cpu', 'mem', 'name', 'queue', 'walltime', 'output');
     foreach my $w (@wanted_vars) {
         $job->{$w} = $options->{$w} if (!defined($job->{$w}));
     }
@@ -1667,7 +1646,7 @@ sub Submit {
         return($job);
     }
 
-    my $script_file = qq"$options->{basedir}/$options->{script_dir}/$options->{jprefix}$options->{jname}.sh";
+    my $script_file = qq"$options->{basedir}/$options->{script_dir}/$options->{jname}.sh";
     my $exists_test = 0;
     $exists_test = 1 if (-r $script_file);
     my $exists_count = 0;
@@ -1675,7 +1654,7 @@ sub Submit {
         $exists_count++;
         my $suffix_base = basename($options->{basedir});
         my $suffix = qq"_${suffix_base}_${exists_count}_";
-        $script_file = qq"$options->{basedir}/$options->{script_dir}/$options->{jprefix}${suffix}$options->{jname}.sh";
+        $script_file = qq"$options->{basedir}/$options->{script_dir}/${suffix}$options->{jname}.sh";
         unless (-r $script_file) {
             $exists_test = 0;
             print "Writing script to: ${script_file}\n";
@@ -1693,7 +1672,7 @@ ${script_file}\n" if ($options->{debug});
     ## Remove the need for two functions that do the same thing except one for perl and one for bash
     if ($options->{language} eq 'perl') {
         my $perl_base = qq"$options->{basedir}/$options->{script_dir}";
-        my $perl_file = qq"${perl_base}/$options->{jprefix}$options->{jname}.pl";
+        my $perl_file = qq"${perl_base}/$options->{jname}.pl";
         my $exists_test = 0;
         $exists_test = 1 if (-r $perl_file);
         my $exists_count = 0;
@@ -1701,7 +1680,7 @@ ${script_file}\n" if ($options->{debug});
             $exists_count++;
             my $suffix_base = basename($options->{basedir});
             my $suffix = qq"_${suffix_base}_${exists_count}_";
-            $perl_file = qq"$options->{basedir}/$options->{script_dir}/$options->{jprefix}${suffix}$options->{jname}.pl";
+            $perl_file = qq"$options->{basedir}/$options->{script_dir}/${suffix}$options->{jname}.pl";
             unless (-r $perl_file) {
                 $exists_test = 0;
                 print "Writing script to: ${perl_file}\n";
@@ -1712,8 +1691,8 @@ ${script_file}\n" if ($options->{debug});
         } elsif (defined($options->{output})) {
             $perl_base = dirname($options->{output});
         }
-        my $perl_stderr = qq"${perl_base}/$options->{jprefix}$options->{jname}.stderr";
-        my $perl_stdout = qq"${perl_base}/$options->{jprefix}$options->{jname}.stdout";
+        my $perl_stderr = qq"${perl_base}/$options->{jname}.stderr";
+        my $perl_stdout = qq"${perl_base}/$options->{jname}.stdout";
         my $perl_start = qq?#!/usr/bin/env perl
 use strict;
 use FileHandle;
@@ -1741,7 +1720,7 @@ print \$out "## \${host} finished \${jobid} ${script_base} at \${now}.\n";
 close(\$out);
 !;
         my $total_perl_string = qq"${perl_start}\n";
-        $total_perl_string .= qq"$options->{comment}\n" if ($options->{comment});
+        $total_perl_string .= qq"$wanted->{jcomment}\n" if ($wanted->{jcomment});
         $total_perl_string .= qq"$options->{prescript}\n" if ($options->{prescript});
         $total_perl_string .= qq"$options->{jstring}\n" if ($options->{jstring});
         $total_perl_string .= qq"${perl_end}\n";
@@ -1771,14 +1750,14 @@ ${perl_file} \\
         $nice_string = qq"--nice=$options->{jnice}" if (defined($options->{jnice}));
         my $array_string = '';
         $array_string = qq"#SBATCH --array=$options->{array_string}" if ($options->{array_string});
-        my $walltime_string = qq"$wanted->{walltime_hours}:00:00";
-        my $mem_string = qq"$wanted->{mem}G";
+        my $walltime_string = qq"$wanted->{jwalltime}";
+        my $mem_string = qq"$wanted->{jmem}G";
         my $requeue = '';
         $requeue = '--requeue' if ($options->{requeue});
         my $script_start = qq?#!$options->{shell}
 #SBATCH --export=ALL --mail-type=NONE --open-mode=append ${requeue}
 #SBATCH --chdir=$options->{basedir}
-#SBATCH --job-name=${jname} ${nice_string}
+#SBATCH --job-name=$options->{jname} ${nice_string}
 #SBATCH --output=${sbatch_log}.sbatch
 ?;
         $script_start .= qq?#SBATCH --account=${account_string}\n? if ($account_string);
@@ -1798,13 +1777,13 @@ set -o pipefail
 echo "## Started ${script_file} at \$(date) on \$(hostname) with id \${SLURM_JOBID}." >> ${sbatch_log}
 function get_sigterm {
   cd "\${startdir}"
-  echo "A SIGTERM was sent to ${jname}: \${SLURM_JOBID}." >> ${sbatch_log}
+  echo "A SIGTERM was sent to $options->{jname}: \${SLURM_JOBID}." >> ${sbatch_log}
   exit 1
 }
 trap get_sigterm SIGTERM
 function get_sigerr {
   cd "\${startdir}"
-  echo "A SIGERR was sent to ${jname}: \${SLURM_JOBID}." >> ${sbatch_log}
+  echo "A SIGERR was sent to $options->{jname}: \${SLURM_JOBID}." >> ${sbatch_log}
   exit 1
 }
 trap get_sigerr ERR
@@ -1827,7 +1806,7 @@ fi
 !;
         my $total_script_string = '';
         $total_script_string .= qq"${script_start}\n";
-        $total_script_string .= qq"$options->{comment}\n" if ($options->{comment});
+        $total_script_string .= qq"$wanted->{jcomment}\n" if ($wanted->{comment});
         $total_script_string .= qq"$options->{prescript}\n" if ($options->{prescript});
         ## The prescript contains the module() definition when needed.
         ## So put that after it.
@@ -1857,6 +1836,8 @@ fi
         warn("The job id did not get defined, submission likely failed.");
         warn("Attempted submission: qos_string: ${qos_string}, QOS: $class->{chosen_qos}, account: $class->{chosen_account}, cluster: $class->{chosen_cluster}, partition: $class->{chosen_partition}\n");
         return(undef);
+    } else {
+        print "Submitted job name: $options->{jname} with ID: ${job_id}.\n";
     }
     sleep($options->{jsleep});
     my @jobid_list = split(/\./, $job_id);
@@ -1882,7 +1863,7 @@ fi
     }
     $job->{log} = $sbatch_log;
     $job->{job_id} = $job_id;
-    $job->{jname} = $jname;
+    $job->{jname} = $options->{jname};
     $job->{pid} = $sbatch_pid;
     $job->{script_file} = $script_file;
 
@@ -1892,15 +1873,18 @@ fi
     $parent->{language} = 'bash';
     make_path(qq"$options->{basedir}/outputs/logs");
     my $job_logger = FileHandle->new(">>$options->{basedir}/outputs/logs/jobs.txt");
-    print $job_logger "${jname}\tslurm\t${job_id}\n";
+    print $job_logger "$options->{jname}\tslurm\t${job_id}\n";
     $job_logger->close();
+    $job->{main} = $outputs->{main};
+    $job->{stdout} = $outputs->{stdout};
+    $job->{stderr} = $outputs->{stderr};
     return($job);
 }
 
 sub Test_Job {
     my ($class, %args) = @_;
     my $cyoa = Bio::Adventure->new();
-    my $options = $cyoa->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $cyoa->Get_Vars(
         args => \%args,
         jmem => 10,
         jwalltime => 4,);
@@ -1911,10 +1895,7 @@ echo "Ending test job."
 ?;
     my $job = $cyoa->Submit(
         input => 'test',
-        jtemplate => 'test.sh',
-        jmem => $options->{jmem},
-        jcpu => $options->{jcpu},
-        jwalltime => $options->{jwalltime});
+        template => 'test.sh',);
 }
 
 =head2 C<Wait>

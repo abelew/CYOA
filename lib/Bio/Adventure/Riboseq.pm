@@ -26,7 +26,7 @@ Figure out the relationships between read length and likely positions of the rib
 =cut
 sub Riboseq_Calibrate {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args);
     print "This script attempts to calibrate a set of aligned reads using
 my observations about the relationship between the observed position
 of the read and the most likely position of the ribosome on an mRNA.
@@ -62,7 +62,7 @@ change them according to each experiment.
 =cut
 sub Calibrate {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args);
     my $rel_pos = $options->{start};
     my $strand = $options->{strand};
     my $length = $options->{length};
@@ -110,7 +110,7 @@ Create a series of svg plots of transcripts and reads.
 =cut
 sub Graph_Reads {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args);
     if ($options->{help}) {
         print "This script attempts to simplify the graphing of read distributions for ribosome profiling experiments.
 Likely options include:
@@ -144,8 +144,8 @@ Gather reads by position for future processing.
 =cut
 sub Read_Counts {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args,
-                                   correction => 1);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args,
+                                                                correction => 1);
     my $minsize = $options->{minsize};
     my $maxsize = $options->{maxsize};
     my $minpos = $options->{minpos};
@@ -195,7 +195,7 @@ was thinking here...
 =cut
 sub Correct {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args);
     my $rel_pos = $options->{rel};
     my $length = $options->{length};
 
@@ -291,7 +291,7 @@ This should be moved, I use it in other places for working with chromosomes...
 =cut
 sub Print_Chromosome {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args);
     my $name = $options->{name};
     my $datum = $options->{datum};
     ##my $name = shift;
@@ -306,7 +306,7 @@ sub Print_Chromosome {
 
 sub Print_States {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args);
     my $file = $options->{file};
     my $datum = $options->{datum};
     ##my $file = shift;
@@ -324,7 +324,7 @@ sub Print_States {
 
 sub Print_State_Prob {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args);
     my $file = $options->{file};
     my $states = $options->{states};
     my $out = FileHandle->new(">${file}");
@@ -347,7 +347,7 @@ sub Print_State_Prob {
 
 sub Print_Trans_Prob {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args);
     my $file = $options->{file};
     my $trans = $options->{trans};
     my $out = FileHandle->new(">${file}");
@@ -370,7 +370,7 @@ sub Print_Trans_Prob {
 
 sub Riboseq_Bam {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args);
     my $chromosomes = $options->{chromosomes};
     eval "use Bio::DB::Sam; 1";
     ##my %args = @_;
@@ -493,14 +493,13 @@ sub Riboseq_Bam {
                                                                        entries => $gff_entries->{$chr},
                                                                        orientation => -1);
         }
-
-    }                           ## End printing every chromosome
+    } ## End printing every chromosome
     return($align_count);
 }
 
 sub Riboseq_Count_States {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args);
     my $datum = $options->{datum};
     my $all_state_prob = $options->{all_state_prob};
     my $all_transition_prob = $options->{all_transition_prob};
@@ -580,7 +579,7 @@ sub Riboseq_Count_States {
 
 sub Riboseq_Count_Tables {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args);
     my $data = $options->{data};
     my $entries = $options->{entries};
     my $strand = $options->{strand};
@@ -607,7 +606,7 @@ sub Riboseq_Count_Tables {
 
 sub Riboseq_Good_Size {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args);
     my $size = $options->{size};
     my $size_string = $options->{sizes};
     my @allowed_sizes = split(/\,/, $size_string);

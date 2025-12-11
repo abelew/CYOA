@@ -1,5 +1,5 @@
 #!/usr/bin/env perl
-use Cwd qw"abs_path cwd";
+use Cwd qw"abs_path fastcwd";
 use lib abs_path('lib');
 use Modern::Perl;
 use autodie qw":all";
@@ -7,7 +7,6 @@ use diagnostics;
 use warnings qw"all";
 use File::Basename;
 use Getopt::Long qw"GetOptionsFromArray";
-use Switch;
 use Bio::Adventure;
 
 =head1 NAME
@@ -40,22 +39,46 @@ our $cyoa = Bio::Adventure->new();
 ## Something like TNSeq, RNASeq, etc
 ## Then a second-level method to perform therein,
 ## which will provide a match to the appropriate function
-my $overrides = $cyoa->{variable_getopt_overrides};
-if (defined($overrides->{help})) {
-    my $helped = $cyoa->Help();
-}
-if (!defined($overrides->{task}) && !defined($overrides->{method})) {
+my $current_state = $cyoa->current_state;
+my $config_steps = $cyoa->{step_variables};
+my @config_step_numbers = sort keys %{$config_steps};
+my $number_config_steps = scalar(@config_step_numbers);
+##if (defined($current_state->{help})) {
+##    my $helped = $cyoa->Help();
+##}
+
+if ($number_config_steps > 0) {
+    my $step_input;
+    my $last_outputs = {};
+  STEPS: for my $config_step (@config_step_numbers) {
+        my $step_info = $config_steps->{$config_step};
+        my $step_input = $cyoa->Bio::Adventure::Process_Input_String(
+            input => $step_info, step => $config_step);
+        my $task = $cyoa->{task};
+        if (defined($step_info->{task})) {
+            $task = $step_info->{task};
+        } elsif (defined($current_state->{task})) {
+            $task = $current_state->{task};
+        }
+        print "Starting Method $step_info->{method}\n";
+        $cyoa = Run_Method($cyoa, task => $task,
+                           method => $step_info->{method},
+                           step_options => $step_info,
+                           input => $step_input);
+        $last_outputs->{$config_step} = $cyoa->Bio::Adventure::Gather_Outputs();
+    } ## End iterating over config steps.
+} elsif (!defined($current_state->{task}) && !defined($current_state->{method})) {
     ## If task is not defined, then we need to run Main()
     $cyoa = Main($cyoa);
-} elsif (!defined($overrides->{method})) {
+} elsif (!defined($current_state->{method})) {
     ## If task is defined, but method is not, use the menu system to get that information
-    $cyoa = Iterate($cyoa, task => $overrides->{task});
+    $cyoa = Iterate($cyoa, task => $current_state->{task});
 } else {
     my $task = $cyoa->{task};
-    $task = $overrides->{task} if (defined($overrides->{task}));
+    $task = $current_state->{task} if (defined($current_state->{task}));
     ## If both task and method are defined, run whatever is requested.
     $cyoa = Run_Method($cyoa, task => $task,
-                       method => $overrides->{method});
+                       method => $current_state->{method});
 }
 
 =head2 C<Main>
@@ -95,10 +118,10 @@ The Iterate runs multiple methods and comes back to the menu interface after eac
 =cut
 sub Iterate {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars();
     my $term = $args{term};
-    my $menus = Bio::Adventure::Get_Menus();
     my $task = $args{task};
+    my $menus = $class->menu;
+    my $current = $class->current_state;
     my $finished = 0;
     my $process;
     while ($finished != 1) {
@@ -109,10 +132,10 @@ sub Iterate {
         ## This now returns a function reference.
         my $task = $choices->{$task_name};
         my $cyoa_result;
-        my $start_dir = cwd();
+        my $start_dir = fastcwd();
         my @dirs = ($start_dir);
-        if (defined($options->{directories})) {
-            my @dirs = split(/:|\s+|\,/, $options->{directories});
+        if (defined($current->{directories})) {
+            my @dirs = split(/:|\s+|\,/, $current->{directories});
         }
         foreach my $d (@dirs) {
             chdir($d);
@@ -148,23 +171,30 @@ sub Run_Method {
     my ($class, %args) = @_;
     my $task = $args{task};
     my $method = $args{method};
+    my $step_options = $args{step_options};
+    if (defined($step_options)) {
+      SKOPTS: for my $sk (keys %{$step_options}) {
+            next SKOPTS if ($sk eq 'input');  ## Provided by Process_Input()
+            $args{$sk} = $step_options->{$sk};
+        }
+    }
 
-    my @choices = @{$class->{methods_to_run}};
+    ##my @choices = @{$class->{methods_to_run}};
+    my @choices = @{$class->todos};
     my $job_count = 0;
     my $process;
     for my $job (@choices) {
         $job_count = $job_count++;
         my $cyoa_result;
-        my $start_dir = cwd();
+        my $start_dir = fastcwd();
         my @dirs = ($start_dir);
-        if (defined($class->{directories})) {
-            @dirs = split(/:|\s+|\,/, $class->{directories});
-        }
-        my $class_copy = $class;
-        foreach my $d (@dirs) {
+        ##if (defined($class->{directories})) {
+        ##    @dirs = split(/:|\s+|\,/, $class->{directories});
+       ## }
+        for my $d (@dirs) {
             sleep(1);
             chdir($d);
-            $process = $job->($class_copy, task => $task, interactive => $args{interactive}, %args);
+            $process = $job->($class, task => $task, interactive => $args{interactive}, %args);
             chdir($start_dir);
         }
     }
@@ -173,11 +203,11 @@ sub Run_Method {
 
 =head1 AUTHOR - atb
 
-Email abelew@gmail.com
+  Email abelew@gmail.com
 
 =head1 SEE ALSO
 
-    L<Adventure> L<Adventure::Convert> L<Adventure::Trim>
+  L<Bio::Adventure>
 
 =cut
 

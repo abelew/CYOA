@@ -31,15 +31,9 @@ work otherwise.
 =cut
 sub Casfinder {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        required => ['input'],
-        jcpu => 4,
-        jprefix => '22',
-        jmem => 8,
-        jwalltime => 8,);
-    my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Path_Info($options->{input});
+        required => ['input'],);
     my $cwd_name = basename(cwd());
     my $check = which('casfinder');
     my $casfinder_exe_dir = dirname($check);
@@ -51,12 +45,9 @@ sub Casfinder {
     my $input_path = abs_path($input_dir);
     $input_path = qq"${input_path}/${input_filename}";
     my $output_dir = qq"outputs/$options->{jprefix}casfinder_${input_dirname}";
-    my $comment = qq!## This is a casfinder submission script
-!;
     my $stdout = qq"${output_dir}/casfinder.stdout";
     my $stderr = qq"${output_dir}/casfinder.stderr";
-    my $jstring = qq!mkdir -p ${output_dir}
-start=\$(pwd)
+    my $jstring = qq!start=\$(pwd)
 cd ${output_dir}
 casfinder.sh $options->{input} \\
   2>casfinder.stderr \\
@@ -71,34 +62,20 @@ fi
 cd \${start}
 !;
     my $casfinder = $class->Submit(
-        comment => $comment,
-        jcpu => 2,
         jdepends => $options->{jdepends},
-        jname => "casfinder_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        jmem => 16,
-        output => qq"${output_dir}/casfinder.tsv",
+        output => $outputs,
         prescript => $options->{prescript},
-        postscript => $options->{postscript},
-        stdout => $stdout,
-        stderr => $stderr,
-        jwalltime => $options->{jwalltime},);
+        postscript => $options->{postscript},);
     return($casfinder);
 }
 
 sub Casoff {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
-        jcpu => 4,
-        jprefix => '22',
-        jmem => 8,
-        mismatches => 2,
-        jwalltime => 8,);
-    my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Path_Info($options->{input});
+        mismatches => 2,);
     my $cwd_name = basename(cwd());
     ## Hey, don't forget abs_path requires a file which already exists.
     my $input_filename = basename($options->{input});
@@ -108,12 +85,7 @@ sub Casoff {
     my $input_path = abs_path($input_dir);
     $input_path = qq"${input_path}/${input_filename}";
     my $output_dir = qq"outputs/$options->{jprefix}casfinder_${input_dirname}";
-    my $comment = qq!## This is a casfinder submission script
-!;
-    my $stdout = qq"${output_dir}/casfinder.stdout";
-    my $stderr = qq"${output_dir}/casfinder.stderr";
-    my $jstring = qq!mkdir -p ${output_dir}
-start=\$(pwd)
+    my $jstring = qq!start=\$(pwd)
 cd ${output_dir}
 casfinder.sh $options->{input} \\
   2>casfinder.stderr \\
@@ -127,21 +99,14 @@ else
 fi
 cd \${start}
 !;
-    my $casfinder = $class->Submit(
-        comment => $comment,
-        jcpu => 2,
+    my $casoff = $class->Submit(
         jdepends => $options->{jdepends},
-        jname => "casfinder_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        jmem => 16,
-        output => qq"${output_dir}/casfinder.tsv",
+        outputs => $outputs,
+        output => $outputs,
         prescript => $options->{prescript},
-        postscript => $options->{postscript},
-        stdout => $stdout,
-        stderr => $stderr,
-        jwalltime => $options->{jwalltime},);
-    return($casfinder);
+        postscript => $options->{postscript},);
+    return($casoff);
 }
 
 =head2 C<Interproscan>
@@ -170,16 +135,9 @@ cd \${start}
 =cut
 sub Interproscan {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        jcpu => 6,
-        jprefix => '21',
-        jmem => 24,
-        jwalltime => 36,
-        modules => ['interproscan'],
         required => ['input'],);
-    my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Path_Info($options->{input});
     my $cwd_name = basename(cwd());
     ## Hey, don't forget abs_path requires a file which already exists.
     my $abs_input = abs_path($options->{input});
@@ -187,14 +145,11 @@ sub Interproscan {
     my $input_filename = basename($abs_input);
     my $input_uncomp = basename($options->{input}, ('.gz', '.xz', '.bz2'));
     my $output_filename = qq"${input_filename}.tsv";
-
     my $input_dirname = basename($input_dir);
     my $input_path = abs_path($input_dir);
     $input_path = qq"${input_path}/${input_filename}";
     my $output_dir = qq"outputs/$options->{jprefix}interproscan_${input_dirname}";
     $output_dir =~ s/_\.$//g;
-    my $comment = qq!## This is a interproscan submission script
-!;
     my $stdout = qq"${output_dir}/interproscan.stdout";
     my $stderr = qq"${output_dir}/interproscan.stderr";
     my $r1_fd = $class->Get_FD(input => $abs_input);
@@ -221,17 +176,11 @@ cd \${start}
 !;
     my $output = qq"${output_dir}/interproscan.tsv";
     my $interproscan = $class->Submit(
-        comment => $comment,
-        jcpu => $options->{jcpu},
         jdepends => $options->{jdepends},
-        jname => "interproscan_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        output => $output,
+        outputs => $outputs,
         output_gff => qq"${output_dir}/${input_filename}.gff3",
-        output_tsv => qq"${output_dir}/interproscan.tsv",
-        stdout => $stdout,
-        stderr => $stderr,);
+        output_tsv => qq"${output_dir}/interproscan.tsv",);
     my $l2w_output_base = basename($output, ('.tsv'));
     my $l2w_output = qq"${output_dir}/${l2w_output_base}_wide.tsv";
     my $l2w_stderr = qq"${output_dir}/${l2w_output_base}_wide.stderr";
@@ -285,7 +234,7 @@ and output: $l2w_output\n";
 =cut
 sub Prokka {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         arbitrary => '',
@@ -295,11 +244,7 @@ sub Prokka {
         genus => 'phage',
         kingdom => 'bacteria',
         locus_tag => 'unknownphage',
-        species => 'virus',
-        jmem => 12,
-        jprefix => '19',);
-    my $job_name = $class->Get_Job_Name();
-    my $input_paths = $class->Get_Path_Info($options->{input});
+        species => 'virus',);
     my $kingdom_string = '';
     if ($options->{kingdom} ne '') {
         $kingdom_string = qq" --kingdom $options->{kingdom} --gcode $options->{gcode} ";
@@ -311,10 +256,10 @@ sub Prokka {
     ## useful/interesting.  If not, it will not likely be of use but instead be '.'
     ## Let us check for that and set $input_name to something useful in that case.
     my $input_name;
-    if (defined($input_paths->[0]->{dirname})) {
-        $input_name = $input_paths->[0]->{dirname};
+    if (defined($inputs->[0]->{dirname})) {
+        $input_name = $inputs->[0]->{dirname};
     } else {
-        $input_name = $input_paths->[0]->{filebase_extension};
+        $input_name = $inputs->[0]->{filebase_extension};
     }
     my $locus_tag;
     if ($options->{locus_tag}) {
@@ -323,9 +268,6 @@ sub Prokka {
         $locus_tag = basename($input_name, ('.fasta'));
     }
     my $output_dir = qq"outputs/$options->{jprefix}prokka";
-    my $comment = qq!## This is a script to run prokka.
-!;
-
 ##    prokka --addgenes -rfam --force --locustag EAb03 --genus Phage --species virus --cdsrnaolap --usegenus --kingdom Bacteria --gcode 11 --prodigaltf /home/trey/libraries/hmm/abaumannii_phage_samples_gc11.training --outdir outputs/19prokka_15termreorder_13unicycler --prefix EAb03 outputs/15termreorder_13unicycler/final_assembly_reordered.fasta --evalue '1e-05' --coverage 30 2>&1 | less
 
     my $jstring = qq!mkdir -p ${output_dir}
@@ -352,13 +294,9 @@ prokka --addgenes --rfam --force ${kingdom_string} \\
     my $tsv_file = qq"${output_dir}/${cwd_name}.tsv";
 
     my $prokka = $class->Submit(
-        comment => $comment,
-        jcpu => 4,
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => "prokka_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
+        outputs => $outputs,
         output => $cds_file,
         output_error => $error_file,
         output_peptide => $peptide_file,
@@ -378,15 +316,10 @@ prokka --addgenes --rfam --force ${kingdom_string} \\
 
 sub Transposonpsi {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
-        input_faa => '',
-        jcpu => 4,
-        jmem => 8,
-        jprefix => '21',);
-    my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Path_Info($options->{input});
+        input_faa => '',);
     my $cwd_name = basename(cwd());
     ## Never implemented!
     my $transposonpsi;
@@ -395,10 +328,9 @@ sub Transposonpsi {
 
 sub Interpro_Long2Wide {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input',],
-        jmem => 8,
         jprefix => '19',);
     my $output;
     if (defined($options->{output})) {
@@ -411,7 +343,6 @@ sub Interpro_Long2Wide {
     $output = qq"${output_dir}/${output_name}_l2w.tsv";
     my $stdout = qq"${output_dir}/long2wide.stdout";
     my $stderr = qq"${output_dir}/long2wide.stderr";
-    my $comment = '## Convert the wonky interproscan output to a simpler tsv';
     my $jstring = qq?
 use Bio::Adventure::Annotation;
 my \$result = \$h->Bio::Adventure::Annotation::Interpro_Long2Wide_Worker(
@@ -423,27 +354,21 @@ my \$result = \$h->Bio::Adventure::Annotation::Interpro_Long2Wide_Worker(
   stderr => '${stderr}',);
 ?;
     my $job = $class->Submit(
-        comment => $comment,
         input => $options->{input},
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
         jname => $options->{jname},
-        jprefix => $options->{jprefix},
         jstring => $jstring,
         language => 'perl',
-        output => $output,
-        stdout => $stdout,
-        stderr => $stderr,);
+        outputs => $outputs,);
     return($job);
 }
 
 ## Copying from Metadata::Merge_Interpro
 sub Interpro_Long2Wide_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'output'],);
-
     print "Reading interpro tsv: $options->{input}\n";
     my $inter_fh = FileHandle->new("<$options->{input}");
     my $results = {};
@@ -569,7 +494,7 @@ sub Trinotate_Extract_Annotations {
     my $eval_max = $args{evalue};
     my $ids = $args{ids};
     my $fh = $args{fh};
-    my $options = $class->Get_Vars();
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars();
 
     my $id = $datum->{prot_id};
     $id = $datum->{transcript_id} if ($id eq '.');
@@ -631,15 +556,14 @@ ${seq}
 =cut
 sub Extract_Trinotate {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         jname => 'trin_rsem',
         output => 'interesting.fasta',
         evalue => 1e-10,
         identity => 70,);
-    my $job_name = $class->Get_Job_Name();
-    my $trinity_out_dir = qq"outputs/trinity_${job_name}";
+    my $trinity_out_dir = qq"outputs/trinity_$options->{job_basename}";
     my $input = FileHandle->new("<$options->{input}");
     my $parser = Parse::CSV->new(
         handle => $input,
@@ -871,39 +795,31 @@ sub Read_Write_Annotation {
 =cut
 sub Transdecoder {
     my ($class, %args) = @_;
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
+        args => \%args,
+        required => ['input'],);
     my $check = which('TransDecoder.LongOrfs');
     die('Could not find transdecoder in your PATH.') unless($check);
     my $transdecoder_exe_dir = dirname($check);
-    my $options = $class->Get_Vars(
-        args => \%args,
-        required => ['input'],);
     my $transdecoder_input = File::Spec->rel2abs($options->{input});
-    my $job_name = $class->Get_Job_Name();
-    my $output_dir = qq"outputs/trinity_${job_name}";
-    my $comment = qq!## This is a transdecoder submission script
-!;
+    my $output_dir = qq"outputs/trinity_$options->{job_basename}";
     my $jstring = qq!mkdir -p ${output_dir} && cd ${output_dir} && \\
   TransDecoder.LongOrfs -t ${transdecoder_input} \\
-    2>${output_dir}/transdecoder_longorfs_${job_name}.err \\
-    1>${output_dir}/transdecoder_longorfs_${job_name}.out
+    2>${output_dir}/transdecoder_longorfs_$options->{job_basename}.err \\
+    1>${output_dir}/transdecoder_longorfs_$options->{job_basename}.out
 TransDecoder.Predict -t ${transdecoder_input} \\
-  2>${output_dir}/transdecoder_predict_${job_name}.err \\
-  1>${output_dir}/transdecoder_predict_${job_name}.out
+  2>${output_dir}/transdecoder_predict_$options->{job_basename}.err \\
+  1>${output_dir}/transdecoder_predict_$options->{job_basename}.out
 ${transdecoder_exe_dir}/util/cdna_alignment_orf_to_genome_orf.pl \\
   ${output_dir}/transcripts.fasta.transdecoder.gff3 \\
   ${output_dir}/transcripts.gff3 \\
   ${transdecoder_input} \\
-  2>${output_dir}/cdna_alignment_${job_name}.err \\
+  2>${output_dir}/cdna_alignment_$options->{job_basename}.err \\
   1>${output_dir}/transcripts.fasta.transdecoder.genome.gff3
 !;
     my $transdecoder = $class->Submit(
-        comment => $comment,
-        jcpu => 1,
-        jmem => 4,
-        jname => "transdecoder_${job_name}",
-        jprefix => '47',
         jstring => $jstring,
-        output => qq"${output_dir}/transcripts.fasta.transdecoder.genome.gff3",
+        outputs => $outputs,
         prescript => $options->{prescript},
         postscript => $options->{postscript},);
     return($transdecoder);
@@ -931,31 +847,25 @@ ${transdecoder_exe_dir}/util/cdna_alignment_orf_to_genome_orf.pl \\
 =cut
 sub Trinotate {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         config => 'conf.txt',
-        jcpu => 4,
-        jprefix => '62',
         required => ['input'],
         trinotate => 'autoTrinotate.pl');
-    my $job_name = $class->Get_Job_Name();
-    my $cwd_name = basename(cwd());
     ## Once again, abs_path only works on stuff which already exists.
     ## So create the output directory, and use that.
-    my $input_paths = $class->Get_Path_Info($options->{input});
-    my $input_full = $input_paths->[0]->{fullpath};
-    my $input_file = $input_paths->[0]->{filename};
-    my $input_dir = $input_paths->[0]->{dirname};
-    my $input_noext = $input_paths->[0]->{filebase_extension};
+    my $input_full = $inputs->[0]->{fullpath};
+    my $input_file = $inputs->[0]->{filename};
+    my $input_dir = $inputs->[0]->{dirname};
+    my $input_noext = $inputs->[0]->{filebase_extension};
     my $output_name = basename($input_noext);
     $output_name = qq"${output_name}_trinotate";
     my $output_tsv = qq"${output_name}.tsv";
     my $output_go = qq"${output_name}_go.tsv";
     my $output_dir = qq"outputs/$options->{jprefix}trinotate";
-    my $stdout = qq"${output_dir}/trinotate_${job_name}.stdout";
-    my $stderr = qq"${output_dir}/trinotate_${job_name}.stderr";
+    my $stdout = qq"${output_dir}/trinotate_$options->{job_basename}.stdout";
+    my $stderr = qq"${output_dir}/trinotate_$options->{job_basename}.stderr";
     $output_dir .= qq"${input_dir}" if (defined($input_dir));
-    ## Take a moment to load the trinotate module and get the executable path.
     my %modules = Bio::Adventure::Get_Modules(caller => 1);
     my $loaded = $class->Module_Loader(%modules);
     my $trinotate_exe_path = which('Trinotate');
@@ -964,8 +874,6 @@ sub Trinotate {
     my $unloaded = $class->Module_Reset(env => $loaded);
     my $expected_config = qq"${trinotate_exe_dir}/auto/$options->{config}";
     $expected_config = qq"${trinotate_exe_dir}/auto/conf.txt" unless (-r $expected_config);
-    my $comment = qq!## This is a trinotate submission script
-!;
     my $jstring = qq!
 function cleanup {
   echo "Removing $ENV{TMPDIR}/${input_file}.sqlite"
@@ -993,9 +901,9 @@ ${trinotate_exe_dir}/auto/$options->{trinotate} \\
   --Trinotate_sqlite $ENV{TMPDIR}/${input_file}.sqlite \\
   --transcripts ${input_file} \\
   --gene_to_trans_map ${input_file}.gene_trans_map \\
-  --CPU 6 \\
-  2>trinotate_${job_name}.stderr \\
-  1>trinotate_${job_name}.stdout
+  --CPU $options->{jcpu} \\
+  2>trinotate_$options->{job_basename}.stderr \\
+  1>trinotate_$options->{job_basename}.stdout
 ## The file created by trinotate is a tsv, not xls.
 if [[ -f "Trinotate.xls" ]]; then
   mv Trinotate.xls ${output_tsv}
@@ -1011,14 +919,9 @@ rm -rf TMHMM_* ${input_file}.ffn.trans*
 cd "\${start}"
 !;
     my $trinotate = $class->Submit(
-        comment => $comment,
-        jcpu => 6,
         jdepends => $options->{jdepends},
-        jname => qq"trinotate_${input_file}_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        jmem => 12,
-        jwalltime => '144:00:00',
+        outputs => $outputs,
         output => qq"${output_dir}/${output_tsv}",
         output_go => qq"${output_dir}/${output_go}",
         prescript => $options->{prescript},
@@ -1052,14 +955,12 @@ cd "\${start}"
 =cut
 sub Rosalind_Plus {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        required => ['input'],
-        jprefix => '44',
-        jcpu => 2,);
+        required => ['input'],);
     my $input_seq = $options->{input};
     my $job_name = 'rosalindplus';
-    my $output_dir = qq"outputs/$options->{jprefix}${job_name}";
+    my $output_dir = qq"outputs/$options->{jprefix}$options->{job_basename}";
     make_path($output_dir);
     my $rosalind_prodigal = Bio::Adventure::Feature_Prediction::Prodigal(
         $class,
@@ -1094,14 +995,12 @@ my \$result = \$h->Bio::Adventure::Annotation::Rosalind_Plus_Worker(
         comment => $comment_string,
         gff => $options->{gff},
         input => $options->{input},
-        jcpu => 1,
         jdepends => $options->{jdepends},
-        jmem => 8,
-        jname => $options->{jname},
         job_log => $log,
         jprefix => qq"$options->{jprefix}_1",
         jstring => $jstring,
         language => 'perl',
+        outputs => $outputs,
         output => $output_file,
         output_dir => $output_dir,);
     return($rewrite);
@@ -1119,14 +1018,13 @@ my \$result = \$h->Bio::Adventure::Annotation::Rosalind_Plus_Worker(
 =cut
 sub Rosalind_Plus_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],);
-
     my $input_gff = $options->{gff};
     my $input_seq = $options->{input};
     my $job_name = 'rosalindplus';
-    my $output_dir = qq"outputs/$options->{jprefix}${job_name}";
+    my $output_dir = qq"outputs/$options->{jprefix}$options->{job_basename}";
     make_path($output_dir);
 
     my $orf_count = {};

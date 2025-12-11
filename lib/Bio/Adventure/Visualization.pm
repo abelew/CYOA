@@ -34,20 +34,16 @@ use File::ShareDir qw":ALL";
 =cut
 sub CGView {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input',],
-        jprefix => '16',
         linear => 1,
         reading_frame => 1,
         gene_labels => 0,
         feature_labels => 1,
         orfs => 1,
         imagemap => 0,);
-    my $job_name = $class->Get_Job_Name();
-    ## Reminder, this gives me: filename, directory, dirname, fullpath
-    my $job_paths = $class->Get_Path_Info($options->{input});
-    my $job_filename = $job_paths->[0]->{filename};
+    my $job_filename = $inputs->[0]->{filename};
     my $output_directory = qq"outputs/$options->{jprefix}cgview";
     my $output_base = basename($job_filename, ('.gbk'));
     my $xml_input = qq"$options->{input}";
@@ -74,7 +70,6 @@ sub CGView {
     if ($options->{gene_labels}) {
         $option_string .= '-gene_labels T ';
     }
-    my $comment = '## Run cgview given an assembly genbank file.';
     my $jstring = qq!
 mkdir -p ${output_directory}
 cgview_xml_builder.pl -sequence ${xml_input} \\
@@ -103,12 +98,9 @@ cgview -i ${xml_output} \\
     }
 
     my $cgview = $class->Submit(
-        comment => $comment,
-        jcpu => 1,
         jdepends => $options->{jdepends},
-        jname => qq"cgview_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
+        outputs => $outputs,
         output => $output_file,
         output_xml => $xml_output,
         prescript => $options->{prescript},

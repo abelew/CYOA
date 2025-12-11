@@ -30,7 +30,7 @@ use File::ShareDir qw":ALL";
 =cut
 sub Abricate {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         jprefix => '18',
@@ -40,11 +40,8 @@ sub Abricate {
     $coverage = $options->{coverage} if (defined($options->{coverage}));
     my $identity = 70;
     $identity = $options->{identity} if (defined($options->{identity}));
-
-    my $job_name = $class->Get_Job_Name();
-    my $input_paths = $class->Get_Path_Info($options->{input});
-    my $input_dir = $input_paths->[0]->{dirname};
-    my $input_ext = $input_paths->[0]->{filebase_extension};
+    my $input_dir = $inputs->[0]->{dirname};
+    my $input_ext = $inputs->[0]->{filebase_extension};
     my $input_name;
     if (defined($input_dir)) {
         $input_name = $input_dir;
@@ -76,7 +73,7 @@ abricate --summary ${output_dir}/*.tsv \\
         jcpu => 4,
         jdepends => $options->{jdepends},
         jmem => 24,
-        jname => qq"abricate_${job_name}",
+        jname => qq"abricate_$options->{job_basename}",
         jprefix => $options->{jprefix},
         jstring => $jstring,
         output => qq"${output_dir}/abricate_combined.tsv",
@@ -107,13 +104,12 @@ abricate --summary ${output_dir}/*.tsv \\
 =cut
 sub Resfinder {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         jprefix => '18',
         arbitrary => ' -l 0.6 -t 0.8 --acquired ',);
     my $resfinder_args = $options->{arbitrary};
-    my $job_name = $class->Get_Job_Name();
     my $assembly_name = basename(dirname($options->{input}));
     my $output_dir = qq"outputs/$options->{jprefix}resfinder";
     my $species_string = qq"";
@@ -132,7 +128,7 @@ run_resfinder.py -ifa $options->{input} \\
         jcpu => 4,
         jdepends => $options->{jdepends},
         jmem => 24,
-        jname => qq"resfinder_${job_name}",
+        jname => qq"resfinder_$options->{job_basename}",
         jprefix => $options->{jprefix},
         jstring => $jstring,
         output => qq"${output_dir}/resfinder.txt",
@@ -153,13 +149,12 @@ run_resfinder.py -ifa $options->{input} \\
 =cut
 sub Rgi {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         arbitrary => '',
         jprefix => '15',);
     my $rgi_args = $options->{arbitrary};
-    my $job_name = $class->Get_Job_Name();
     my $assembly_name = basename(dirname($options->{input}));
     my $output_dir = qq"outputs/$options->{jprefix}rgi";
     my $species_string = qq"";
@@ -174,7 +169,7 @@ rgi main --input_sequence $options->{input} \\
         jcpu => 4,
         jdepends => $options->{jdepends},
         jmem => 24,
-        jname => "rgi_${job_name}",
+        jname => "rgi_$options->{job_basename}",
         jprefix => $options->{jprefix},
         jstring => $jstring,
         output => qq"${output_dir}/rgi_result.txt",

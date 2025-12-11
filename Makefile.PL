@@ -4,6 +4,7 @@ use ExtUtils::MakeMaker;
 use File::ShareDir::Install;
 use inc::Module::Install;
 
+delete_share 'share';
 install_share 'share';
 auto_install(
     force => 1,);

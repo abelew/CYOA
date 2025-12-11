@@ -37,31 +37,21 @@ use File::Which qw"which";
 =cut
 sub BT1_Index {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],);
     my $species = basename($options->{input}, ('.gz', '.bz2', '.xz'));
     $species = basename($species, ('.fasta', '.fa'));
-    my $paths = $class->Bio::Adventure::Config::Get_Paths(species => $species);
     my $output_dir = $paths->{output_dir};
-    my $stdout = qq"${output_dir}/bt1_index.stdout";
-    my $stderr = qq"${output_dir}/bt1_index.stderr";
     my $jstring = qq!mkdir -p ${output_dir}
 bowtie-build $options->{input} \\
   $paths->{index} \\
-  2>${stderr} 1>${stdout}
+  2>$outputs->{stderr} 1>$outputs->{stdout}
 !;
-    my $comment = qq!## Generating bowtie1 indexes for species: ${species}
-## in $paths->{index}!;
     my $bt1_index = $class->Submit(
-        comment => $comment,
-        jname => qq"bt1idx_${species}",
         jdepends => $options->{jdepends},
         jstring => $jstring,
-        jprefix => '10',
-        output => $output_dir,
-        stderr => $stderr,
-        stdout => $stdout,
+        outputs => $outputs,
         prescript => $options->{prescript},
         postscript => $options->{postscript},);
     return($bt1_index);
@@ -85,12 +75,11 @@ bowtie-build $options->{input} \\
 =cut
 sub BT2_Index {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         jprefix => '',);
     my $libtype = $options->{libtype};
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $libdir = $paths->{index_dir};
     my $species = basename($options->{input}, ('.gz', '.bz2', '.xz'));
     $species = basename($species, ('.fasta', '.fa'));
@@ -99,25 +88,16 @@ sub BT2_Index {
         my $fc = $class->Get_FC(input => $options->{input});
         my $copied = qx"${fc} > ${copied_location}";
     }
-    my $stdout = qq"${libdir}/index.stdout";
-    my $stderr = qq"${libdir}/index.stderr";
     my $jstring = qq!mkdir -p ${libdir}
 bowtie2-build $options->{input} \\
   $paths->{index} \\
-  2>${stderr} \\
-  1>${stdout}
+  2>$outputs->{stderr} \\
+  1>$outputs->{stdout}
 !;
-    my $comment = qq!## Generating bowtie2 indexes for species: ${species}
-## in $paths->{index}!;
     my $indexer = $class->Submit(
-        comment => $comment,
         jdepends => $options->{jdepends},
-        jname => qq"bt2idx_${species}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        output => $libdir,
-        stderr => $stderr,
-        stdout => $stdout,
+        outputs => $outputs,
         prescript => $options->{prescript},
         postscript => $options->{postscript},);
     return($indexer);
@@ -130,12 +110,10 @@ bowtie2-build $options->{input} \\
 =cut
 sub BWA_Index {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        required => ['input'],
-        jprefix => '15',);
+        required => ['input'],);
     my $species = basename($options->{input}, ('.fasta', '.fa'));
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $copied_location = qq"$paths->{index}.fa";
     if (!-f $copied_location) {
         cp($options->{input}, $copied_location);
@@ -155,30 +133,10 @@ bwa index ${species}.fa \\
   1>${stdout}
 cd \$start
 !;
-    my $index_sa = qq"$paths->{index_dir}/${species}.fa.sa";
-    my $index_pac = qq"$paths->{index_dir}/${species}.fa.pac";
-    my $index_bwt = qq"$paths->{index_dir}/${species}.fa.bwt";
-    my $index_ann = qq"$paths->{index_dir}/${species}.fa.ann";
-    my $index_amb = qq"$paths->{index_dir}/${species}.fa.amb";
-    my $index_fa = qq"$paths->{index_dir}/${species}.fa";
-
-    my $comment = qq!## Generating bwa indexes for species: ${species}
-## in $paths->{index_dir}!;
     my $bwa_index = $class->Submit(
-        comment => $comment,
         jdepends => $options->{jdepends},
-        jname => 'bwaidx',
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        output => $output_dir,
-        output_sa => $index_sa,
-        output_pac => $index_pac,
-        output_bwt => $index_bwt,
-        output_ann => $index_ann,
-        output_amb => $index_amb,
-        output_fa => $index_fa,
-        stderr => $stderr,
-        stdout => $stdout,
+        outputs => $outputs,
         prescript => $options->{prescript},
         postscript => $options->{postscript},);
     return($bwa_index);
@@ -192,7 +150,7 @@ cd \$start
 =cut
 sub Check_Blastdb {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         blast_tool => 'blastn',
         required => ['input'],
@@ -200,8 +158,7 @@ sub Check_Blastdb {
     my $libname;
     if (defined($options->{library})) {
         $libname = $options->{library};
-    }
-    else {
+    } else {
         $libname = $options->{input};
     }
     $libname = basename($libname, ('.fasta', '.fa', '.faa', '.fsa', '.fna'));
@@ -215,11 +172,9 @@ sub Check_Blastdb {
     }
     if ($options->{blast_tool} eq 'blastn') {
         $libtype = 'nucl';
-    }
-    elsif ($options->{blast_tool} eq 'blastp') {
+    } elsif ($options->{blast_tool} eq 'blastp') {
         $libtype = 'prot';
-    }
-    else {
+    } else {
         $libtype = 'nucl';
     }
 
@@ -234,8 +189,7 @@ sub Check_Blastdb {
         my $guess = $seq->alphabet;
         if ($guess eq 'protein') {
             $guesses->{prot}++;
-        }
-        else {
+        } else {
             $guesses->{nucl}++;
         }
     }
@@ -247,8 +201,7 @@ sub Check_Blastdb {
     print "and $guesses->{nucl} were guessed nucleotide.\n";
     if ($guessed eq $libtype) {
         print "The guessed type and provided type agree!\n";
-    }
-    else {
+    } else {
         print "The guessed type and provided type disagree, going with: $guessed.\n";
         $libtype = $guessed;
     }
@@ -268,8 +221,7 @@ sub Check_Blastdb {
     if (!defined($db_directory)) {
         $ENV{BLASTDB} = "$options->{basedir}/blastdb";
         $db_directory = "$options->{basedir}/blastdb";
-    }
-    else {
+    } else {
         $relative_directory = qq"$ENV{BLASTDB}";
     }
 
@@ -280,8 +232,7 @@ sub Check_Blastdb {
         $foundlib++;
         print "Found an existing blast database at ${libname}.\n";
         return($libname);
-    }
-    else {
+    } else {
         print "Did not find an existing blast database.\n";
     }
 
@@ -296,8 +247,8 @@ makeblastdb \\
   -in $options->{input} \\
   -dbtype ${libtype} \\
   -out ${db_directory}/${libname} \\
-  2>${db_directory}/makeblastdb.stderr \\
-  1>${db_directory}/makeblastdb.stdout";
+  2>$outputs->{stderr} \\
+  1>$outputs->{stdout}";
         print "The makeblastdb command run is: ${formatdb_command}\n";
         my $formatdb_ret = qx"${formatdb_command}";
     }
@@ -312,43 +263,30 @@ makeblastdb \\
 =cut
 sub Extend_Kraken_DB {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         library => 'viral',);
     ## kraken2 --db ${DBNAME} --paired --classified-out cseqs#.fq seqs_1.fq seqs_2.fq
-    my $job_name = $class->Get_Job_Name();
-    my $output_dir = qw"outputs/extend_kraken";
-
-    my $stderr = qq"${output_dir}/kraken2-build.stderr";
-    my $stdout = qq"${output_dir}/kraken2-build.stdout";
-    my $comment = '## This is a script to extend an existing kraken2 library with some new sequences.';
-    my $jstring = qq!mkdir -p ${output_dir}
+    my $jstring = qq!
 kraken2-build --download-taxonomy --db \${KRAKEN_DB_PATH}/$options->{library} \\
-              2>${stderr} \\
-              1>${stdout}
+              2>$outputs->{stderr} \\
+              1>$outputs->{stdout}
 kraken2-build --add-to-library $options->{input} --db \${KRAKEN_DB_PATH}/$options->{library} \\
-              2>>${stderr} \\
-              1>>${stdout}
+              2>>$outputs->{stderr} \\
+              1>>$outputs->{stdout}
 kraken2-build --download-library $options->{library} \\
               --db \${KRAKEN_DB_PATH}/$options->{library} \\
-              2>>${stderr} \\
-              1>>${stdout}
+              2>>$outputs->{stderr} \\
+              1>>$outputs->{stdout}
 kraken2-build --build --db \${KRAKEN_DB_PATH}/$options->{library} \\
-              2>>${stderr} \\
-              1>>${stdout}
+              2>>$outputs->{stderr} \\
+              1>>$outputs->{stdout}
 !;
     my $kraken = $class->Submit(
-        comment => $comment,
-        jcpu => 6,
         jdepends => $options->{jdepends},
-        jname => qq"kraken_${job_name}",
-        jprefix => '99',
         jstring => $jstring,
-        jmem => 96,
-        output => qq"${output_dir}/kraken2-build.out",
-        stderr => $stderr,
-        stdout => $stdout,
+        outputs => $outputs,
         prescript => $options->{prescript},
         postscript => $options->{postscript},);
     return($kraken);
@@ -362,16 +300,12 @@ kraken2-build --build --db \${KRAKEN_DB_PATH}/$options->{library} \\
 =cut
 sub Hisat2_Index {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         output_dir => undef,
-        required => ['input'],
-        jprefix => '21',);
-    my $species = basename($options->{input}, ('.fasta', '.fa', '.fsa'));
-    my $paths = $class->Bio::Adventure::Config::Get_Paths(species => $species);
+        required => ['input'],);
+    my $species = basename($options->{input}, split(/,/, $options->{suffixes}));
     my $output_dir = $paths->{output_dir};
-    my $stdout = qq"${output_dir}/hisat2_index_${species}.stdout";
-    my $stderr = qq"${output_dir}/hisat2_index_${species}.stderr";
     my $copied = undef;
     if (-r $paths->{fasta}) {
         print "The index fasta file appears to exist at: $paths->{fasta}.\n";
@@ -382,20 +316,13 @@ sub Hisat2_Index {
     my $jstring = qq!
 hisat2-build $options->{input} \\
   $paths->{index} \\
-  2>${stderr} \\
-  1>${stdout}
+  2>$outputs->{stderr} \\
+  1>$outputs->{stdout}
 !;
-    my $comment = qq!## Generating hisat2 indexes for species: ${species}
-## in $paths->{index}!;
     my $indexer = $class->Submit(
-        comment => $comment,
         jdepends => $options->{jdepends},
-        jname => qq"ht2idx_${species}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        output => $stdout,
-        stderr => $stderr,
-        stdout => $stdout,
+        outputs => $outputs,
         prescript => $options->{prescript},
         postscript => $options->{postscript},);
     return($indexer);
@@ -408,7 +335,7 @@ hisat2-build $options->{input} \\
 =cut
 sub Kallisto_Index {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         jprefix => '15',
         required => ['input'],);
@@ -416,32 +343,20 @@ sub Kallisto_Index {
     my $species = $cds;
     $species =~ s/_cds//g;
     $species =~ s/_nt//g;
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $copied_location = qq"$options->{libpath}/$options->{libtype}/${cds}.fasta";
     if (!-f $copied_location) {
         cp($options->{input}, $copied_location);
     }
     my $libtype = $options->{libtype};
-    my $output_dir = qq"$options->{basedir}/outputs/$options->{jprefix}kallisto_index";
-    my $stdout = qq"${output_dir}/index.stdout";
-    my $stderr = qq"${output_dir}/index.stderr";
     my $input = File::Spec->rel2abs($options->{input});
-    my $jstring = qq!mkdir -p ${output_dir}
-kallisto index -i $paths->{index_file} \\
+    my $jstring = qq!kallisto index -i $paths->{index_file} \\
   ${input} \\
-  2>${stderr} 1>${stdout}
+  2>$outputs->{stderr} 1>$outputs->{stdout}
 !;
-    my $comment = qq!## Generating kallisto indexes for species: ${species}
-## to $paths->{index_file}!;
     my $ka_index = $class->Submit(
-        comment => $comment,
         jdepends => $options->{jdepends},
         jstring => $jstring,
-        jname => 'kalidx',
-        jprefix => $options->{jprefix},
-        stderr => $stderr,
-        output => $output_dir,
-        stdout => $stdout,
+        outputs => $outputs,
         prescript => $options->{prescript},
         postscript => $options->{postscript},);
     return($ka_index);
@@ -461,12 +376,9 @@ kallisto index -i $paths->{index_file} \\
 =cut
 sub Make_Codon_Table {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        required => ['species'],
-        jprefix => '80',);
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
-
+        required => ['species'],);
     ## I have a few suffixes for writing genbank files.
     my @potential_suffixes = ('gbff', 'gbk', 'gbf', 'gb', 'genbank');
     my @compressions = ('gz', 'xz', 'bz2');
@@ -497,7 +409,6 @@ sub Make_Codon_Table {
     my @first = ('T', 'C', 'A', 'G');
     my @second = ('T', 'C', 'A', 'G');
     my @third = ('T', 'C', 'A', 'G');
-
     ## Set up the pieces which will hold the data of interest.
     my $total_codons = 0;
     my %codon_counts = ();
@@ -526,14 +437,13 @@ sub Make_Codon_Table {
                 my $codon = qq"${nt1}${nt2}${nt3}";
                 if (defined($codon_counts{$codon})) {
                     $codon_counts{$codon}++;
-                }
-                else {
+                } else {
                     $codon_counts{$codon} = 1;
                 }
                 $total_codons++;
-            }      ## Done pulling apart the sequence arrays.
-        }          ## Iterating over the features in this sequence.
-    }              ## End going through the sequences of the assembly.
+            } ## Done pulling apart the sequence arrays.
+        } ## Iterating over the features in this sequence.
+    } ## End going through the sequences of the assembly.
     $in->close();
 
     if ($total_codons == 0) {
@@ -567,32 +477,23 @@ sub Make_Codon_Table {
 =cut
 sub RSEM_Index {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],);
     my $species = basename($options->{input}, ('.fasta', '.fa'));
     $species =~ s/_cds//g;
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $copied_location = qq"$options->{libpath}/$options->{libtype}/${species}.fasta";
     if (!-f $copied_location) {
         cp($options->{input}, $copied_location);
     }
-    my $output_dir = qq"$options->{basedir}/outputs/$options->{jprefix}rsem_index";
-    my $stdout = qq"${output_dir}/index.stdout";
-    my $stderr = qq"${output_dir}/index.stderr";
-    my $comment = '## RSEM Index creation.';
-    my $jstring = qq!mkdir -p ${output_dir}
+    my $jstring = qq!mkdir -p $paths->{output_dir}
 rsem-prepare-reference --bowtie2 $options->{input} ${species} \\
-  2>${stderr} 1>${stdout}
+  2>$outputs->{stderr} 1>$outputs->{stdout}
 !;
     my $jobid = $class->Submit(
-        comment => $comment,
         jdepends => $options->{jdepends},
         jstring => $jstring,
-        jname => 'rsemidx',
-        jprefix => $options->{jprefix},
-        stderr => $stderr,
-        stdout => $stdout,
+        outputs => $outputs,
         prescript => $options->{prescript},
         postscript => $options->{postscript},);
     return($jobid);
@@ -618,16 +519,14 @@ rsem-prepare-reference --bowtie2 $options->{input} ${species} \\
 =cut
 sub Salmon_Index {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species'],
         decoy => 1,);
-    my $libtype = $options->{libtype};
     my $genome = File::Spec->rel2abs($options->{input});
     my $cds = basename($options->{input}, ('.fasta', '.fa'));
     my $cds_dir = dirname($options->{input});
     my $species = $cds;
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $log = FileHandle->new(">$paths->{log}");
     ## Drop the suffixes which might be annoying.
     $species =~ s/_cds//g;
@@ -635,31 +534,20 @@ sub Salmon_Index {
     my $species_file = qq"${cds_dir}/${species}.fasta";
     my $index_basedir = qq"$options->{libpath}/$options->{libtype}";
     my $species_location = qq"${index_basedir}/${species}.fasta";
-    my $output_dir = qq"$options->{basedir}/outputs/$options->{jprefix}salmon_index";
-    if (!-d $index_basedir) {
-        make_path($index_basedir);
-    }
-    if (!-d $output_dir) {
-        make_path($output_dir);
-    }
     my $decoy_copy_string = qq'';
     my $jstring = qq'';
-    my $stdout = qq"${output_dir}/index.stdout";
-    my $stderr = qq"${output_dir}/index.stderr";
-
-    my $index_input = $options->{input};
     my $index_string = qq!
-salmon index -t ${index_input} \\
+salmon index -t $options->{input} \\
   -i $paths->{index_dir} !;
     if ($options->{decoy}) {
         if (!-f $species_location) {
             cp($species_file, $species_location);
         }
-        my $decoy_location = qq"$options->{libpath}/${libtype}/fasta/${species}_decoys.fasta";
+        my $decoy_location = qq"$options->{libpath}/$options->{libtype}/fasta/$options->{species}_decoys.fasta";
         my $decoy_txt_name = basename($decoy_location, ('.fasta'));
         my $decoy_txt_dir = dirname($decoy_location);
         my $decoy_text_file = qq"${decoy_txt_dir}/${decoy_txt_name}.txt";
-        my $genome_location = qq"$options->{libpath}/genome/fasta/${species}.fasta";
+        my $genome_location = qq"$options->{libpath}/genome/fasta/$options->{species}.fasta";
         ## Write out the required concatenation of the transcripts+genome.
         print $log "Writing transcripts and decoy genome to: ${decoy_location}\n";
         my $decoys = FileHandle->new(">${decoy_location}");
@@ -684,12 +572,11 @@ salmon index -t ${index_input} \\
         $genome->close();
         $decoy_txt->close();
         print "Writing indexes to: $paths->{index_dir}\n";
-        $jstring = qq!mkdir -p ${output_dir}
-salmon index -t ${decoy_location} \\
+        $jstring = qq!salmon index -t ${decoy_location} \\
   -i $paths->{index_dir} \\
   --decoys ${decoy_text_file} \\
-  2>${stderr} \\
-  1>${stdout}
+  2>$outputs->{stderr} \\
+  1>$outputs->{stdout}
 if [[ \$? -eq "0" ]]; then
   echo "Salmon indexing completed successfully, deleting the decoys fasta and text file."
   rm ${decoy_text_file}
@@ -698,31 +585,21 @@ else
   echo "Salmon indexing completed with \$?, not deleting decoys fasta and text."
 fi
 !;
-    }
-    else {
+    } else {
         warn("This function would prefer to make a decoy aware index set which requires the full genome.");
         say("Waiting 3 seconds to see if you want to quit and gather that genome,
 otherwise a decoy-less index will be generated.");
         sleep(3);
         $jstring = qq!${index_string} \\
-  2>${stderr} \\
-  1>${stdout}
+  2>$outputs->{stderr} \\
+  1>$outputs->{stdout}
 !;
     }
     $log->close();
-
-    my $comment = qq!## Generating salmon indexes for species: ${species}
-## in $options->{libdir}/${libtype}/indexes!;
     my $jobid = $class->Submit(
-        comment => $comment,
         jdepends => $options->{jdepends},
         jstring => $jstring,
-        jname => qq"salidx_${species}",
-        jmem => 24,
-        jprefix => $options->{jprefix},
-        output => $output_dir,
-        stderr => $stderr,
-        stdout => $stdout,
+        outputs => $outputs,
         prescript => $options->{prescript},
         postscript => $options->{postscript},);
     return($jobid);
@@ -735,43 +612,32 @@ otherwise a decoy-less index will be generated.");
 =cut
 sub STAR_Index {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input',],);
-    my $comment = '## STAR Index creation.';
     my $libtype = 'genome';
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     $libtype = $options->{libtype} if ($options->{libtype});
     my $species = basename($options->{input}, ('.fasta', '.fa'));
     my $copied_location = qq"$options->{libpath}/$options->{libtype}/${species}.fasta";
     if (!-f $copied_location) {
         cp($options->{input}, $copied_location);
     }
-    my $output_dir = qq"$options->{basedir}/outputs/$options->{jprefix}star_index";
-    my $stdout = qq"${output_dir}/index.stdout";
-    my $stderr = qq"${output_dir}/index.stderr";
-    my $jstring = qq!mkdir -p ${output_dir}
-STAR \\
+    my $jstring = qq!STAR \\
   --runMode genomeGenerate \\
   --runThreadN 12 \\
   --genomeDir $paths->{index_dir} \\
   --genomeFastaFiles $options->{libdir}/${libtype}/${species}.fasta \\
   --sjdbGTFfile $options->{libdir}/${libtype}/${species}.gtf \\
   --limitGenomeGenerateRAM 160000000000 \\
-  2>${stderr} 1>${stdout}
+  2>$outputs->{stderr} 1>$outputs->{stdout}
 
 !;
     my $jobid = $class->Submit(
-        comment => $comment,
         jdepends => $options->{depends},
         jstring => $jstring,
-        jname => 'staridx',
-        jprefix => $options->{jprefix},
-        jmem => 180,
         prescript => $options->{prescript},
         postscript => $options->{postscript},
-        stderr => $stderr,
-        stdout => $stdout,);
+        outputs => $outputs,);
     return($jobid);
 }
 
