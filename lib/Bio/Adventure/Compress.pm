@@ -29,7 +29,7 @@ Invoke xz to recompress a given input file.
 =cut
 sub Compress {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         comment => '## Compressing files.',
@@ -38,18 +38,11 @@ sub Compress {
         jprefix => '',
         jwalltime => '36:00:00',
         modules => undef,);
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
-    my $output_prefix = $paths->{output_prefix};
-    my $output_dir = qq"${output_prefix}$options->{jname}";
-    make_path($output_dir);
-    my $stderr = qq"${output_dir}/xz.stderr";
-    my $stdout = qq"${output_dir}/xz.stdout";
-    my $input_paths = $class->Get_Path_Info($options->{input});
     my $check = which('xz');
     die('Could not find xz in your PATH.') unless($check);
     my $jstring = "";
     my $output_string = '';
-  INPUTS: for my $in (@{$input_paths}) {
+  INPUTS: for my $in (@{$inputs}) {
         my $in_dir = $in->{directory};
         my $in_base = $in->{filebase_compress};
         my $in_full = $in->{fullpath};
@@ -57,18 +50,18 @@ sub Compress {
         $output_string .= qq"${output_file}:";
         $jstring .= qq!
 ## Compressing ${in_full}
-echo "Compressing ${in_full}" 1>>${stdout}
+echo "Compressing ${in_full}" 1>>$outputs->{stdout}
 compressed=1
 if [ -f "${in_full}" ]; then
   {
-    /usr/bin/du -h ${in_full} 1>>${stdout} 2>>${stderr}
-    /usr/bin/time -a -o ${stdout} xz -9e -f ${in_full} 1>>${stdout} 2>>${stderr}
+    /usr/bin/du -h ${in_full} 1>>$outputs->{stdout} 2>>$outputs->{stderr}
+    /usr/bin/time -a -o $paths->{time} xz -9e -f ${in_full} 1>>$outputs->{stdout} 2>>$outputs->{stderr}
   } || {
-    echo "Compression of ${in_full} failed." >> ${stdout}
+    echo "Compression of ${in_full} failed." >> $outputs->{stdout}
     compressed=0
   }
 else
-  echo "The input: ${in_full} does not exist." 1>>${stderr}
+  echo "The input: ${in_full} does not exist." 1>>$outputs->{stderr}
 fi
 !;
     } ## End looping over input files.
@@ -84,13 +77,13 @@ fi
         jprefix => $options->{jprefix},
         jstring => $jstring,
         jwalltime => $options->{jwalltime},
-        output => $output_string,);
+        outputs => $outputs,);
     return($compression);
 }
 
 sub Recompress {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         comment => '## Recompressing files.',
@@ -98,11 +91,9 @@ sub Recompress {
         jmem => 8,
         jprefix => '99',
         jwalltime => '12:00:00',);
-    my $input_paths = $class->Get_Path_Info($options->{input});
-
     my $jstring = "";
     my $output_string = '';
-    for my $in (@{$input_paths}) {
+    for my $in (@{$inputs}) {
         my $in_dir = $in->{directory};
         my $in_base = $in->{filebase_compress};
         my $in_full = $in->{fullpath};
@@ -131,7 +122,7 @@ xz -9e -f ${in_full}
         jprefix => $options->{jprefix},
         jstring => $jstring,
         jwalltime => $options->{jwalltime},
-        output => $output_string,);
+        outputs => $outputs,);
     return($compression);
 }
 
@@ -147,7 +138,7 @@ xz -9e -f ${in_full}
 =cut
 sub Spring {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         comment => '## Recompressing files.',
@@ -156,21 +147,18 @@ sub Spring {
         delete => 0,
         jprefix => '99',
         jwalltime => '12:00:00',);
-    my $input_paths = $class->Get_Path_Info($options->{input});
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
-
     my @compression_jobs = ();
-    my $number_inputs = scalar(@{$input_paths});
+    my $number_inputs = scalar(@{$inputs});
     my $jstring = '';
     if ($number_inputs == 0) {
         die("No input provided.");
     } elsif ($number_inputs == 1) {
         print "Assuming a single, single-ended sample.\n";
-        my $in = $input_paths->[0];
+        my $in = $inputs->[0];
         my $in_dir = $in->{directory};
         my $in_base = $in->{filebase_compress};
         $in_base = basename($in_base, ('.fastq'));
-        my $jname = qq"$options->{jname}_${in_base}";
+        my $jname = qq"$options->{job_name}_${in_base}";
         my $in_full = $in->{fullpath};
         if (-l $in_full) {
             print "The file: ${in_full} is a symlink, skipping it.\n";
@@ -195,7 +183,7 @@ sub Spring {
             print "The file: ${in_full} is only ${size} bytes, skipping it.\n";
             return(undef);
         }
-        my $output_file = qq"$paths->{output_dir}/${in_base}.spring";
+        my $outputs->{output} = qq"$paths->{output_dir}/${in_base}.spring";
         my $fc = '';
         my $gz_flag = '';
         if ($in_full =~ /.gz$/) {
@@ -210,17 +198,17 @@ sub Spring {
         }
         $jstring .= qq!
 start=\$(du -sb ${in_full} | awk '{print \$1}')
-/usr/bin/time -v -o $paths->{stdout}.time -a \\
+/usr/bin/time -v -o $paths->{time} -a \\
   spring -c${gz_flag} -i $fc->{input} \\
-    -o ${output_file} \\
-    2>>$paths->{stderr} 1>>$paths->{stdout}
-final=\$(du -sb ${output_file} | awk '{print \$1}')
+    -o $outputs->{output} \\
+    2>>$outputs->{stderr} 1>>$outputs->{stdout}
+final=\$(du -sb $outputs->{output} | awk '{print \$1}')
 ratio=\$(perl -e "print \${final} / \${start}")
-echo "" >> $paths->{stdout}
-echo "The input size is \${start}." >> $paths->{stdout}
-echo "The output size of ${in_base} is: \${final}." >> $paths->{stdout}
-echo "The ratio is: \${ratio}." >> $paths->{stdout}
-mv ${output_file} ${in_dir}/
+echo "" >> $outputs->{stdout}
+echo "The input size is \${start}." >> $outputs->{stdout}
+echo "The output size of ${in_base} is: \${final}." >> $outputs->{stdout}
+echo "The ratio is: \${ratio}." >> $outputs->{stdout}
+mv $outputs->{output} ${in_dir}/
 !;
         if ($fc->{cleanup}) {
             $jstring .= qq"$fc->{cleanup}
@@ -239,12 +227,12 @@ mv ${output_file} ${in_dir}/
             jprefix => $options->{jprefix},
             jstring => $jstring,
             jwalltime => $options->{jwalltime},
-            output => $output_file,);
+            outputs => $outputs,);
         push(@compression_jobs, $compression);
     } elsif ($number_inputs == 2) {
         print "Assuming a single, paired-ended sample.\n";
-        my $r1 = $input_paths->[0];
-        my $r2 = $input_paths->[1];
+        my $r1 = $inputs->[0];
+        my $r2 = $inputs->[1];
         my $in_dir = $r1->{directory};
         my $in_base = $r1->{filebase_compress};
         $in_base = basename($in_base, ('.fastq'));
@@ -262,7 +250,7 @@ mv ${output_file} ${in_dir}/
             next INPUTS;
         }
         my $jname = qq"$options->{jname}_${in_base}";
-        my $output_file = qq"$paths->{output_dir}/${in_base}.spring";
+        my $outputs->{output} = qq"$paths->{output_dir}/${in_base}.spring";
         my $r1_fc = '';
         my $r2_fc = '';
         my $gz_flag = '';
@@ -282,16 +270,16 @@ $r2_fc->{decompress}
         }
         $jstring .= qq!
 start=\$(( \$(du -sb ${r1_full} | awk '{print \$1}' | perl -pe 's/[a-zA-Z]\$//g') + \$(du -sb ${r1_full} | awk '{print \$1}' | perl -pe 's/[a-zA-Z]\$//g') ))
-/usr/bin/time -v -o $paths->{stdout}.time -a \\
+/usr/bin/time -v -o $paths->{time} -a \\
   spring -c${gz_flag} -i $r1_fc->{input} $r2_fc->{input} \\
-    -o ${output_file} \\
-    2>>$paths->{stderr} 1>>$paths->{stdout}
-final=\$(du -sb ${output_file} | awk '{print \$1}')
-echo "" >> $paths->{stdout}
-echo "The input size is \${start}." >> $paths->{stdout}
-echo "The output is: \${final}." >> $paths->{stdout}
-echo "The ratio is: \$(perl -e \\"print \${final} / \${start}\\")." >> $paths->{stdout}"
-mv ${output_file} ${in_dir}/
+    -o $outputs->{output} \\
+    2>>$outputs->{stderr} 1>>$outputs->{stdout}
+final=\$(du -sb $outputs->{output} | awk '{print \$1}')
+echo "" >> $outputs->{stdout}
+echo "The input size is \${start}." >> $outputs->{stdout}
+echo "The output is: \${final}." >> $outputs->{stdout}
+echo "The ratio is: \$(perl -e \\"print \${final} / \${start}\\")." >> $outputs->{stdout}"
+mv $outputs->{output} ${in_dir}/
 !;
         if ($r1_fc->{cleanup}) {
             $jstring .= qq"$r1_fc->{cleanup}
@@ -312,11 +300,11 @@ rm ${r2_full}
             jprefix => $options->{jprefix},
             jstring => $jstring,
             jwalltime => $options->{jwalltime},
-            output => $output_file,);
+            outputs => $outputs,);
          push(@compression_jobs, $compression);
     } else {
         print "Assuming multiple single-ended samples.\n";
-      INPUTS: for my $in (@{$input_paths}) {
+      INPUTS: for my $in (@{$inputs}) {
             my $in_dir = $in->{directory};
             my $in_base = $in->{filebase_compress};
             $in_base = basename($in_base, ('.fastq'));
@@ -332,8 +320,8 @@ rm ${r2_full}
                 next INPUTS;
             }
             $in_base = basename($in_base, ('.fastq'));
-            my $jname = qq"$options->{jname}_${in_base}";
-            my $output_file = qq"$paths->{output_dir}/${in_base}.spring";
+            my $jname = qq"$options->{job_name}_${in_base}";
+            my $outputs->{output} = qq"$paths->{output_dir}/${in_base}.spring";
             my $fc = '';
             my $gz_flag = '';
             if ($in_full =~ /.gz$/) {
@@ -348,16 +336,16 @@ rm ${r2_full}
             }
             $jstring .= qq!
 start=\$(du -sb ${in_full} | awk '{print \$1}')
-/usr/bin/time -v -o $paths->{stdout}.time -a \\
+/usr/bin/time -v -o $paths->{time} -a \\
   spring -c${gz_flag} -i $fc->{input} \\
-    -o ${output_file} \\
-    2>>$paths->{stderr} 1>>$paths->{stdout}
-final=\$(du -sb ${output_file} | awk '{print \$1}')
-echo "" >> $paths->{stdout}
-echo "The input size is \${start}." >> $paths->{stdout}
-echo "The output size is \${final}." >> $paths->{stdout}
-echo "The ratio is: \$(perl -e \\"print \${final} / \${start}\\")." >> $paths->{stdout}
-mv ${output_file} ${in_dir}/
+    -o $outputs->{output} \\
+    2>>$outputs->{stderr} 1>>$outputs->{stdout}
+final=\$(du -sb $outputs->{output} | awk '{print \$1}')
+echo "" >> $outputs->{stdout}
+echo "The input size is \${start}." >> $outputs->{stdout}
+echo "The output size is \${final}." >> $outputs->{stdout}
+echo "The ratio is: \$(perl -e \\"print \${final} / \${start}\\")." >> $outputs->{stdout}
+mv $outputs->{output} ${in_dir}/
 !;
             if ($fc->{cleanup}) {
                 $jstring .= qq"$fc->{cleanup}
@@ -376,8 +364,8 @@ mv ${output_file} ${in_dir}/
                 jprefix => $options->{jprefix},
                 jstring => $jstring,
                 jwalltime => $options->{jwalltime},
-                output => $output_file,);
-             push(@compression_jobs, $compression);
+                outputs => $outputs,);
+            push(@compression_jobs, $compression);
         } ## End iterating over input files.
     }
     return(\@compression_jobs);

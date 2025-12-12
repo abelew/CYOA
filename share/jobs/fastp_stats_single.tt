@@ -1,0 +1,20 @@
+if [ ! -r "[% stat_output %]" ]; then
+  echo "name,total_reads,trimmed_reads,passed_filter,low_quality" > [% stat_output %]
+fi
+total_reads_tmp=$( { head -n 10 [% input %] | grep "^total reads" || test $? = 1; } |\
+  awk '{print $3}')
+total_reads=${total_reads_tmp:-0}
+trimmed_tmp=$( { head -n 15 [% input %] | grep "^total reads:" || test $? = 1; } | tail -n 1 |\
+  awk '{print $3}')
+trimmed=${trimmed_tmp:-0}
+passed_tmp=$( { head -n 30 [% input %] | grep "^reads passed filter:" || test $? = 1; } | tail -n 1 |\
+  awk '{print $4}')
+passed=${passed_tmp:-0}
+low_quality_tmp=$( { head -n 30 [% input %] |\
+  grep "^reads failed due to low quality:" || test $? = 1; } | tail -n 1 | awk '{print $7}')
+low_quality=${low_quality_tmp:-0}
+duplication_tmp=$( { grep "^Duplication rate" [% input %] || test $? = 1; } |\
+  perl -pe 's/.*(\d+\.\d+)%$/$1/g' )
+duplication=${duplication_tmp:-0}
+stat_string=$(printf "[% input_name %],%s,%s,%s,%s,%s" "${total_reads}" "${trimmed}" "${passed}" "${low_quality}" "${duplication}")
+echo "$stat_string" >> [% stat_output %]

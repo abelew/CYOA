@@ -1,0 +1,23 @@
+## Write out the various arguments here to see what happened:
+## type_flag: [% type_flag %]
+## adapter_string: [% adapter_string %]
+## arbitrary: [% arbitrary %]
+## min_flag: [% min_flag %]
+## max_flag: [% max_flag %]
+## output_string: [% output_string %]
+## input_string [% input_string %]
+## untrimmed_string: [% untrimmed_string %]
+## max_error: [% max_error %]
+## too_short: [% too_short %]
+## compress_string: [% compress_string %]
+## max_removed: [% max_removed %]
+
+/usr/bin/time -v -o [% time %] -a \
+    cutadapt \
+      [% type_flag %] [% adapter_string %] [% arbitrary %] \
+      [% min_flag %] [% output_string %] \
+      -n [% max_removed %] [% max_error %] [% max_flag %] [% untrimmed_string %] \
+      [% input_string %] \
+      2>[% stderr %] \
+      1>[% stdout %]
+[% compress_string %]

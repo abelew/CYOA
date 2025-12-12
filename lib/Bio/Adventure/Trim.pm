@@ -33,31 +33,21 @@ use Bio::SeqIO;
 =cut
 sub Cogent {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         modules => ['cogent'],
         required => ['input', 'species', 'input_umi'],
-        jcpu => 4,
-        jprefix => '01',
-        jmem => 24,
-        jwalltime => 36,
         type => 'Stranded_UMI',);
-    my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Path_Info($options->{input});
     my $cwd_name = basename(cwd());
     my @input_filenames = split(/$options->{delimiter}/, $options->{input});
-    my $output_dir = qq"outputs/$options->{jprefix}cogent";
-    my $comment = qq!## This is a cogent demultiplexing/trimming job.
-!;
-    my $stdout = qq"${output_dir}/cogent.stdout";
-    my $stderr = qq"${output_dir}/cogent.stderr";
-    my $jstring = qq!mkdir -p ${output_dir}
-cogent demux \\
+    my $stdout = qq"$paths->{output_dir}/cogent.stdout";
+    my $stderr = qq"$paths->{output_dir}/cogent.stderr";
+    my $jstring = qq!cogent demux \\
   -i $input_filenames[0] \\
   -p $input_filenames[1] \\
   -b $options->{input_umi} \\
   -t $options->{type} \\
-  -o ${output_dir}/demux \\
+  -o $paths->{output_dir}/demux \\
   -n $options->{jcpu} \\
   2>${stderr} 1>${stdout}
 test=\$?
@@ -68,9 +58,9 @@ else
   exit \$?
 fi
 cogent analyze \\
-  -i ${output_dir}/demux \\
+  -i $paths->{output_dir}/demux \\
   -g $options->{species} \\
-  -o ${output_dir}/analyze \\
+  -o $paths->{output_dir}/analyze \\
   -t $options->{type} \\
   --threads $options->{jcpu} \\
   2>>${stderr} 1>>${stdout}
@@ -83,12 +73,9 @@ else
 fi
 !;
     my $cogent = $class->Submit(
-        comment => $comment,
-        jcpu => $options->{jcpu},
         jdepends => $options->{jdepends},
-        jname => "cogent_${job_name}",
-        jqueue => 'large',
         jstring => $jstring,
+        outputs => $outputs,
         stdout => $stdout,
         stderr => $stderr,);
     return($cogent);
@@ -105,144 +92,109 @@ fi
 =cut
 sub Cutadapt {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
-        args => \%args,
-        required => ['input'],
-        arbitrary => undef,
-        maxlength => 42,
-        maxerr => 0.1,
-        maxremoved => 3,
-        minlength => 8,
-        left => undef,
-        right => undef,
-        either => undef,
-        type => 'rnaseq',
-        jmem => 12,
-        jwalltime => '48:00:00',
-        jprefix => '12',);
-    my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Path_Info($options->{input});
-    my $minlength = $options->{minlength};
+    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars();
+    my $paths = $function_info->{paths};
+    my $inputs = $function_info->{inputs};
+    my $options = $class->current_state;
+    my $extra_args = $class->Passthrough_Args(arbitrary => $options->{arbitrary});
+    my $num_inputs = scalar(@{$inputs});
+
+    my $adapter_string = q{};
+    if ($options->{any_adapter}) {
+        $adapter_string .= qq"-a $options->{any_adapter} ";
+    }
+    if ($options->{left_adapter}) {
+        $adapter_string .= qq"-b $options->{left_adapter} ";
+    }
+    if ($options->{right_adapter}) {
+        $adapter_string .= qq"-g $options->{right_adapter} ";
+    }
     my $maxlength = $options->{maxlength};
-    my $arbitrary = '';
-    if (defined($options->{arbitrary})) {
-        $arbitrary = $options->{arbitrary};
-    }
-
-    my $input = $options->{input};
-    my @suffixes = split(/\,/, $options->{suffixes});
-    my $basename = basename($input, @suffixes);
-    $basename = basename($basename, @suffixes);
-    my $adapter_flags = "";
-
+    my $minlength = $options->{minlength};
     if ($options->{type} eq 'old_tnseq') {
-        $adapter_flags = ' -a ACAGGTTGGATGATAAGTCCCCGGTCTGACACATC -a ACAGTCCCCGGTCTGACACATCTCCCTAT -a ACAGTCCNCGGTCTGACACATCTCCCTAT ';
+        $adapter_string = $options->{old_tnseq_adapter};
         $maxlength = 20;
-    }
-    elsif ($options->{type} eq 'riboseq') {
-        $adapter_flags = ' -a ACAGGTTGGATGATAAGTCCCCGGTCTGACACATCTCCCTAT -a AGATCGGAAGAGCACACGTCTGAAC -b AGATCGGAAGAGCACACGTCTGAAC ';
+    } elsif ($options->{type} eq 'old_riboseq') {
+        $adapter_string = $options->{old_riboseq_adapter};
         $minlength = 16;
         $maxlength = 42;
     }
-    else {
-        $minlength = 30;
-        $maxlength = undef;
-        $adapter_flags = ' -a ACAGGTTGGATGATAAGTCCCCGGTCTGACACATCTCCCTAT -a AGATCGGAAGAGCACACGTCTGAAC -b AGATCGGAAGAGCACACGTCTGAAC ';
-    }
 
-    my $comment = qq!## This script makes use of biopieces and cutadapt to trim away adapters
-## and separate the sequence file into a few pieces depending on size
-## and adapter status.  It also performs some simple graphs of the data.!;
-    my $out_dir = qq"outputs/$options->{jprefix}cutadapt";
-    my $stderr = qq"${out_dir}/cutadapt.stderr";
-    my $stdout = qq"${out_dir}/cutadapt.stdout";
-    my $type_flag = '';
-    my $out_suffix = 'fastq';
-    my $input_fc = Bio::Adventure::Get_FC(input => $input);
-    my $input_flags = qq"${input_fc} | cutadapt - ";
-    if ($input =~ /\.csfasta/) {
-        $type_flag = '-c -t --strip-f3';
-        $options = $class->Get_Vars(
-            args => \%args,
-            required => ['qual'],
-        );
-        $input_flags = qq"${input_fc} | cutadapt - $options->{qual} "; ## If we are keeping quality files
-        $out_suffix = 'fastq';
-    }
-    my $minarg = '';
-    my $too_short = undef;
+    my $min_flag = q{};
     if ($minlength) {
-        $too_short = qq"${out_dir}/${basename}_too_short.${out_suffix}";
-        $minarg = qq" -m ${minlength} --too-short-output=${too_short}";
+        $min_flag = qq"-m ${minlength} --too-short-output=$paths->{too_short_r1}";
     }
-    my $maxarg = '';
-    my $too_long = undef;
+    my $max_flag = q{};
     if ($maxlength) {
-        $too_long = qq"${out_dir}/${basename}_too_long.${out_suffix}";
-        $maxarg = qq" -M ${maxlength} --too-long-output=${too_long}";
-    }
-    my $maxerr = '';
-    if ($options->{maxerr}) {
-        $maxerr = qq" -e $options->{maxerr}";
-    }
-    my $output = qq"${out_dir}/${basename}-trimmed_ca.${out_suffix}";
-    my $compressed_out = qq"${output}.xz";
-    my $jstring = qq!## I am putting the args in an odd order in case some are not defined.
-mkdir -p ${out_dir}
-${input_flags} \\
-  ${type_flag} ${adapter_flags} ${arbitrary} \\
-  -o ${output} ${minarg} \\
-  -n $options->{maxremoved} ${maxerr} ${maxarg} \\
-  --untrimmed-output=${out_dir}/${basename}_untrimmed.${out_suffix} \\
-  2>${stderr} \\
-  1>${stdout}
-xz -9e -f ${output}
-xz -9e -f ${out_dir}/${basename}_untrimmed.${out_suffix}
-!;
-    if (defined($too_short)) {
-        $jstring .= qq!
-xz -9e -f ${too_short}
-!;
-    }
-    if (defined($too_long)) {
-        $jstring .= qq!
-xz -9e -f ${too_long}
-!;
+        $max_flag = qq"-M ${maxlength} --too-long-output=$paths->{too_long_r1}";
     }
 
-    my $cutadapt = $class->Submit(
-        comment => $comment,
-        input => $input,
-        jmem => $options->{jmem},
-        jname => qq"cutadapt_${job_name}",
-        jprefix => $options->{jprefix},
-        jqueue => 'workstation',
-        jstring => $jstring,
-        jwalltime => '8:00:00',
-        stderr => $stderr,
-        stdout => $stdout,
-        prescript => $options->{prescript},
-        postscript => $options->{postscript},
-        output => $compressed_out,);
-    my $additional_jobs = 0;
-    if ($options->{type} eq 'old_tnseq') {
-        $additional_jobs += 1;
-        my $ta_check = $class->Bio::Adventure::TNSeq::TA_Check(
-            comment => '## Check that TAs exist.',
-            input => $compressed_out,
-            jdepends => $cutadapt->{job_id},
-            jname => qq"tacheck_${job_name}",
-            jprefix => qq"$options->{jprefix}_${additional_jobs}",);
-        $cutadapt->{tacheck} = $ta_check;
+    ## Define input/output strings here, then fill in the exceptions.
+    my $input_string = q{};
+    my $output = qq"$paths->{output_r1}";
+    my $output_string = q{};
+    my $untrimmed_string = qq"--untrimmed-output=$paths->{untrimmed_r1}";
+    my $compress_string = qq"xz -9e -f $paths->{output_r1}\n";
+    if ($options->{separate}) {
+        $compress_string .= qq"xz -9e -f $paths->{untrimmed_r1}\n";
     }
-    $additional_jobs += 1;
-    print "Running cutadapt_stats with $stdout\n";
+
+    if ($num_inputs == 1) {
+        $input_string = Bio::Adventure::Get_FD(input => $inputs->[0]->{fullpath});
+        my $r1_base = $inputs->[0]->{filebase_extension};
+        if ($options->{compress}) {
+            $output .= '.xz';
+            $compress_string = qq"
+xz -9e -f $paths->{output_r1}
+";
+        }
+        $output_string = qq"-o $paths->{output_r1}";
+    } elsif ($num_inputs == 2) {
+        my $r1_fd = $class->Get_FD(input => $inputs->[0]->{fullpath});
+        my $r2_fd = $class->Get_FD(input => $inputs->[1]->{fullpath});
+        $input_string = qq"${r1_fd} ${r2_fd}";
+        $output_string = qq"-o $paths->{output_r1} -p $paths->{output_r2}";
+        if ($options->{separate}) {
+            $untrimmed_string .= qq" --untrimmed-paired-output=$paths->{untrimmed_r2}";
+            $compress_string .= qq"xz -9e -f $paths->{untrimmed_r2}\n";
+        }
+        if ($minlength) {
+            $min_flag .= qq" --too-short-paired-output=$paths->{too_short_r2}";
+        }
+        if ($maxlength) {
+            $max_flag .= qq" --too-long-paired-output=$paths->{too_long_r2}";
+        }
+        $compress_string .= qq"xz -9e -f  $paths->{output_r2}\n";
+    } else {
+        croak("This requires either 1 or 2 inputs, not ${num_inputs}.\n");
+    }
+
+
+    if ($options->{maxerr}) {
+        $options->{maxerr} = qq"-e $options->{maxerr}";
+    }
+
+    ## Set up the template here.
+    my %template_args = ();
+    for my $k (keys %{$paths}) {
+        $template_args{$k} = $paths->{$k}
+    }
+    $template_args{type_flag} = '';
+    $template_args{adapter_string} = $adapter_string;
+    $template_args{min_flag} = $min_flag;
+    $template_args{output_string} = $output_string;
+    $template_args{max_error} = $options->{max_error};
+    $template_args{max_flag} = $max_flag;
+    $template_args{untrimmed_string} = $untrimmed_string;
+    $template_args{input_string} = $input_string;
+    $template_args{compress_string} = $compress_string;
+    my $updated = $class->Bio::Adventure::Config::Update_Spec(
+        function_info => $function_info,
+        template_args => \%template_args,);
+    my $cutadapt = $class->Submit();
     my $stats = $class->Bio::Adventure::Metadata::Cutadapt_Stats(
-        input => $stdout,
-        jcpu => 1,
-        jmem => 1,
-        jprefix => qq"$options->{jprefix}_${additional_jobs}",
-        jwalltime => '00:03:00',
+        input => $paths->{stderr},
+        input_name => $paths->{output_base},
         jdepends => $cutadapt->{job_id},);
     $cutadapt->{stats} = $stats;
     return($cutadapt);
@@ -311,112 +263,90 @@ One note: it appears that fastp is unable to successfully read from a bash subsh
 =cut
 sub Fastp {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
-        args => \%args,
-        required => ['input'],
-        arbitrary => undef,
-        jmem => 12,
-        jwalltime => '24:00:00',
-        jprefix => '12',);
-    my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Path_Info($options->{input});
-
+    my $function_info = Bio::Adventure::Config::Get_Function_Vars($class);
+    my $paths = $function_info->{paths};
+    my $inputs = $function_info->{inputs};
+    my $options = $class->current_state;
     my $extra_args = $class->Passthrough_Args(arbitrary => $options->{arbitrary});
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
-    my $output_dir = $paths->{output_dir};
     $extra_args .= ' -D ' if ($options->{deduplicate});
     $extra_args .= ' -c ' if ($options->{correction});
     $extra_args .= ' -y ' if ($options->{complexity});
-
-    my $comment = qq!## Run fastp on raw data
-!;
-    my $out_dir = $paths->{output_dir};
-    my $input_flags = '';
+    my $input_string = q{};
     my $num_inputs = scalar(@{$inputs});
-    my $output = '';
-    my $compress_string = '';
+    my $output = q{};
+    my $compress_string = q{};
     if ($num_inputs == 2) {
         my $r1 = $inputs->[0]->{fullpath};
         my $r2 = $inputs->[1]->{fullpath};
+        unless ($r1 =~ /\.fastq$|\.gz$/) {
+            $r1 = $class->Get_FD(input => $r1);
+            $r2 = $class->Get_FD(input => $r2);
+        }
         my $r1_base = $inputs->[0]->{filebase_extension};
         my $r2_base = $inputs->[1]->{filebase_extension};
-        my $output_r1 = qq"${output_dir}/${r1_base}-fastp.fastq";
-        my $output_r2 = qq"${output_dir}/${r2_base}-fastp.fastq";
-        $output = qq"${output_r1}:${output_r2}";
         if ($options->{compress}) {
-            $output = qq"${output_r1}.xz:${output_r2}.xz";
+            $paths->{main} = qq"$paths->{output_r1}.xz:$paths->{output_r2}.xz";
             $compress_string = qq"
-xz -9e -f ${output_r1}
-xz -9e -f ${output_r2}
+xz -9e -f $paths->{output_r1}
+xz -9e -f $paths->{output_r2}
 ";
         }
-        $input_flags = qq" -i ${r1} \\
-  -o ${output_r1} \\
+        $input_string = qq"-i ${r1} \\
+  -o $paths->{output_r1} \\
   -I ${r2} \\
-  -O ${output_r2} ";
+  -O $paths->{output_r2} ";
     } elsif ($num_inputs == 1) {
-        my $r1 = $inputs->[0]->{filename};
+        my $r1 = $inputs->[0]->{fullpath};
+        unless ($r1 =~ /\.fastq$|\.gz$/) {
+            $r1 = $class->Get_FD(input => $r1);
+        }
         my $r1_base = $inputs->[0]->{filebase_extension};
-        my $output_r1 = qq"${output_dir}/${r1_base}-fastp.fastq";
-        $output = $output_r1;
         if ($options->{compress}) {
-            $output = qq"${output_r1}.xz";
+            $output = qq"$paths->{output_r1}.xz";
             $compress_string = qq"
-xz -9e -f ${output_r1}
+xz -9e -f $paths->{output_r1}
 ";
         }
-        $input_flags = qq" -i ${r1} \\
-  -o ${output_r1} ";
+        $input_string = qq"-i ${r1} \\
+  -o $paths->{output_r1}";
     } else {
         die("An unusual number of inputs was provided: ${num_inputs}.");
     }
     my $umi_flags = '';
     if ($options->{umi}) {
-        $umi_flags = ' -U ';
+        $umi_flags = '-U';
     }
-    my $report_flags = qq"-h ${out_dir}/fastp_report.html \\
-  -j ${out_dir}/fastp_report.json";
+    my $report_flags = qq"-h $paths->{report} \\
+  -j $paths->{json}";
 
-    my $jstring = qq!
-mkdir -p ${out_dir}
-trimmed=1
-{
-  /usr/bin/time -v -o $paths->{stdout}.time -a \
-    fastp ${umi_flags} ${input_flags} \\
-      ${report_flags} ${extra_args} \\
-      2>$paths->{stderr} \\
-      1>$paths->{stdout}
-    ${compress_string}
-} || {
-  echo 'fastp failed.' >> $paths->{stderr}
-}
-!;
-
-    my $fastp = $class->Submit(
-        comment => $comment,
-        input => $options->{input},
-        jmem => $options->{jmem},
-        jname => qq"fastp_${job_name}",
-        jprefix => $options->{jprefix},
-        jstring => $jstring,
-        jwalltime => '8:00:00',
-        output => $output,
-        stderr => $paths->{stderr},
-        stdout => $paths->{stdout},
-        prescript => $options->{prescript},
-        postscript => $options->{postscript},);
+    ## Set up the template here.
+    my %template_args = ();
+    for my $k (keys %{$paths}) {
+        $template_args{$k} = $paths->{$k};
+    }
+    $template_args{umi_flags} = $umi_flags;
+    $template_args{input_string} = $input_string;
+    $template_args{report_flags} = $report_flags;
+    $template_args{extra_args} = $extra_args;
+    $template_args{compress_string} = $compress_string;
+    my $updated = $class->Bio::Adventure::Config::Update_Spec(
+        function_info => $function_info,
+        template_args => \%template_args,);
+    my $fastp = $class->Submit();
+    my $stats = $class->Bio::Adventure::Metadata::Fastp_Stats(
+        input => $paths->{stderr},
+        input_name => $paths->{output_base},
+        jdepends => $fastp->{job_id},);
+    $fastp->{stats} = $stats;
     return($fastp);
 }
 
 sub PolyA_Extractor {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         min_A => 10,
         min_seq => 10,
-        jmem => 24,
-        jprefix => '10',
-        jwalltime => '40:00:00',
         output => qq"outputs/10polyA_extracted/polyA_reads.fastq",
         required => ['input', ],);
     my $output_dir;
@@ -428,7 +358,6 @@ sub PolyA_Extractor {
         $output_dir = qq"outputs/$options->{jprefix}polyA_extracted";
         $final_output = qq"${output_dir}/poyA_reads.fastq";
     }
-    my $paths = $class->Get_Path_Info($final_output);
     my @inputs = ();
     if ($options->{input} =~ /$options->{delimiter}/) {
         @inputs = split(/$options->{delimiter}/, $options->{input});
@@ -440,8 +369,7 @@ sub PolyA_Extractor {
     my $comment = qq"## Extract polyA reads from a sequencing file. This currently assumes an unstranded library.";
     my $polyA;
     for my $input_file (@inputs) {
-        my $job_name = $class->Get_Job_Name(input => $input_file);
-        my $jname = qq"polyAextract_${job_name}";
+        my $jname = qq"polyAextract_$options->{job_basename}";
         my $jstring = qq!
 use Bio::Adventure;
 use Bio::Adventure::Trim;
@@ -455,18 +383,15 @@ my \$result = \$h->Bio::Adventure::Trim::PolyA_Extractor_Worker(
   output_dir => '${output_dir}',);
 !;
         $polyA = $class->Submit(
-            comment => $comment,
             input => $input_file,
             jdepends => $options->{jdepends},
-            jmem => $options->{jmem},
-            jname => $jname,
-            jprefix => $options->{jprefix},
             jstring => $jstring,
             language => 'perl',
             min_A => $options->{min_A},
             min_seq => $options->{min_seq},
             output => $final_output,
             output_dir => $output_dir,
+            outputs => $outputs,
             stdout => $stdout,
             stderr => $stderr,);
         $options->{jdepends} = $polyA->{job_id};
@@ -476,12 +401,9 @@ my \$result = \$h->Bio::Adventure::Trim::PolyA_Extractor_Worker(
 
 sub PolyA_Extractor_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         length => 1000000,
-        jmem => 24,
-        jprefix => '10',
-        jwalltime => '40:00:00',
         min_A => 10,
         min_seq => 10,
         required => ['input', ],);
@@ -509,13 +431,11 @@ sub PolyA_Extractor_Worker {
         my $new_seq = '';
         if ($sequence =~ /A{$options->{min_A},}$/) {
             $match_begin = $-[0];
-        }
-        elsif ($sequence =~ /^T{$options->{min_A},}/) {
+        } elsif ($sequence =~ /^T{$options->{min_A},}/) {
             $seq = $seq->revcom;
             $sequence = $seq->seq;
             $match_begin = $len - $+[0];
-        }
-        else {
+        } else {
             ##print $log "No match.\n";
             next FQ;
         }
@@ -546,15 +466,11 @@ sub PolyA_Extractor_Worker {
 =cut
 sub Racer {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         compress => 1,
         length => 1000000,
-        jmem => 24,
-        jprefix => '10',
-        jwalltime => '40:00:00',
         required => ['input', ],);
-    my $job_name = $class->Get_Job_Name();
     my $input = $options->{input};
     my @input_list = split(/$options->{delimiter}/, $input);
     my @suffixes = ('.fastq', '.gz', '.xz');
@@ -565,9 +481,6 @@ sub Racer {
         my $shorted = basename($in, @suffixes);
         push(@base_list, basename($shorted, @suffixes));
     }
-    my $comment = qq!## This calls RACER to try to remove
-## arbitrary errors in sequencing data.
-!;
     my $jstring = qq'';
     my $output_dir = qq"outputs/$options->{jprefix}racer";
     my @created = make_path($output_dir);
@@ -580,8 +493,7 @@ sub Racer {
         if ($decompress_input) {
             my $input_fc = Bio::Adventure::Get_FC(input => $input_list[$c]);
             $jstring .= qq"${input_fc} > ${name}.fastq\n";
-        }
-        else {
+        } else {
             $jstring .= qq!ln -sf "\$(pwd)"/$input_list[$c] ${name}.fastq\n!;
         }
         $jstring .= qq"RACER \\
@@ -597,8 +509,7 @@ echo \"Finished correction of $input_list[$c].\" >> ${stdout}
             $jstring .= qq"xz -9e -f ${output}
 ";
             push(@output_files, "${output}.xz");
-        }
-        else {
+        } else {
             push(@output_files, "${output}");
         }
     }
@@ -610,18 +521,12 @@ echo \"Finished correction of $input_list[$c].\" >> ${stdout}
     $output =~ s/\:$//g;
 
     my $racer = $class->Submit(
-        comment => $comment,
         input => $input,
-        jcpu => 4,
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => "racer_${job_name}",
-        jprefix => $options->{jprefix},
-        jqueue => 'workstation',
         jstring => $jstring,
-        jwalltime => '12:00:00',
         prescript => $options->{prescript},
         postscript => $options->{postscript},
+        outputs => $outputs,
         output => $output,
         stdout => $stdout,
         stderr => $stderr);
@@ -640,22 +545,17 @@ echo \"Finished correction of $input_list[$c].\" >> ${stdout}
 =cut
 sub Trimomatic {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input',],
         compress => 1,
         input_paired => undef,
         length => 50,
-        quality => '20',
-        jcpu => 4,
-        jmem => 12,
-        jprefix => '01',
-        jwalltime => '36:00:00',);
+        quality => '20',);
     my $trim;
     if ($options->{input} =~ /$options->{delimiter}/) {
         $trim = $class->Bio::Adventure::Trim::Trimomatic_Pairwise(%{$options});
-    }
-    else {
+    } else {
         $trim = $class->Bio::Adventure::Trim::Trimomatic_Single(%{$options});
     }
     return($trim);
@@ -668,23 +568,14 @@ sub Trimomatic {
 =cut
 sub Trimomatic_Pairwise {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         compress => 1,
-        jcpu => 4,
-        jmem => 24,
-        jprefix => '01',
-        jwalltime => '48:00:00',
         length => 50,
         quality => '20',
         required => ['input',],);
-    my $job_name = $class->Get_Job_Name();
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
-    my $output_dir = $paths->{output_dir};
     my $exe = undef;
     my $found_exe = 0;
-    my %modules = Bio::Adventure::Get_Modules(caller => 1);
-    my $loaded = $class->Module_Loader(%modules);
     my %exe_list = (trimomatic => 'trimomatic PE',
                     TrimmomaticSE => 'TrimmomaticPE',
                     TrimomaticSE => 'TrimmomaticPE',
@@ -726,13 +617,13 @@ sub Trimomatic_Pairwise {
         my $r2_fd = $class->Get_FD(input => $r2);
         $reader = qq"${r1_fd} ${r2_fd}";
     }
-    my $r1o = qq"${output_dir}/${r1b}-trimmed.fastq";
-    my $r1op = qq"${output_dir}/${r1b}-trimmed_paired.fastq";
-    my $r1ou = qq"${output_dir}/${r1b}-trimmed_unpaired.fastq";
+    my $r1o = qq"$paths->{output_dir}/${r1b}-trimmed.fastq";
+    my $r1op = qq"$paths->{output_dir}/${r1b}-trimmed_paired.fastq";
+    my $r1ou = qq"$paths->{output_dir}/${r1b}-trimmed_unpaired.fastq";
 
-    my $r2o = qq"${output_dir}/${r2b}-trimmed.fastq";
-    my $r2op = qq"${output_dir}/${r2b}-trimmed_paired.fastq";
-    my $r2ou = qq"${output_dir}/${r2b}-trimmed_unpaired.fastq";
+    my $r2o = qq"$paths->{output_dir}/${r2b}-trimmed.fastq";
+    my $r2op = qq"$paths->{output_dir}/${r2b}-trimmed_paired.fastq";
+    my $r2ou = qq"$paths->{output_dir}/${r2b}-trimmed_unpaired.fastq";
 
     my $leader_trim = '';
     #if ($options->{task} eq 'dnaseq') {
@@ -757,19 +648,13 @@ xz -9e -f ${r2ou}
 ## Recompress the paired reads.
 xz -9e -f ${r1o}
 xz -9e -f ${r2o}
-ln=\$(cd ${output_dir} && ln -sf ${r1b}-trimmed.fastq.xz r1_trimmed.fastq.xz)
-ln=\$(cd ${output_dir} && ln -sf ${r2b}-trimmed.fastq.xz r2_trimmed.fastq.xz)
+ln=\$(cd $paths->{output_dir} && ln -sf ${r1b}-trimmed.fastq.xz r1_trimmed.fastq.xz)
+ln=\$(cd $paths->{output_dir} && ln -sf ${r2b}-trimmed.fastq.xz r2_trimmed.fastq.xz)
 ";
     }
-
-    my $comment = qq!## This call to trimomatic removes illumina and epicentre adapters from ${input}.
-## It also performs a sliding window removal of anything with quality <25;
-## cutadapt provides an alternative to this tool.
-## The original sequence data is recompressed and saved in the sequences/ directory.!;
-    my $stdout = qq"${output_dir}/${basename}-trimomatic.stdout";
-    my $stderr = qq"${output_dir}/${basename}-trimomatic.stderr";
-    my $jstring = qq!mkdir -p ${output_dir}
-## Note that trimomatic prints all output and errors to STDERR, so send both to output
+    my $stdout = qq"$paths->{output_dir}/${basename}-trimomatic.stdout";
+    my $stderr = qq"$paths->{output_dir}/${basename}-trimomatic.stderr";
+    my $jstring = qq!## Note that trimomatic prints all output and errors to STDERR, so send both to output
 ${exe} \\
   -threads 1 \\
   -phred33 \\
@@ -780,7 +665,7 @@ ${exe} \\
   SLIDINGWINDOW:4:$options->{quality} MINLEN:$options->{length} \\
   1>${stdout} \\
   2>${stderr}
-excepted=\$( { grep "Exception" "${output_dir}/${basename}-trimomatic.stdout" || test \$? = 1; } )
+excepted=\$( { grep "Exception" "$paths->{output_dir}/${basename}-trimomatic.stdout" || test \$? = 1; } )
 ## The following is in case the illumina clipping fails, which it does if this has already been run I think.
 if [[ "\${excepted}" \!= "" ]]; then
   ${exe} \\
@@ -789,7 +674,7 @@ if [[ "\${excepted}" \!= "" ]]; then
     ${reader} \\
     ${r1op} ${r1ou} \\
     ${r2op} ${r2ou} \\
-    ${leader_trim} SLIDINGWINDOW:4:25 MINLEN:$options->{length} \\
+    ${leader_trim} SLIDINGWINDOW:4:$options->{quality} MINLEN:$options->{length} \\
     1>${stdout} \\
     2>${stderr}
 fi
@@ -805,34 +690,22 @@ mv ${r2op} ${r2o}
     ## Input Read Pairs: 10000 Both Surviving: 9061 (90.61%) Forward Only Surviving: 457 (4.57%) Reverse Only Surviving: 194 (1.94%) Dropped: 288 (2.88%)
     ## Perhaps I can pass this along to Get_Stats()
     my $trim = $class->Submit(
-        args => \%args,
-        comment => $comment,
+        args => $options,
         input => $input,
-        jcpu => $options->{jcpu},
-        jmem => $options->{jmem},
-        jname => qq"trim_${job_name}",
-        jprefix => $options->{jprefix},
-        jqueue => 'workstation',
         jstring => $jstring,
-        jwalltime => $options->{jwalltime},
         length => $options->{length},
-        output => $output,
+        outputs => $outputs,
+        main => $output,
         output_unpaired => $output_unpaired,
         prescript => $options->{prescript},
-        postscript => $options->{postscript},
-        stdout => $stdout,
-        stderr => $stderr);
+        postscript => $options->{postscript},);
     my $new_prefix = qq"$options->{jprefix}_1";
     my $trim_stats = $class->Bio::Adventure::Metadata::Trimomatic_Stats(
         basename => $basename,
         jdepends => $trim->{job_id},
-        jcpu => 1,
-        jprefix => $new_prefix,
-        jname => "trst_${job_name}",
-        jwalltime => '00:03:00',
-        pairwise => 1,
-        input => $stderr,
-        output_dir => $output_dir,);
+        input => $outputs->{stderr},
+        output_dir => $paths->{output_dir},
+        pairwise => 1,);
     $trim->{stats} = $trim_stats;
     return($trim);
 }
@@ -844,23 +717,15 @@ mv ${r2op} ${r2o}
 =cut
 sub Trimomatic_Single {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input',],
         compress => 1,
-        jmem => 24,
-        jcpu => 4,
-        jprefix => '01',
-        jwalltime => '48:00:00',
         length => 50,
         quality => '20',
         required => ['input',],);
     my $exe = undef;
     my $found_exe = 0;
-    my %modules = Bio::Adventure::Get_Modules(caller => 1);
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
-    my $output_dir = $paths->{output_dir};
-    my $loaded = $class->Module_Loader(%modules);
     my %exe_list = (trimomatic => 'trimomatic SE',
                     TrimmomaticSE => 'TrimmomaticSE',
                     TrimomaticSE => 'TrimmomaticSE',
@@ -874,68 +739,47 @@ sub Trimomatic_Single {
         die('Unable to find the trimomatic executable.');
     }
     my $adapter_file = dist_file('Bio-Adventure', 'genome/adapters.fa');
+    if (defined($options->{adapter_file})) {
+        $adapter_file = $options->{adapter_file};
+    }
     my $leader_trim = "";
     #if (defined($options->{task}) && $options->{task} eq 'dnaseq') {
     #    $leader_trim = 'HEADCROP:20 LEADING:3 TRAILING:3';
     #}
-
     my $input = $options->{input};
     my $basename = $input;
     $basename = basename($basename, ('.gz', '.xz', '.bz2'));
     $basename = basename($basename, ('.fastq'));
-    my $job_name = $class->Get_Job_Name();
-    my $output = qq"${output_dir}/${basename}-trimmed.fastq";
-    my $comment = qq!## This call to trimomatic removes illumina and epicentre adapters from ${input}.
-## It also performs a sliding window removal of anything with quality <25;
-## cutadapt provides an alternative to this tool.
-## The original sequence data is recompressed and saved in the sequences/ directory.!;
-    my $stdout = qq"${output_dir}/${basename}-trimomatic.stdout";
-    my $stderr = qq"${output_dir}/${basename}-trimomatic.stderr";
     my $r1_fd = $class->Get_FD(input => $input);
-    my $jstring = qq!mkdir -p ${output_dir}
-## Note that trimomatic prints all output and errors to STDERR, so send both to output
+    my $jstring = qq!## Note that trimomatic prints all output and errors to STDERR, so send both to output
 ${exe} \\
   -phred33 \\
   ${r1_fd} \\
-  ${output} \\
+  $outputs->{main} \\
   ${leader_trim} ILLUMINACLIP:${adapter_file}:2:30:10 \\
-  SLIDINGWINDOW:4:25 MINLEN:$options->{length} \\
-  1>${stdout} 2>${stderr}
+  SLIDINGWINDOW:4:$options->{quality} MINLEN:$options->{length} \\
+  1>$outputs->{stdout} 2>$outputs->{stderr}
 !;
     my $compress_string = '';
     if ($options->{compress}) {
         $compress_string = qq"
 ## Compress the trimmed reads.
-xz -9e -f ${output}
-ln=\$(cd ${output_dir} &&ln -sf ${basename}-trimmed.fastq.xz r1_trimmed.fastq.xz)
+xz -9e -f $outputs->{main}
+ln=\$(cd $paths->{output_dir} && ln -sf ${basename}-trimmed.fastq.xz r1_trimmed.fastq.xz)
 ";
     }
     $jstring .= $compress_string;
     my $trim = $class->Submit(
-        comment => $comment,
+        args => $options,
         input => $input,
-        jcpu => $options->{jcpu},
-        jmem => $options->{jmem},
-        jname => qq"trim_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        jwalltime => $options->{jwalltime},
         length => $options->{length},
-        output => $output,
-        output_unpaired => '',
-        prescript => $options->{prescript},
-        postscript => $options->{postscript},
-        stderr => $stderr,
-        stdout => $stdout,);
+        outputs => $outputs,
+        output_unpaired => '',);
     my $trim_stats = $class->Bio::Adventure::Metadata::Trimomatic_Stats(
+        input => $outputs->{stderr},
         basename => $basename,
-        input => $stderr,
-        jcpu => 1,
         jdepends => $trim->{job_id},
-        jname => qq"trst_${job_name}",
-        jprefix => '06',
-        jwalltime => '00:03:00',
-        output_dir => $output_dir,
     );
     $trim->{stats} = $trim_stats;
     return($trim);
@@ -943,20 +787,15 @@ ln=\$(cd ${output_dir} &&ln -sf ${basename}-trimmed.fastq.xz r1_trimmed.fastq.xz
 
 sub Umi_Tools_Dedup {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
-        jmem => 48,
-        jwalltime => '36:00:00',
-        count => 1,
-        jprefix => '04',);
+        count => 1,);
     my $jname = qq"umi_dedup";
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $stdout = qq"$paths->{output_dir}/umi_dedup.stdout";
     my $stderr = qq"$paths->{output_dir}/umi_dedup.stderr";
     my $output = qq"$paths->{output_dir}/umi_tools_deduplicated.bam";
-    my $jstring = qq!mkdir -p $paths->{output_dir}
-umi_tools dedup \\
+    my $jstring = qq!umi_tools dedup \\
   --output-stats=$paths->{output_dir}/umi_dedup_stats.txt \\
   --buffer-whole-contig \\
   -I $options->{input} \\
@@ -964,14 +803,11 @@ umi_tools dedup \\
   2>${stdout} 1>${stderr}
 samtools index ${output}
 !;
-    my $comment = qq!## This is a umi_tools deduplication script
-!;
     my $umi_job = $class->Submit(
-        comment => $comment,
         jdepends => $options->{jdepends},
         input => $options->{input},
-        jname => $jname,
         jstring => $jstring,
+        outputs => $outputs,
         output => $output,
         stderr => $stderr,
         stdout => $stdout,);
@@ -991,22 +827,17 @@ samtools index ${output}
 
 sub Umi_Tools_Extract {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         extract_method => 'regex',
         extract_string => '^(?P<umi_1>.{8})(?P<discard_1>.{6}).*',
-        required => ['input'],
-        jmem => 20,
-        jprefix => '01',
-        jwalltime => '8:00:00');
+        required => ['input'],);
     my $jname = qq"umi_tools";
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $test_file;
     my $stranded = 'yes';
     my $output = qq"$paths->{output_dir}/r1_extracted.fastq.gz";
     my $umi_input = qq"-I $options->{input}";
     my $umi_output = qq"-S ${output}";
-
     my $paired = 0;
     my @pair_listing = ();
     if ($options->{input} =~ /$options->{delimiter}/) {
@@ -1022,14 +853,12 @@ sub Umi_Tools_Extract {
             my $r2_fd = $class->Get_FD(input => $pair_listing[1]);
             $umi_input = qq"-I ${r1_fd} --read2-in ${r2_fd}";
             $umi_output = qq"-S $paths->{output_dir}/r1_extracted.fastq.gz --read2-out $paths->{output_dir}/r2_extracted.fastq.gz";
-        }
-        else {
+        } else {
             $umi_input = qq"-I $pair_listing[0] --read2-in $pair_listing[1]";
             $umi_output = qq"-S $paths->{output_dir}/r1_extracted.fastq.gz --read2-out $paths->{output_dir}/r2_extracted.fastq.gz";
         }
         $output .= qq":$paths->{output_dir}/r2_extracted.fastq.gz";
-    }
-    else {
+    } else {
         $stranded = 'no';
         $test_file = File::Spec->rel2abs($options->{input});
         if ($test_file =~ /\.[x|b]z$/) {
@@ -1037,9 +866,7 @@ sub Umi_Tools_Extract {
             my $r1_fd = $class->Get_FD(input => $test_file);
             $umi_input = qq" -I ${r1_fd}";
         }
-
     }
-
     my $stdout = qq"$paths->{output_dir}/umi_tools.stdout";
     my $stderr = qq"$paths->{output_dir}/umi_tools.stderr";
     my $jstring = qq!mkdir -p $paths->{output_dir}
@@ -1052,15 +879,11 @@ umi_tools extract \\
  2>${stderr} \\
  1>${stdout}
 !;
-    my $comment = qq!## This is a umi_tools extraction (soon to be deduplication) script
-## currently it supports only the Takara UMI scheme.
-!;
     my $umi_job = $class->Submit(
-        comment => $comment,
         jdepends => $options->{jdepends},
         input => $umi_input,
-        jname => $jname,
         jstring => $jstring,
+        outputs => $outputs,
         output => $output,
         stderr => $stderr,
         stdout => $stdout,);

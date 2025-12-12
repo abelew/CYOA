@@ -39,7 +39,7 @@ use XML::LibXML;
 
 sub Download_Ensembl_Files {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         overwrite => 0,
         species => 'mus_musculus',
     );
@@ -359,11 +359,10 @@ sub Download_Ensembl_Files {
 
 sub Download_NCBI_Assembly {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         required => ['input'],
         term => 'ORGN',
     );
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $output_dir = $paths->{output_dir};
     my $gbk_dir = $paths->{gbk_dir};
     ## The final output filenames, which may be invoked early
@@ -456,12 +455,11 @@ sub Download_NCBI_Assembly {
 =cut
 sub Download_NCBI_Accession {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         ## library => 'nucleotide',
         jprefix => '11',);
-    my $job_name = $class->Get_Job_Name();
     ## Make an array of the accession(s)
     my @unique = ();
     if (-f $options->{input}) {
@@ -493,7 +491,6 @@ sub Download_NCBI_Accession {
             -retmax => 10000,
             -db => $db, -term => $options->{input},);
         my @found_ids = $eutil->get_ids;
-        use Data::Dumper;
         if (scalar(@found_ids) >= 1) {
             print "Found @unique in ${db} with @found_ids\n";
             $found++;
@@ -578,7 +575,7 @@ A good test bioproject: PRJNA799123 and the sample SRR17686731 vs. SRR17686732
 =cut
 sub Download_SRA_PRJNA {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         jname => 'prjnadownload',
@@ -732,12 +729,11 @@ sub Download_SRA_PRJNA {
 
 sub Download_NCBIDatasets_Accession {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         delete => 0,
         required => ['input'],
         jprefix => '11',);
-    my $job_name = $class->Get_Job_Name();
     ## Make an array of the accession(s)
     my $mech = WWW::Mechanize->new(autocheck => 1);
     my $url = qq"https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/$options->{input}/download?include_annotation_type=GENOME_FASTA&include_annotation_type=GENOME_GFF&include_annotation_type=RNA_FASTA&include_annotation_type=CDS_FASTA&include_annotation_type=PROT_FASTA&include_annotation_type=GENOME_GBFF&include_annotation_type=SEQUENCE_REPORT&hydrated=FULLY_HYDRATED";
@@ -792,13 +788,12 @@ sub Download_NCBIDatasets_Accession {
 =cut
 sub Fastq_Dump {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         output => undef);
     my $fastq_comment = qq"## This script should download an sra accession to local fastq.gz files.
 ";
-    my $job_basename = $class->Get_Job_Name();
     my @inputs = split(/$options->{delimiter}/, $options->{input});
     my @outputs = ();
     my $first_output = undef;
@@ -893,7 +888,7 @@ fastq-dump --outdir ${in} --gzip --skip-technical --readids \\
 =cut
 sub Read_Samples {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input']);
     my $fh = new FileHandle("<$options->{input}");

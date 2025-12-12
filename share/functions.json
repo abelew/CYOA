@@ -1,0 +1,117 @@
+{
+    "Default" : {
+        "modules" : [ "cyoa" ],
+        "required" : [ "input" ],
+        "paths" : {
+            "stderr" : "${output_dir}/stderr",
+            "stdout" : "${output_dir}/stdout",
+            "main" : "${output_dir}/default_output.txt"
+        },
+        "spec" : {
+            "jcomment" : "Default job comment if one was forgotten.",
+            "jcpu" : "1",
+            "jmem" : "8",
+            "jname_prefix" : "default",
+            "jprefix" : "xx",
+            "jwalltime" : "4:00:00"
+        }
+    },
+    "Cutadapt" : {
+        "any_adapter" : "",
+        "any_adapter_comment" : "Adapter to remove from both ends.",
+        "left_adapter" : "",
+        "left_adapter_comment" : "Adapter to remove from both ends.",
+        "right_adapter" : "",
+        "right_adapter_comment" : "Adapter to remove from both ends.",
+        "either" : "0",
+        "either_comment" : "Trim x nt from both sides of each read.",
+        "left" : "0",
+        "left_comment" : "Trim x nt from the left of each read.",
+        "maxerr" : "0.1",
+        "maxerr_comment" : "The maximum error rate from [0-1] above which bases will be trimmed.",
+        "maxlength" : "210",
+        "maxlength_comment" : "Maximum length of a read, this has been quite low (42) for TNSeq.",
+        "maxremoved" : "3",
+        "maxremoved_comment" : "Maximum bases to remove before discarding a read.",
+        "minlength" : "8",
+        "minlength_comment" : "Minimum length of a read, this has been quite low for TNSeq.",
+        "old_tnseq_adapter" : "-a ACAGGTTGGATGATAAGTCCCCGGTCTGACACATC -a ACAGTCCCCGGTCTGACACATCTCCCTAT -a ACAGTCCNCGGTCTGACACATCTCCCTAT",
+        "old_tnseq_adapter_comment" : "Adapters specific to mariner MmeI digested TNSeq libraries.",
+        "old_riboseq_adapter" : "-a ACAGGTTGGATGATAAGTCCCCGGTCTGACACATCTCCCTAT -a AGATCGGAAGAGCACACGTCTGAAC -b AGATCGGAAGAGCACACGTCTGAAC",
+        "old_riboseq_adapter_comment" : "Adapters specific to the old ribosome profiling libraries.",
+        "right" : "0",
+        "right_comment" : "Trim x nt from the right of each read.",
+        "separate" : "0",
+        "separate_comment" : "Boolean to decide if un/trimmed reads should be separated.",
+        "required" : [ "input" ],
+        "modules" : [ "cutadapt" ],
+        "template" : "cutadapt.tt",
+        "paths" : {
+            "stderr" : "${output_dir}/stderr",
+            "stdout" : "${output_dir}/stdout",
+            "output_r1" : "${output_dir}/${r1_base}_cutadapt.${input_suffix}",
+            "output_r2" : "${output_dir}/${r2_base}_cutadapt.${input_suffix}",
+            "too_long_r1" : "${output_dir}/${r1_base}_cutadapt_long.${input_suffix}",
+            "too_long_r2" : "${output_dir}/${r2_base}_cutadapt_long.${input_suffix}",
+            "too_short_r1" : "${output_dir}/${r1_base}_cutadapt_short.${input_suffix}",
+            "too_short_r2" : "${output_dir}/${r2_base}_cutadapt_short.${input_suffix}",
+            "untrimmed_r1" : "${output_dir}/${r1_base}_cutadapt_untrimmed.${input_suffix}",
+            "untrimmed_r2" : "${output_dir}/${r2_base}_cutadapt_untrimmed.${input_suffix}",
+            "main" : "${outputs}",
+        },
+        "spec" : {
+            "jcomment" : "Trim and examine reads via cutadapt.",
+            "jcpu" : "4",
+            "jmem" : "8",
+            "jname_prefix" : "cutadapt",
+            "jprefix" : "02",
+            "jwalltime" : "24:00:00",
+        }
+    },
+    "Fastp" : {
+        "complexity" : "1",
+        "complexity_comment" : "Add a low-complexity filter when filtering sequence?",
+        "correction" : "1",
+        "correction_comment" : "Correct reads when invoking fastp and friends?",
+        "deduplicate" : "1",
+        "deduplicate_comment" : "Perform deduplication in the various tools which are able?",
+        "required" : [ "input" ],
+        "modules" : [ "fastp" ],
+        "template" : "fastp.tt",
+        "paths" : {
+            "stderr" : "${output_dir}/stderr",
+            "stdout" : "${output_dir}/stdout",
+            "output_r1" : "${r1_base}-fastp.fastq",
+            "output_r2" : "${r2_base}-fastp.fastq",
+            "report" : "${output_dir}/fastp_report.html",
+            "json" : "${output_dir}/fastp_report.json",
+            "main" : "${outputs}"
+        },
+        "spec" : {
+            "jcomment" : "Trim and examine reads via fastp.",
+            "jcpu" : "4",
+            "jmem" : "12",
+            "jname_prefix" : "fastp",
+            "jprefix" : "02",
+            "jwalltime" : "24:00:00"
+        }
+    },
+    "Fastp_Stats" : {
+        "required" : [ "input" ],
+        "paired_template" : "fastp_stats_paired.tt",
+        "single_template" : "fastp_stats_single.tt",
+        "paths" : {
+            "stderr" : "${output_dir}/stderr",
+            "stdout" : "${output_dir}/stdout",
+            "main" : "${output_dir}/fastp_stats.csv"
+        },
+        "spec" : {
+            "jcomment" : "Get some stats about the fastp run.",
+            "jcpu" : "1",
+            "jmem" : "1",
+            "jname_prefix" : "fastp_stats",
+            "jprefix" : "02",
+            "jwalltime" : "01:00:00"
+        }
+    }
+}

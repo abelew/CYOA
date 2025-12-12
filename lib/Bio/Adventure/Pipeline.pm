@@ -33,7 +33,7 @@ a very long time.
 =cut
 sub Annotate_Assembly {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input',],);
     my $prefix = sprintf("%02d", 10);
@@ -64,7 +64,7 @@ sub Annotate_Assembly {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "\nRunning prodigal to get RBSes.\n";
     my $prodigal = $class->Bio::Adventure::Feature_Prediction::Prodigal(
-        input => $prokka->{output_assembly},
+        input => $prokka->{outputs}->{assembly},
         jdepends => $last_job,
         jprefix => $prefix,);
     $last_job = $prodigal->{job_id};
@@ -73,7 +73,7 @@ sub Annotate_Assembly {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "\nRunning Jellyfish on the assembly.\n";
     my $jelly = $class->Bio::Adventure::Count::Jellyfish(
-        input => $prokka->{output_assembly},
+        input => $prokka->{outputs}->{assembly},
         jdepends => $last_job,
         jname => 'jelly',
         jprefix => $prefix,);
@@ -83,7 +83,7 @@ sub Annotate_Assembly {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "\nRunning aragorn on the assembly to search for tmRNAs.\n";
     my $aragorn = $class->Bio::Adventure::Feature_Prediction::Aragorn(
-        input => $prokka->{output_assembly},
+        input => $prokka->{outputs}->{assembly},
         jdepends => $last_job,
         jname => 'aragorn',
         jprefix => $prefix,);
@@ -93,7 +93,7 @@ sub Annotate_Assembly {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "\nRunning relaxed tRNAscan to search for tmRNAs.\n";
     my $trnascan = $class->Bio::Adventure::Feature_Prediction::tRNAScan(
-        input => $prokka->{output_assembly},
+        input => $prokka->{outputs}->{assembly},
         jdepends => $last_job,
         jname => 'trnascan',
         arbitrary => ' -r ',
@@ -105,7 +105,7 @@ sub Annotate_Assembly {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "\nInvoking trinotate.\n";
     my $trinotate = $class->Bio::Adventure::Annotation::Trinotate(
-        input => $prokka->{output_cds},
+        input => $prokka->{outputs}->{cds},
         jdepends => $last_job,
         jname => 'trinotate',
         jprefix => $prefix,);
@@ -115,7 +115,7 @@ sub Annotate_Assembly {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "\nSearching for resistance genes with abricate.\n";
     my $abricate = $class->Bio::Adventure::Resistance::Abricate(
-        input => $prokka->{output_cds},
+        input => $prokka->{outputs}->{cds},
         jdepends => $last_job,
         jname => 'abricate',
         jprefix => $prefix,);
@@ -125,7 +125,7 @@ sub Annotate_Assembly {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "\nRunning interproscan.\n";
     my $interpro = $class->Bio::Adventure::Annotation::Interproscan(
-        input => $prokka->{output_peptide},
+        input => $prokka->{outputs}->{peptide},
         jdepends => $last_job,
         jname => 'interproscan',
         jprefix => $prefix,);
@@ -136,15 +136,15 @@ sub Annotate_Assembly {
     print "\nMerging annotation files.\n";
     my $merge = $class->Bio::Adventure::Metadata::Merge_Annotations(
         evalue => undef,
-        input_fsa => $prokka->{output_assembly},
-        input_genbank => $prokka->{output_genbank},
-        input_tsv => $prokka->{output_tsv},
-        input_abricate => $abricate->{output},
-        input_aragorn => $aragorn->{output},
+        input_fsa => $prokka->{outputs}->{assembly},
+        input_genbank => $prokka->{outputs}->{genbank},
+        input_tsv => $prokka->{outputs}->{tsv},
+        input_abricate => $abricate->{outputs}->{output},
+        input_aragorn => $aragorn->{outputs}->{output},
         input_classifier => '',
-        input_interpro => $interpro->{output_tsv},
-        input_prodigal => $prodigal->{output},
-        input_trinotate => $trinotate->{output},
+        input_interpro => $interpro->{outputs}->{tsv},
+        input_prodigal => $prodigal->{outputs}->{output},
+        input_trinotate => $trinotate->{outputs}->{output},
         jdepends => $last_job,
         jname => 'mergeannot',
         jprefix => $prefix,);
@@ -154,7 +154,7 @@ sub Annotate_Assembly {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "\nRunning cgview.\n";
     my $cgview = $class->Bio::Adventure::Visualization::CGView(
-        input => $merge->{output_gbk},
+        input => $merge->{outputs}->{gbk},
         jdepends => $last_job,
         jprefix => $prefix);
     $last_job = $cgview->{job_id};
@@ -163,7 +163,7 @@ sub Annotate_Assembly {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "\nRunning Vienna RNAfold on the assembly.\n";
     my $vienna = $class->Bio::Adventure::Structure::RNAFold_Windows(
-        input => $prokka->{output_assembly},
+        input => $prokka->{outputs}->{assembly},
         jdepends => $last_job,
         jname => 'vienna',
         jprefix => $prefix,);
@@ -188,7 +188,7 @@ sub Annotate_Assembly {
 
 sub Annotate_Phage {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         input_phageterm => '',
         required => ['input']);
@@ -234,7 +234,7 @@ sub Annotate_Phage {
     my $prodigal = $class->Bio::Adventure::Feature_Prediction::Prodigal(
         jdepends => $last_job,
         ## Use output_assembly to avoid having too much clutter on the sequence ID line.
-        input => $prokka->{output_assembly},
+        input => $prokka->{outputs}->{assembly},
         jprefix => $prefix,);
     $last_job = $prodigal->{job_id};
     sleep($options->{jsleep});
@@ -243,7 +243,7 @@ sub Annotate_Phage {
     print "\nRunning glimmer for less stringent ORFs.\n";
     my $glimmer = $class->Bio::Adventure::Feature_Prediction::Glimmer_Single(
         jdepends => $last_job,
-        input => $prokka->{output_assembly},
+        input => $prokka->{outputs}->{assembly},
         jprefix => $prefix,);
     $last_job = $glimmer->{job_id};
     sleep($options->{jsleep});
@@ -252,7 +252,7 @@ sub Annotate_Phage {
     print "\nRunning phanotate.\n";
     my $phanotate = $class->Bio::Adventure::Feature_Prediction::Phanotate(
         jdepends => $last_job,
-        input => $prokka->{output_assembly},
+        input => $prokka->{outputs}->{assembly},
         jprefix => $prefix,);
     $last_job = $phanotate->{job_id};
     sleep($options->{jsleep});
@@ -260,10 +260,10 @@ sub Annotate_Phage {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "\nMerging the CDS predictions and writing an initial gbk file.\n";
     my $cds_merge = $class->Bio::Adventure::Annotation_Genbank::Merge_CDS_Predictions(
-        input => $prokka->{output_genbank},
-        input_glimmer => $glimmer->{output},
-        input_phanotate => $phanotate->{output},
-        input_prodigal => $prodigal->{output_gff},
+        input => $prokka->{outputs}->{genbank},
+        input_glimmer => $glimmer->{outputs}->{output},
+        input_phanotate => $phanotate->{outputs}->{output},
+        input_prodigal => $prodigal->{outputs}->{gff},
         jdepends => $last_job,
         jprefix => $prefix);
     $last_job = $cds_merge->{job_id};
@@ -273,7 +273,7 @@ sub Annotate_Phage {
     print "\nRunning Jellyfish on the assembly.\n";
     my $jelly = $class->Bio::Adventure::Count::Jellyfish(
         jdepends => $last_job,
-        input => $cds_merge->{output_fsa},
+        input => $cds_merge->{outputs}->{fsa},
         jprefix => $prefix,
         jname => 'jelly',);
     $last_job = $jelly->{job_id};
@@ -283,7 +283,7 @@ sub Annotate_Phage {
     print "\nRunning aragorn on the assembly to search for tmRNAs.\n";
     my $aragorn = $class->Bio::Adventure::Feature_Prediction::Aragorn(
         jdepends => $last_job,
-        input => $cds_merge->{output_fsa},
+        input => $cds_merge->{outputs}->{fsa},
         jprefix => $prefix,
         jname => 'aragorn',);
     $last_job = $aragorn->{job_id};
@@ -293,7 +293,7 @@ sub Annotate_Phage {
     print "\n${prefix}: Running relaxed tRNAscan to search for tmRNAs.\n";
     my $trnascan = $class->Bio::Adventure::Feature_Prediction::tRNAScan(
         arbitrary => ' -r ',
-        input => $prokka->{output_assembly},
+        input => $prokka->{outputs}->{assembly},
         jdepends => $last_job,
         jname => 'trnascan',
         jprefix => $prefix,
@@ -305,7 +305,7 @@ sub Annotate_Phage {
     print "\nInvoking trinotate.\n";
     my $trinotate = $class->Bio::Adventure::Annotation::Trinotate(
         config => 'phage.txt',
-        input => $cds_merge->{output_cds},
+        input => $cds_merge->{outputs}->{cds},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'trinotate',);
@@ -318,14 +318,14 @@ sub Annotate_Phage {
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'abricate',
-        input => $cds_merge->{output_cds},);
+        input => $cds_merge->{outputs}->{cds},);
     $last_job = $abricate->{job_id};
     sleep($options->{jsleep});
 
     $prefix = sprintf("%02d", ($prefix + 1));
     print "\nRunning interproscan.\n";
     my $interpro = $class->Bio::Adventure::Annotation::Interproscan(
-        input => $cds_merge->{output_faa},
+        input => $cds_merge->{outputs}->{faa},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'interproscan',);
@@ -335,7 +335,7 @@ sub Annotate_Phage {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "\n${prefix}: Searching for Restriction Sites.\n";
     my $re_search = $class->Bio::Adventure::Phage::Restriction_Catalog(
-        input => $cds_merge->{output_fsa},
+        input => $cds_merge->{outputs}->{fsa},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'restrict',);
@@ -345,7 +345,7 @@ sub Annotate_Phage {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "\n${prefix}: Searching for Phage promoters.\n";
     my $phagepromoter = $class->Bio::Adventure::Feature_Prediction::Phagepromoter(
-        input => $cds_merge->{output_fsa},
+        input => $cds_merge->{outputs}->{fsa},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'phagepromoter',);
@@ -355,7 +355,7 @@ sub Annotate_Phage {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "\n${prefix}: Searching for rho terminators.\n";
     my $rhopredict = $class->Bio::Adventure::Feature_Prediction::Rho_Predict(
-        input => $cds_merge->{output_fsa},
+        input => $cds_merge->{outputs}->{fsa},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'rhopredict',);
@@ -365,7 +365,7 @@ sub Annotate_Phage {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "\n${prefix}: Using bacphlip to classify this phage.\n";
     my $bacphlip = $class->Bio::Adventure::Phage::Bacphlip(
-        input => $cds_merge->{output_fsa},
+        input => $cds_merge->{outputs}->{fsa},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'bacphlip',);
@@ -376,16 +376,16 @@ sub Annotate_Phage {
     print "\nMerging annotation files.\n";
     my $merge = $class->Bio::Adventure::Metadata::Merge_Annotations(
         jdepends => $last_job,
-        input_fsa => $cds_merge->{output_fsa},
-        input_genbank => $cds_merge->{output_gbk},
-        input_tsv => $cds_merge->{output_tsv},
-        input_abricate => $abricate->{output},
-        input_aragorn => $aragorn->{output},
-        input_classifier => $ictv->{output},
-        input_interpro => $interpro->{output_tsv},
+        input_fsa => $cds_merge->{outputs}->{fsa},
+        input_genbank => $cds_merge->{outputs}->{gbk},
+        input_tsv => $cds_merge->{outputs}->{tsv},
+        input_abricate => $abricate->{outputs}->{output},
+        input_aragorn => $aragorn->{outputs}->{output},
+        input_classifier => $ictv->{outputs}->{output},
+        input_interpro => $interpro->{outputs}->{tsv},
         input_phageterm => $options->{input_phageterm},
-        input_prodigal => $prodigal->{output},
-        input_trinotate => $trinotate->{output},
+        input_prodigal => $prodigal->{outputs}->{output},
+        input_trinotate => $trinotate->{outputs}->{output},
         jprefix => $prefix,
         jname => 'mergeannot',);
     $last_job = $merge->{job_id};
@@ -396,16 +396,16 @@ sub Annotate_Phage {
     print "\nMerging annotation files a second time.\n";
     my $merge2 = $class->Bio::Adventure::Metadata::Merge_Annotations(
         jdepends => $last_job,
-        input_fsa => $cds_merge->{output_fsa},
-        input_genbank => $cds_merge->{output_gbk},
-        input_tsv => $cds_merge->{output_tsv},
-        input_abricate => $abricate->{output},
-        input_aragorn => $aragorn->{output},
-        input_classifier => $ictv->{output},
-        input_interpro => $interpro->{output_tsv},
+        input_fsa => $cds_merge->{outputs}->{fsa},
+        input_genbank => $cds_merge->{outputs}->{gbk},
+        input_tsv => $cds_merge->{outputs}->{tsv},
+        input_abricate => $abricate->{outputs}->{output},
+        input_aragorn => $aragorn->{outputs}->{output},
+        input_classifier => $ictv->{outputs}->{output},
+        input_interpro => $interpro->{outputs}->{tsv},
         input_phageterm => $options->{input_phageterm},
-        input_prodigal => $prodigal->{output},
-        input_trinotate => $trinotate->{output},
+        input_prodigal => $prodigal->{outputs}->{output},
+        input_trinotate => $trinotate->{outputs}->{output},
         jprefix => $prefix,
         jname => 'mergeannot2',
         keep_genes => 0,
@@ -419,22 +419,22 @@ sub Annotate_Phage {
     my $cgview = $class->Bio::Adventure::Visualization::CGView(
         jdepends => $last_job,
         jprefix => $prefix,
-        input => $merge->{output_gbk},);
+        input => $merge->{outputs}->{gbk},);
     $last_job = $cgview->{job_id};
     sleep($options->{jsleep});
 
     $prefix = sprintf("%02d", ($prefix + 1));
     print "\n${prefix}: Collecting output files.\n";
     my $collect = $class->Bio::Adventure::Metadata::Collect_Assembly(
-        input_fsa => $merge->{output_fsa},
-        input_genbank => $merge->{output_gbk},
-        input_stripped => $merge2->{output_gbk},
-        input_tbl => $merge->{output_tbl},
-        input_tbl_stripped => $merge2->{output_tbl},
-        input_tsv => $merge->{output_tsv},
-        input_xlsx => $merge->{output_xlsx},
-        input_faa => $cds_merge->{output_faa},
-        input_cds => $cds_merge->{output_cds},
+        input_fsa => $merge->{outputs}->{fsa},
+        input_genbank => $merge->{outputs}->{gbk},
+        input_stripped => $merge2->{outputs}->{gbk},
+        input_tbl => $merge->{outputs}->{tbl},
+        input_tbl_stripped => $merge2->{outputs}->{tbl},
+        input_tsv => $merge->{outputs}->{tsv},
+        input_xlsx => $merge->{outputs}->{xlsx},
+        input_faa => $cds_merge->{outputs}->{faa},
+        input_cds => $cds_merge->{outputs}->{cds},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'collect',);
@@ -445,7 +445,7 @@ sub Annotate_Phage {
 
 sub Riboseq {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species']);
     my $prefix = sprintf("%02d", 0);
@@ -472,7 +472,7 @@ sub Riboseq {
 
     print "\nRunning Biopieces.\n";
     my $pieces = $class->Bio::Adventure::QA::Biopieces_Graph(
-        input => $cutadapt->{output},
+        input => $cutadapt->{outputs}->{output},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'biopieces',);
@@ -481,7 +481,7 @@ sub Riboseq {
 
     print "\nFiltering rRNA reads.\n";
     my $rrna_filter = $class->Bio::Adventure::Map::Bowtie_RRNA(
-        input => $cutadapt->{output},
+        input => $cutadapt->{outputs}->{output},
         species => $options->{species},
         jdepends => $last_job,
         jprefix => $prefix,
@@ -491,7 +491,7 @@ sub Riboseq {
 
     print "\nMapping remaining reads.\n";
     my $map_reads = $class->Bio::Adventure::Map::Bowtie(
-        input => $rrna_filter->{output},
+        input => $rrna_filter->{outputs}->{output},
         species => $options->{species},
         jdepends => $last_job,
         jprefix => $prefix,
@@ -545,7 +545,7 @@ sub Kallisto {
 
 sub Nextflow_RNASeq {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species'],
         profile => 'singularity',
@@ -557,7 +557,6 @@ sub Nextflow_RNASeq {
         jwalltime => '24:00:00',
         jname => 'nfcore_rnaseq',
     );
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $sample_sheet = qq"$paths->{output_dir}/sample_sheet.csv";
     my $ss = FileHandle->new(">${sample_sheet}");
     my $name = basename(cwd());
@@ -574,8 +573,6 @@ ${name},$inputs[0],auto\n";
     $ss->close();
     my $comment = qq!## This is an experiment with nextflow.
 !;
-    my $stderr = qq"$paths->{output_dir}/nf.stderr";
-    my $stdout = qq"$paths->{output_dir}/nf.stdout";
     my $jstring = qq!
 nextflow run nf-core/rnaseq \\
   --input ${sample_sheet} --outdir $paths->{output_dir} \\
@@ -584,7 +581,7 @@ nextflow run nf-core/rnaseq \\
   --featurecounts_feature_type transcript \\
   --featurecounts_feature_type CDS \\
   -profile $options->{profile} \\
-  1>${stdout} 2>${stderr}
+  1>$outputs->{stdout} 2>$outputs->{stderr}
 !;
     my $nf_job = $class->Submit(
         comment => $comment,
@@ -594,9 +591,7 @@ nextflow run nf-core/rnaseq \\
         jcpu => $options->{jcpu},
         jmem => $options->{jmem},
         jname => $options->{jname},
-        output => $stdout,
-        stdout => $stdout,
-        stderr => $stderr,);
+        outputs => $outputs,);
     return($nf_job);
 }
 
@@ -621,7 +616,7 @@ nextflow run nf-core/rnaseq \\
 =cut
 sub Process_DNASeq {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species'],
         compress => 0,
@@ -782,7 +777,7 @@ sub Process_DNASeq {
             print "\n${prefix}: Printing coverage/base with bbmap.\n";
             my $coverage = $class->Bio::Adventure::Assembly::Assembly_Coverage(
                 jdepends => $last_sam_job,
-                input => $trim->{output},
+                input => $trim->{outputs}->{output},
                 jprefix => $prefix,
                 library => $first_species,);
             $jobid = qq"${prefix}bam2cov";
@@ -795,7 +790,7 @@ sub Process_DNASeq {
             print "\n${prefix}: Performing freebayes search against ${first_species}.\n";
             my $first_snp = $class->Bio::Adventure::SNP::Freebayes_SNP_Search(
                 jdepends => $last_sam_job,
-                input => $first_map->{samtools}->{paired_output},
+                input => $first_map->{samtools}->{outputs}->{paired},
                 species => $first_species,
                 gff_type => $first_type,
                 gff_tag => $first_id,
@@ -810,7 +805,7 @@ sub Process_DNASeq {
     unless ($ran_kraken) {
         $prefix = sprintf("%02d", ($prefix + 1));
         my $kraken = $class->Bio::Adventure::Count::Kraken(
-            input => $first_map->{unaligned},  ## Not unaligned_comp$map_input,
+            input => $first_map->{outputs}->{unaligned},  ## Not unaligned_comp$map_input,
             jprefix => $prefix,
             jdepends => $last_sam_job,
             library => $options->{library});
@@ -835,7 +830,7 @@ sub Process_DNASeq {
                 $nth_map = $class->Bio::Adventure::Map::Hisat2(
                     compress => 0,
                     jdepends => $last_job,
-                    input => $first_map->{unaligned},  ## Not unaligned_comp
+                    input => $first_map->{outputs}->{unaligned},  ## Not unaligned_comp
                     introns => 0,
                     ## because compression is at the end.
                     species => $nth_species,
@@ -870,7 +865,7 @@ sub Process_DNASeq {
                         print "\n${prefix}: Performing freebayes search against ${nth_species}.\n";
                         my $nth_snp = $class->Bio::Adventure::SNP::Freebayes_SNP_Search(
                             jdepends => $last_sam_job,
-                            input => $nth_map->{samtools}->{paired_output},
+                            input => $nth_map->{samtools}->{outputs}->{paired},
                             species => $nth_species,
                             gff_type => $nth_type,
                             gff_tag => $nth_id,
@@ -892,10 +887,10 @@ sub Process_DNASeq {
     unless ($options->{compress}) {
         my $compress_files = qq"${map_input}:";
         if (defined($trim)) {
-            $compress_files .= qq"$trim->{output_unpaired}:";
+            $compress_files .= qq"$trim->{outputs}->{unpaired}:";
         }
         if ($do_fastp) {
-            $compress_files .= qq"$fastp->{output}:";
+            $compress_files .= qq"$fastp->{outputs}->{output}:";
         }
         my @compress_arr = split(/:/, $compress_files);
         my $num_files = scalar(@compress_arr);
@@ -913,7 +908,7 @@ sub Process_DNASeq {
         sleep($options->{jsleep});
         if ($options->{mapper} =~ /hisat/) {
             my $compress_first_map = $class->Bio::Adventure::Compress::Compress(
-                input => qq"$first_map->{unaligned}:$first_map->{aligned}",
+                input => qq"$first_map->{outputs}->{unaligned}:$first_map->{outputs}->{aligned}",
                 jdepends => $last_job,
                 jname => 'comp_hisat',
                 jprefix => $prefix,);
@@ -929,7 +924,7 @@ sub Process_DNASeq {
 ## 'job_name' to avoid confusion.
 sub Process_RNAseq {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species'],
         compress => 0,
@@ -940,7 +935,13 @@ sub Process_RNAseq {
         library => 'bacteria',
         sra => 0,
         stranded => 'reverse',);
-    my $prefix = sprintf("%02d", 0);
+    my $prefix = 0;
+    my $increment = 1;
+    if ($options->{jprefix}) {
+        $prefix = $options->{jprefix};
+        $increment = 0;
+    }
+    $prefix = sprintf("%02d", $prefix);
     my $cwd_name = basename(cwd());
     my $ret = {};
     my $jobid;
@@ -957,14 +958,14 @@ sub Process_RNAseq {
         $ret->{$jobid} = $download;
         $last_job = $download->{job_id};
         sleep($options->{jsleep});
-        $options->{input} = $download->{output};
+        $options->{input} = $download->{outputs}->{output};
         $options->{input_paired} = $download->{output_paired};
     }
 
     my $map_input = $options->{input};
     my $map_prereq = $last_job;
     my $trim;
-    $prefix = sprintf("%02d", ($prefix + 1));
+    $prefix = sprintf("%02d", ($prefix + 1)) if ($increment);
     if ($options->{trim}) {
         if (-f "outputs/01trimomatic/r1-trimmed.fastq.xz") {
             print "It appears the trimmer was already run.\n";
@@ -972,9 +973,9 @@ sub Process_RNAseq {
             if (-f "outputs/01trimomatic/r2-trimmed.fastq.xz") {
                 $map_input .= qq":outputs/01trimomatic/r2-trimmed.fastq.xz";
             } else {
-                $trim->{output_unpaired} = $map_input;
+                $trim->{output}->{unpaired} = $map_input;
             }
-            $trim->{output} = $map_input;
+            $trim->{outputs}->{output} = $map_input;
         } else {
             print "\n${prefix}: Starting trimmer.\n";
             $trim = $class->Bio::Adventure::Trim::Trimomatic(
@@ -1007,7 +1008,7 @@ sub Process_RNAseq {
     }
 
     if ($do_fastp) {
-        $prefix = sprintf("%02d", ($prefix + 1));
+        $prefix = sprintf("%02d", ($prefix + 1)) if ($increment);
         print "${prefix}: Starting fastp.\n";
         $fastp = $class->Bio::Adventure::Trim::Fastp(
             input => $options->{input},
@@ -1035,7 +1036,7 @@ sub Process_RNAseq {
 
     if ($do_fastqc) {
         print "${prefix}: Starting fastqc.\n";
-        $prefix = sprintf("%02d", ($prefix + 1));
+        $prefix = sprintf("%02d", ($prefix + 1)) if ($increment);
         my $fastqc = $class->Bio::Adventure::QA::Fastqc(
             input => $options->{input},
             jdepends => $last_job,
@@ -1073,7 +1074,7 @@ sub Process_RNAseq {
     my $nth_salmon;
     my $nth_species;
     my $hisat_compress_input = '';
-    $prefix = sprintf("%02d", ($prefix + 1));
+    $prefix = sprintf("%02d", ($prefix + 1)) if ($increment);
     if ($options->{mapper} =~ /hisat/) {
         print "\n${prefix}: Starting hisat with $map_input.\n";
         $first_map = $class->Bio::Adventure::Map::Hisat2(
@@ -1095,11 +1096,11 @@ sub Process_RNAseq {
         $last_sam_job = $first_map->{samtools}->{job_id};
 
         if ($options->{coverage}) {
-            $prefix = sprintf("%02d", ($prefix + 1));
+            $prefix = sprintf("%02d", ($prefix + 1)) if ($increment);
             print "\n${prefix}: Printing coverage/base with bbmap.\n";
             my $coverage = $class->Bio::Adventure::Assembly::Assembly_Coverage(
                 jdepends => $last_sam_job,
-                input => $trim->{output},
+                input => $trim->{outputs}->{output},
                 libtype => 'genome',
                 jprefix => $prefix,
                 library => $first_species,);
@@ -1108,12 +1109,12 @@ sub Process_RNAseq {
             sleep($options->{jsleep});
         }
 
-        $prefix = sprintf("%02d", ($prefix + 1));
+        $prefix = sprintf("%02d", ($prefix + 1)) if ($increment);
         if ($options->{freebayes}) {
             print "\n${prefix}: Performing freebayes search against ${first_species}.\n";
             my $first_snp = $class->Bio::Adventure::SNP::Freebayes_SNP_Search(
                 jdepends => $last_sam_job,
-                input => $first_map->{samtools}->{paired_output},
+                input => $first_map->{samtools}->{outputs}->{paired},
                 species => $first_species,
                 gff_type => $first_type,
                 gff_tag => $first_id,
@@ -1138,9 +1139,9 @@ sub Process_RNAseq {
         sleep($options->{jsleep});
     }
 
-    $prefix = sprintf("%02d", ($prefix + 1));
+    $prefix = sprintf("%02d", ($prefix + 1)) if ($increment);
     my $kraken = $class->Bio::Adventure::Count::Kraken(
-        input => $first_map->{unaligned},  ## Not unaligned_comp$map_input,
+        input => $first_map->{outputs}->{unaligned},  ## Not unaligned_comp$map_input,
         jprefix => $prefix,
         jdepends => $last_sam_job,
         library => $options->{library});
@@ -1159,13 +1160,13 @@ sub Process_RNAseq {
             $nth_intron = $first_intron unless (defined($nth_intron));
 
             ## Handle if we want to host-filter the data
-            $prefix = sprintf("%02d", ($prefix + 1));
+            $prefix = sprintf("%02d", ($prefix + 1)) if ($increment);
             if ($options->{filter}) {
                 print "\n${prefix}: Performing additional mapping against ${nth_species} with filtering.\n";
                 $nth_map = $class->Bio::Adventure::Map::Hisat2(
                     compress => 0,
                     jdepends => $last_job,
-                    input => $first_map->{unaligned},  ## Not unaligned_comp
+                    input => $first_map->{outputs}->{unaligned},  ## Not unaligned_comp
                     introns => $nth_intron,
                     libtype => 'genome',
                     ## because compression is at the end.
@@ -1198,12 +1199,12 @@ sub Process_RNAseq {
                     $ret->{$jobid} = $nth_map;
                     $last_sam_job = $nth_map->{samtools}->{job_id};
                     sleep($options->{jsleep});
-                    $prefix = sprintf("%02d", ($prefix + 1));
+                    $prefix = sprintf("%02d", ($prefix + 1)) if ($increment);
                     if ($options->{freebayes}) {
                         print "\n${prefix}: Performing freebayes search against ${nth_species}.\n";
                         my $nth_snp = $class->Bio::Adventure::SNP::Freebayes_SNP_Search(
                             jdepends => $last_sam_job,
-                            input => $nth_map->{samtools}->{paired_output},
+                            input => $nth_map->{samtools}->{outputs}->{paired},
                             libtype => 'genome',
                             species => $nth_species,
                             gff_type => $nth_type,
@@ -1234,14 +1235,14 @@ sub Process_RNAseq {
         } ## End iterating over extra species
     } ## End checking for extra species
 
-    $prefix = sprintf("%02d", ($prefix + 1));
+    $prefix = sprintf("%02d", ($prefix + 1)) if ($increment);
     unless ($options->{compress}) {
         my $compress_files = qq"${map_input}:";
         if (defined($trim)) {
-            $compress_files .= qq"$trim->{output_unpaired}:";
+            $compress_files .= qq"$trim->{outputs}->{unpaired}:";
         }
         if ($do_fastp) {
-            $compress_files .= qq"$fastp->{output}:";
+            $compress_files .= qq"$fastp->{outputs}->{output}:";
         }
         my @compress_arr = split(/:/, $compress_files);
         my $num_files = scalar(@compress_arr);
@@ -1254,7 +1255,7 @@ sub Process_RNAseq {
             jprefix => $prefix,
             jwalltime => $hours_guess,);
         $last_job = $compress_input->{job_id};
-        $prefix = sprintf("%02d", ($prefix + 1));
+        $prefix = sprintf("%02d", ($prefix + 1)) if ($increment);
         $jobid = qq"${prefix}comptrim";
         $ret->{$jobid} = $compress_input;
         sleep($options->{jsleep});
@@ -1276,7 +1277,7 @@ sub Process_RNAseq {
 
 sub Recurse {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         function => 'Bio::Adventure::Pipeline::Process_RNAseq',
     );
@@ -1319,7 +1320,7 @@ sub Recurse {
 
 sub RNAseq {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species'],
         gff_type => 'gene',
@@ -1346,7 +1347,7 @@ sub RNAseq {
     if ($options->{mapper} eq 'bowtie1') {
         $mapper = $class->Bio::Adventure::Map::Bowtie(
             jdepends => $trim->{job_id},
-            input => $trim->{output},
+            input => $trim->{outputs}->{output},
             jprefix => $prefix,
             species => $options->{species},
             gff_type => $options->{gff_type},
@@ -1354,7 +1355,7 @@ sub RNAseq {
     } elsif ($options->{mapper} eq 'bowtie2') {
         $mapper = $class->Bio::Adventure::Map::Bowtie2(
             jdepends => $trim->{job_id},
-            input => $trim->{output},
+            input => $trim->{outputs}->{output},
             jprefix => $prefix,
             species => $options->{species},
             gff_type => $options->{gff_type},
@@ -1362,7 +1363,7 @@ sub RNAseq {
     } elsif ($options->{mapper} eq 'bwa') {
         $mapper = $class->Bio::Adventure::Map::BWA(
             jdepends => $trim->{job_id},
-            input => $trim->{output},
+            input => $trim->{outputs}->{output},
             jprefix => $prefix,
             species => $options->{species},
             gff_type => $options->{gff_type},
@@ -1370,19 +1371,19 @@ sub RNAseq {
     } elsif ($options->{mapper} eq 'kallisto') {
         $mapper = $class->Bio::Adventure::Map::Kallisto(
             jdepends => $trim->{job_id},
-            input => $trim->{output},
+            input => $trim->{outputs}->{output},
             jprefix => $prefix,
             species => $options->{species},);
     } elsif ($options->{mapper} eq 'salmon') {
         $mapper = $class->Bio::Adventure::Map::Salmon(
             jdepends => $trim->{job_id},
-            input => $trim->{output},
+            input => $trim->{outputs}->{output},
             jprefix => $prefix,
             species => $options->{species},);
     } else {
         $mapper = $class->Bio::Adventure::Map::Hisat(
             jdepends => $trim->{job_id},
-            input => $trim->{output},
+            input => $trim->{outputs}->{output},
             jprefix => $prefix,
             species => $options->{species},
             gff_type => $options->{gff_type},
@@ -1394,7 +1395,7 @@ sub RNAseq {
 
 sub TNseq {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species']);
     my $prefix = sprintf("%02d", 0);
@@ -1420,7 +1421,7 @@ sub TNseq {
 
     print "\nRunning Biopieces.\n";
     my $pieces = $class->Bio::Adventure::QA::Biopieces_Graph(
-        input => $cutadapt->{output},
+        input => $cutadapt->{outputs}->{output},
         jprefix => $prefix,
         jname => 'biopieces',);
     $last_job = $pieces->{job_id};
@@ -1428,7 +1429,7 @@ sub TNseq {
 
     print "\nMapping remaining reads.\n";
     my $map_reads = $class->Bio::Adventure::Map::Bowtie(
-        input => $cutadapt->{output},
+        input => $cutadapt->{outputs}->{output},
         species => $options->{species},
         jdepends => $last_job,
         jprefix => $prefix,
@@ -1465,7 +1466,7 @@ before committing to a potentially long series of blast searches.
 =cut
 sub Assemble {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],);
     my $final_locustag = basename(cwd());
@@ -1491,7 +1492,7 @@ sub Assemble {
     print "\nStarting read correction.\n";
     my $correct = $class->Bio::Adventure::Trim::Racer(
         jdepends => $trim->{job_id},
-        input => $trim->{output},
+        input => $trim->{outputs}->{output},
         jprefix => $prefix,
         jname => 'racer',);
     sleep($options->{jsleep});
@@ -1500,7 +1501,7 @@ sub Assemble {
     print "\nClassifying sequences with Kraken2.\n";
     my $kraken = $class->Bio::Adventure::Count::Kraken(
         jdepends => $correct->{job_id},
-        input => $correct->{output},
+        input => $correct->{outputs}->{output},
         jprefix => $prefix,
         jname => 'kraken',
         library => 'viral',);
@@ -1510,7 +1511,7 @@ sub Assemble {
     print "\nCreating initial assembly with Unicycler.\n";
     my $assemble = $class->Bio::Adventure::Assembly::Unicycler(
         jdepends => $correct->{job_id},
-        input => $correct->{output},
+        input => $correct->{outputs}->{output},
         jprefix => $prefix,
         jname => 'unicycler',);
     sleep($options->{jsleep});
@@ -1519,7 +1520,7 @@ sub Assemble {
     print "\nRunning phastaf.\n";
     my $phastaf = $class->Bio::Adventure::Phage::Phastaf(
         jdepends => $assemble->{job_id},
-        input => $assemble->{output},
+        input => $assemble->{outputs}->{output},
         jprefix => $prefix,
         jname => 'phastaf',);
     sleep($options->{jsleep});
@@ -1528,7 +1529,7 @@ sub Assemble {
     print "\nPerforming initial prokka annotation.\n";
     my $prokka = $class->Bio::Adventure::Annotation::Prokka(
         jdepends => $assemble->{job_id},
-        input => $assemble->{output},
+        input => $assemble->{outputs}->{output},
         jprefix => $prefix,
         jname => 'prokka',
         locus_tag => $final_locustag,);
@@ -1571,7 +1572,7 @@ the following:
 =cut
 sub Phage_Assemble {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         filter => 1,
         host_species => '',
@@ -1595,7 +1596,7 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Starting fastqc.\n";
     my $fastqc = $class->Bio::Adventure::QA::Fastqc(
-        input => $trim->{output},
+        input => $trim->{outputs}->{output},
         jdepends => $last_job,
         jmem => 3,
         jnice => 100,
@@ -1607,7 +1608,7 @@ sub Phage_Assemble {
     print "${prefix}: Starting read correction.\n";
     my $correct = $class->Bio::Adventure::Trim::Racer(
         compress => 0,
-        input => $trim->{output},
+        input => $trim->{outputs}->{output},
         jdepends => $last_job,
         jmem => 3,
         jprefix => $prefix,);
@@ -1617,7 +1618,7 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Classifying sequences with Kraken using the bacterial database.\n";
     my $kraken_std = $class->Bio::Adventure::Count::Kraken(
-        input => $correct->{output},
+        input => $correct->{outputs}->{output},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'krakenstd',
@@ -1631,8 +1632,8 @@ sub Phage_Assemble {
         print "${prefix}: Using Kraken results to filter likely host sequences.\n";
         $filter = $class->Bio::Adventure::Phage::Filter_Host_Kraken(
             htseq_stranded => 'no',
-            input => $kraken_std->{output},
-            input_fastq => $correct->{output},
+            input => $kraken_std->{outputs}->{output},
+            input_fastq => $correct->{outputs}->{output},
             jdepends => $last_job,
             jprefix => $prefix,
             jname => 'krakenfilter',);
@@ -1647,7 +1648,7 @@ sub Phage_Assemble {
     print "${prefix}: Classifying sequences with Kraken using the viral database.\n";
     my $kraken = $class->Bio::Adventure::Count::Kraken(
         jdepends => $last_job,
-        input => $filter->{output},
+        input => $filter->{outputs}->{output},
         jprefix => $prefix,
         jname => 'kraken',
         library => 'viral',);
@@ -1657,7 +1658,7 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Creating initial assembly with Unicycler.\n";
     my $assemble = $class->Bio::Adventure::Assembly::Unicycler(
-        input => $filter->{output},
+        input => $filter->{outputs}->{output},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'unicycler',);
@@ -1667,7 +1668,7 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Depth filtering initial assembly.\n";
     my $depth_filtered = $class->Bio::Adventure::Assembly::Unicycler_Filter_Depth(
-        input => $assemble->{output},
+        input => $assemble->{outputs}->{output},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'depth_filter',);
@@ -1677,7 +1678,7 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Running virus ICTV classifier.\n";
     my $ictv = $class->Bio::Adventure::Phage::Classify_Phage(
-        input => $depth_filtered->{output},
+        input => $depth_filtered->{outputs}->{output},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'ictv',);
@@ -1687,7 +1688,7 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Setting the Rosalind strand to the one with the most ORFs.\n";
     my $rosalindplus = $class->Bio::Adventure::Annotation::Rosalind_Plus(
-        input => $depth_filtered->{output},
+        input => $depth_filtered->{outputs}->{output},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'rosalindplus',);
@@ -1697,18 +1698,18 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Using Phageterm to reorient the assembly to the terminii.\n";
     my $phageterm = $class->Bio::Adventure::Phage::Phageterm(
-        input => $filter->{output},
+        input => $filter->{outputs}->{output},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'phageterm',
-        library => $rosalindplus->{output},);
+        library => $rosalindplus->{outputs}->{output},);
     $last_job = $phageterm->{job_id};
     sleep($options->{jsleep});
 
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Running phastaf.\n";
     my $phastaf = $class->Bio::Adventure::Phage::Phastaf(
-        input => $depth_filtered->{output},
+        input => $depth_filtered->{outputs}->{output},
         input_phageterm => $phageterm->{output_dtr},
         jdepends => $last_job,
         jprefix => $prefix,
@@ -1719,11 +1720,11 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Checking coverage.\n";
     my $coverage = $class->Bio::Adventure::Assembly::Assembly_Coverage(
-        input => $filter->{output},
+        input => $filter->{outputs}->{output},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'coverage',
-        library => $assemble->{output},);
+        library => $assemble->{outputs}->{output},);
     $last_job = $coverage->{job_id};
     sleep($options->{jsleep});
 
@@ -1731,7 +1732,7 @@ sub Phage_Assemble {
     print "${prefix}: Performing reordering by putative terminase if phageterm failed.\n";
     my $termreorder = $class->Bio::Adventure::Phage::Terminase_ORF_Reorder(
         fasta_tool => 'fastx36',
-        input => $phageterm->{output},
+        input => $phageterm->{outputs}->{output},
         jdepends => $last_job,
         jname => 'reorder',
         jprefix => $prefix,
@@ -1744,7 +1745,7 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Performing initial prokka annotation.\n";
     my $prokka = $class->Bio::Adventure::Annotation::Prokka(
-        input => $termreorder->{output},
+        input => $termreorder->{outputs}->{output},
         jdepends => $last_job,
         jname => 'prokka',
         jprefix => $prefix,
@@ -1755,7 +1756,7 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Running prodigal to get RBSes.\n";
     my $prodigal = $class->Bio::Adventure::Feature_Prediction::Prodigal(
-        input => $prokka->{output_assembly},
+        input => $prokka->{outputs}->{assembly},
         jdepends => $last_job,
         ## Use output_assembly to avoid having too much clutter on the sequence ID line.
         jprefix => $prefix,);
@@ -1765,7 +1766,7 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Running glimmer for less stringent ORFs.\n";
     my $glimmer = $class->Bio::Adventure::Feature_Prediction::Glimmer_Single(
-        input => $prokka->{output_assembly},
+        input => $prokka->{outputs}->{assembly},
         jdepends => $last_job,
         jprefix => $prefix,);
     $last_job = $glimmer->{job_id};
@@ -1774,7 +1775,7 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Running phanotate.\n";
     my $phanotate = $class->Bio::Adventure::Feature_Prediction::Phanotate(
-        input => $prokka->{output_assembly},
+        input => $prokka->{outputs}->{assembly},
         jdepends => $last_job,
         jprefix => $prefix,);
     $last_job = $phanotate->{job_id};
@@ -1783,10 +1784,10 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Merging the CDS predictions and writing an initial gbk file.\n";
     my $cds_merge = $class->Bio::Adventure::Annotation_Genbank::Merge_CDS_Predictions(
-        input => $prokka->{output_genbank},
-        input_glimmer => $glimmer->{output},
-        input_phanotate => $phanotate->{output},
-        input_prodigal => $prodigal->{output_gff},
+        input => $prokka->{outputs}->{genbank},
+        input_glimmer => $glimmer->{outputs}->{output},
+        input_phanotate => $phanotate->{outputs}->{output},
+        input_prodigal => $prodigal->{outputs}->{gff},
         jdepends => $last_job,
         jprefix => $prefix);
     $last_job = $cds_merge->{job_id};
@@ -1795,7 +1796,7 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Running Jellyfish on the assembly.\n";
     my $jelly = $class->Bio::Adventure::Count::Jellyfish(
-        input => $cds_merge->{output_fsa},
+        input => $cds_merge->{outputs}->{fsa},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'jelly',);
@@ -1805,7 +1806,7 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Running aragorn on the assembly to search for tmRNAs.\n";
     my $aragorn = $class->Bio::Adventure::Feature_Prediction::Aragorn(
-        input => $cds_merge->{output_fsa},
+        input => $cds_merge->{outputs}->{fsa},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'aragorn',);
@@ -1816,7 +1817,7 @@ sub Phage_Assemble {
     print "${prefix}: Running relaxed tRNAscan to search for tmRNAs.\n";
     my $trnascan = $class->Bio::Adventure::Feature_Prediction::tRNAScan(
         arbitrary => ' -r ',
-        input => $prokka->{output_assembly},
+        input => $prokka->{outputs}->{assembly},
         jdepends => $last_job,
         jname => 'trnascan',
         jprefix => $prefix,
@@ -1828,7 +1829,7 @@ sub Phage_Assemble {
     print "${prefix}: Invoking trinotate.\n";
     my $trinotate = $class->Bio::Adventure::Annotation::Trinotate(
         config => 'phage.txt',
-        input => $cds_merge->{output_cds},
+        input => $cds_merge->{outputs}->{cds},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'trinotate',);
@@ -1838,7 +1839,7 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Searching for resistance genes with abricate.\n";
     my $abricate = $class->Bio::Adventure::Resistance::Abricate(
-        input => $cds_merge->{output_cds},
+        input => $cds_merge->{outputs}->{cds},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'abricate',);
@@ -1848,7 +1849,7 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Running interproscan.\n";
     my $interpro = $class->Bio::Adventure::Annotation::Interproscan(
-        input => $cds_merge->{output_faa},
+        input => $cds_merge->{outputs}->{faa},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'interproscan',);
@@ -1858,7 +1859,7 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Searching for Restriction Sites.\n";
     my $re_search = $class->Bio::Adventure::Phage::Restriction_Catalog(
-        input => $cds_merge->{output_fsa},
+        input => $cds_merge->{outputs}->{fsa},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'restrict',);
@@ -1868,7 +1869,7 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Running caical against the assumed host.\n";
     my $caical = $class->Bio::Adventure::Phage::Caical(
-        input => $cds_merge->{output_cds},
+        input => $cds_merge->{outputs}->{cds},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'restrict',
@@ -1879,7 +1880,7 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Searching for Phage promoters.\n";
     my $phagepromoter = $class->Bio::Adventure::Feature_Prediction::Phagepromoter(
-        input => $cds_merge->{output_fsa},
+        input => $cds_merge->{outputs}->{fsa},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'phagepromoter',);
@@ -1889,7 +1890,7 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Searching for rho terminators.\n";
     my $rhopredict = $class->Bio::Adventure::Feature_Prediction::Rho_Predict(
-        input => $cds_merge->{output_fsa},
+        input => $cds_merge->{outputs}->{fsa},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'rhopredict',);
@@ -1899,7 +1900,7 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Using bacphlip to classify this phage.\n";
     my $bacphlip = $class->Bio::Adventure::Phage::Bacphlip(
-        input => $cds_merge->{output_fsa},
+        input => $cds_merge->{outputs}->{fsa},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'bacphlip',);
@@ -1909,7 +1910,7 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Running Vienna RNAfold on the assembly.\n";
     my $vienna = $class->Bio::Adventure::Structure::RNAFold_Windows(
-        input => $cds_merge->{output_fsa},
+        input => $cds_merge->{outputs}->{fsa},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'vienna',);
@@ -1920,16 +1921,16 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Merging annotation files.\n";
     my $merge = $class->Bio::Adventure::Metadata::Merge_Annotations(
-        input_fsa => $cds_merge->{output_fsa},
-        input_genbank => $cds_merge->{output_gbk},
-        input_tsv => $cds_merge->{output_tsv},
-        input_abricate => $abricate->{output},
-        input_aragorn => $aragorn->{output},
-        input_classifier => $ictv->{output},
-        input_interpro => $interpro->{output_tsv},
-        input_phageterm => $phageterm->{output_dtr},
-        input_prodigal => $prodigal->{output},
-        input_trinotate => $trinotate->{output},
+        input_fsa => $cds_merge->{outputs}->{fsa},
+        input_genbank => $cds_merge->{outputs}->{gbk},
+        input_tsv => $cds_merge->{outputs}->{tsv},
+        input_abricate => $abricate->{outputs}->{output},
+        input_aragorn => $aragorn->{outputs}->{output},
+        input_classifier => $ictv->{outputs}->{output},
+        input_interpro => $interpro->{outputs}->{tsv},
+        input_phageterm => $phageterm->{outputs}->{dtr},
+        input_prodigal => $prodigal->{outputs}->{output},
+        input_trinotate => $trinotate->{outputs}->{output},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'mergeannot',);
@@ -1941,16 +1942,16 @@ sub Phage_Assemble {
     print "${prefix}: Merging annotation files a second time.\n";
     my $merge2 = $class->Bio::Adventure::Metadata::Merge_Annotations(
         evalue => 0,
-        input_fsa => $cds_merge->{output_fsa},
-        input_genbank => $cds_merge->{output_gbk},
-        input_tsv => $cds_merge->{output_tsv},
-        input_abricate => $abricate->{output},
-        input_aragorn => $aragorn->{output},
-        input_classifier => $ictv->{output},
-        input_interpro => $interpro->{output_tsv},
-        input_phageterm => $phageterm->{output_dtr},
-        input_prodigal => $prodigal->{output},
-        input_trinotate => $trinotate->{output},
+        input_fsa => $cds_merge->{outputs}->{fsa},
+        input_genbank => $cds_merge->{outputs}->{gbk},
+        input_tsv => $cds_merge->{outputs}->{tsv},
+        input_abricate => $abricate->{outputs}->{output},
+        input_aragorn => $aragorn->{outputs}->{output},
+        input_classifier => $ictv->{outputs}->{output},
+        input_interpro => $interpro->{outputs}->{tsv},
+        input_phageterm => $phageterm->{outputs}->{dtr},
+        input_prodigal => $prodigal->{outputs}->{output},
+        input_trinotate => $trinotate->{outputs}->{output},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'mergeannot2',
@@ -1963,7 +1964,7 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Running cgview.\n";
     my $cgview = $class->Bio::Adventure::Visualization::CGView(
-        input => $merge->{output_gbk},
+        input => $merge->{outputs}->{gbk},
         jdepends => $last_job,
         jprefix => $prefix,);
     $last_job = $cgview->{job_id};
@@ -1972,15 +1973,15 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Collecting output files.\n";
     my $collect = $class->Bio::Adventure::Metadata::Collect_Assembly(
-        input_fsa => $merge->{output_fsa},
-        input_genbank => $merge->{output_gbk},
-        input_stripped => $merge2->{output_gbk},
-        input_tbl => $merge->{output_tbl},
-        input_tbl_stripped => $merge2->{output_tbl},
-        input_tsv => $merge->{output_tsv},
-        input_xlsx => $merge->{output_xlsx},
-        input_faa => $cds_merge->{output_faa},
-        input_cds => $cds_merge->{output_cds},
+        input_fsa => $merge->{outputs}->{fsa},
+        input_genbank => $merge->{outputs}->{gbk},
+        input_stripped => $merge2->{outputs}->{gbk},
+        input_tbl => $merge->{outputs}->{tbl},
+        input_tbl_stripped => $merge2->{outputs}->{tbl},
+        input_tsv => $merge->{outputs}->{tsv},
+        input_xlsx => $merge->{outputs}->{xlsx},
+        input_faa => $cds_merge->{outputs}->{faa},
+        input_cds => $cds_merge->{outputs}->{cds},
         jdepends => $last_job,
         jprefix => $prefix,
         jname => 'collect',);
@@ -1989,14 +1990,14 @@ sub Phage_Assemble {
 
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Compressing raw filtered files.\n";
-    my $compress_input = $filter->{output};
+    my $compress_input = $filter->{outputs}->{output};
     ## unalcon_GCF_002813445.1_genome.1.fastq as an example file.
-    if (defined($filter->{output_unaligned})) {
-        $compress_input .= qq":$filter->{output_unaligned}";
+    if (defined($filter->{outputs}->{unaligned})) {
+        $compress_input .= qq":$filter->{outputs}->{unaligned}";
     }
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Compressing filtered fastq files.\n";
-    my $unaligned_outputs = qq"$filter->{output}:$filter->{output_unaligned}";
+    my $unaligned_outputs = qq"$filter->{outputs}->{output}:$filter->{outputs}->{unaligned}";
     my $compress_filtered = $class->Bio::Adventure::Compress::Compress(
         input => $unaligned_outputs,
         jdepends => $cgview->{job_id},
@@ -2008,7 +2009,7 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Compressing corrected fastq files.\n";
     my $compress_corrected = $class->Bio::Adventure::Compress::Compress(
-        input => $correct->{output},
+        input => $correct->{outputs}->{output},
         jdepends => $last_job,
         jname => 'comp_corrected',
         jprefix => $prefix,);
@@ -2018,7 +2019,7 @@ sub Phage_Assemble {
     $prefix = sprintf("%02d", ($prefix + 1));
     print "${prefix}: Compressing trimmed files.\n";
     my $compress_trimmed = $class->Bio::Adventure::Compress::Compress(
-        input => $trim->{output},
+        input => $trim->{outputs}->{output},
         jdepends => $last_job,
         jname => 'comp_trimmed',
         jprefix => $prefix,);

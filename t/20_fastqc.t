@@ -23,17 +23,17 @@ if (!-r 'test_forward.fastq.gz') {
 }
 
 my $cyoa = Bio::Adventure->new(cluster => 0, basedir => cwd());
-my $jprefix = '20';
 my $fastqc = $cyoa->Bio::Adventure::QA::Fastqc(
     input => 'test_forward.fastq.gz',
-    jprefix => $jprefix,);
+    prefix => '20',);
 ok($fastqc, 'Run Fastqc');
-my $stats_file = $fastqc->{stats}->{output};
-ok(my $actual = $cyoa->Last_Stat(input => $stats_file), "Collect Fastqc Statistics to ${stats_file}.");
-my $expected = 'fqcst,10000,0,pass,warn,pass,pass,pass,warn,fail,0';
+my $stats_file = $fastqc->{stats}->{main};
+ok(my $actual = $cyoa->Last_Stat(input => $stats_file),
+   "Collect Fastqc Statistics to ${stats_file}.");
+my $expected = '20fastqc_stats,10000,0,pass,warn,pass,pass,pass,warn,fail,0';
 unless(ok($expected eq $actual, 'Are the fastqc results the expected value?')) {
     my($old, $new) = diff($expected, $actual);
-    diag("$old\n$new\n");
+    diag("-- expected --\n${old}\n-- actual --\n${new}\n");
 }
 
 ## Go back to the top level.

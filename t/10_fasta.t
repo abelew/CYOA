@@ -36,8 +36,6 @@ ok(-r $source_phix_gff, "Found source phix gff at: ${source_phix_gff}.");
 my $local_phix_fasta = 'reference/genome/fasta/phix.fasta';
 my $local_phix_gff = 'reference/genome/gff/phix.gff';
 
-my $output_phix_cds = 'phix_gene_gene_id_nt.fasta';
-my $output_phix_aa = 'phix_gene_gene_id_aa.fasta';
 my $local_phix_cds = 'reference/CDS/fasta/phix.fasta';
 my $local_phix_aa = 'reference/amino_acid/fasta/phix.fasta';
 
@@ -59,18 +57,17 @@ if (-r $local_phix_gff) {
 
 my $location = cwd();
 my $cyoa = Bio::Adventure->new(cluster => 0, basedir => $location);
-if (-r $output_phix_cds) {
-    ok(-r $output_phix_aa, "${output_phix_cds} and ${output_phix_aa} both exist.");
-} else {
-    my $gff2fasta = $cyoa->Bio::Adventure::Convert::Gff2Fasta(
-        input => $local_phix_fasta, gff => $local_phix_gff,
-        gff_type => 'gene', gff_tag => 'gene_id',
-        libpath => 'reference');
-    ## In 11_blast this is:
-    ## libdir => 'share');
-    ok($gff2fasta, 'Run gff2fasta.');
-}
+my $gff2fasta = $cyoa->Bio::Adventure::Convert::Gff2Fasta(
+    input => $local_phix_fasta, gff => $local_phix_gff,
+    gff_type => 'gene', gff_tag => 'gene_id',
+    libpath => 'reference');
+## In 11_blast this is:
+## libdir => 'share');
+ok($gff2fasta, 'Run gff2fasta.');
 ## The Gff2Fasta converter should produce a set of new fasta/gff files
+
+my $output_phix_cds = $gff2fasta->{outputs}->{nt};
+my $output_phix_aa = $gff2fasta->{outputs}->{aa};
 
 ok(-r $output_phix_cds, "Found nucleotide fasta file at ${output_phix_cds}.");
 ok(mv($output_phix_cds, $local_phix_cds), "Moved phix cds file to ${local_phix_cds}.");
@@ -79,17 +76,16 @@ ok(mv($output_phix_aa, $local_phix_aa), "Moved phix aa file to ${local_phix_aa}.
 
 print "About to run Split_Align_Fasta.\n";
 my $run_fasta = $cyoa->Bio::Adventure::Align_Fasta::Split_Align_Fasta(
-    cluster => 0,
     align_jobs => 1,
     fasta_tool => 'fasta36',
     input => $local_phix_cds,
     library => $local_phix_fasta,
-    jprefix => '10',
+    prefix => '10',
     parse => 1,);
 ok($run_fasta, 'Run Split_Align_Fasta.');
 
 ## my $parsed_file = 'outputs/fasta_phix_cds_nt_phix/phix_cds_nt_vs_phix.parsed.txt';
-my $parsed_file = $run_fasta->{output};
+my $parsed_file = $run_fasta->{main};
 ## Caveat: every fasta36 run will give slightly different E-values.
 my $expected = qq"chr_NC_001422_id_phiX174p01_start_1_end_136
 chr_NC_001422_id_phiX174p02_start_1_end_136
@@ -109,7 +105,7 @@ print "Invoking: ${test_cmd}\n";
 my $actual = qx"${test_cmd}";
 unless(ok($expected eq $actual, 'Is the resulting table of hits expected?')) {
     my($old, $new) = diff($expected, $actual);
-    diag("--\n${old}\n--\n${new}\n");
+    diag("-- expected --\n${old}\n-- actual --\n${new}\n");
 }
 
 chdir($start);

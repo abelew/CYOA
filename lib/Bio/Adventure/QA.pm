@@ -30,16 +30,15 @@ use File::Which qw"which";
 =cut
 sub Biopieces_Graph {
     my ($class, %args) = @_;
-    my $check = which('read_fastq');
-    die("Could not find biopieces in your PATH.") unless($check);
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         jmem => 8,
         jprefix => '02',);
+    my $check = which('read_fastq');
+    die("Could not find biopieces in your PATH.") unless($check);
     my $input = $options->{input};
-    my $jname = $class->Get_Job_Name();
-    $jname = qq"biop_${jname}";
+    my $jname = qq"biop_$options->{job_basename}";
     my @inputs = split(/$options->{delimiter}/, $input);
     my $comment = '## This script uses biopieces to draw some simple graphs of the sequence.';
     my $output_dir = 'output/biopieces';
@@ -118,31 +117,23 @@ ${input_fc} | read_fastq -i - -e base_33 |\\
 =cut
 sub Fastqc {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         filtered => 'unfiltered',
-        jprefix => '01',
         required => ['input',],);
-    my $job_name = $class->Get_Job_Name();
-    my $input_paths = $class->Get_Path_Info($options->{input});
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $outdir = $paths->{output_dir};
-    my $dirname = $input_paths->[0]->{dirname};
-    my $jname = qq"fqc_${job_name}";
-    if (defined($dirname)) {
-        $jname .= qq"_${dirname}";
-    }
+    my $dirname = $inputs->[0]->{dirname};
 
     my $fastqc_job;
     my $input_file_string = '';
     my $subshell = 0;
     my $modified_input = undef;
-    if (scalar(@{$input_paths}) > 1) {
-        my @inputs;
-        for my $element (@{$input_paths}) {
-            push(@inputs, $element->{fullpath});
+    if (scalar(@{$inputs}) > 1) {
+        my @input_files;
+        for my $element (@{$inputs}) {
+            push(@input_files, $element->{fullpath});
         }
-        for my $in (@inputs) {
+        for my $in (@input_files) {
             $modified_input = basename($in, ('.gz', '.bz2', '.xz')) unless(defined($modified_input));
             $input_file_string = qq"$input_file_string ${in} ";
             if ($in =~ /\.xz$|\.bz2$/) {
@@ -160,75 +151,47 @@ sub Fastqc {
         $modified_input = basename($options->{input}, ('.gz')) unless ($modified_input);
         $input_file_string = qq"$options->{input} ";
     }
-    $modified_input = basename($modified_input, ('.fastq'));
-    $modified_input = qq"${modified_input}_fastqc";
-    my $final_output = qq"${outdir}/${modified_input}";
-    my $txtfile = qq"${final_output}/fastqc_data.txt";
-    my $summary = qq"${final_output}/summary.txt";
 
     ## This is where fastqc should put its various output files
     ## with one important exception: It tries to be smart and take its own basename of the input
     ## but since I am using a bash subshell <(), it will get /dev/fd/xxx and so put the outputs into
     ## outputs/${jprefix}fastqc/xxx_fastqc...
-
-    my $stdout = qq"${outdir}/${jname}-$options->{filtered}_fastqc.stdout";
-    my $stderr = qq"${outdir}/${jname}-$options->{filtered}_fastqc.stderr";
-    my $jstring = qq!mkdir -p ${outdir}
-which perl 2>${stderr} 1>&2
-which fastqc 2>>${stderr} 1>&2
+    my $jstring = qq!which perl 2>$outputs->{stderr} 1>&2
+which fastqc 2>>$outputs->{stderr} 1>&2
 ## Even if fastqc finishes happily using a subshell, it might exit with SIGERR
 trap - ERR
 finished=\$(fastqc --extract \\
-  -o ${outdir} \\
+  -o $paths->{output_dir} \\
   ${input_file_string} \\
-  2>>${stderr} \\
-  1>>${stdout} || /bin/true)
+  2>>$outputs->{stderr} \\
+  1>>$outputs->{stdout} || /bin/true)
 echo "fastqc finished with \$? andor \${finished}."
-
 !;
-
     if ($subshell) {
         $jstring .= qq!
 ## Note that if this is using a subshell, fastqc will assume that the inputs
 ## are /dev/fd/xx (usually 60 something).
 ## We can likely cheat and get the subshell fd with this:
 read_num=1
-for badname in  \$(cd ${outdir} && /bin/ls -d *_fastqc); do
+for badname in  \$(cd $paths->{output_dir} && /bin/ls -d *_fastqc); do
   echo \${badname}
-  mv ${outdir}/\${badname}.html ${outdir}/r\${read_num}_trimmed_fastqc.html 2>/dev/null
+  mv $paths->{output_dir}/\${badname}.html $paths->{output_dir}/r\${read_num}_trimmed_fastqc.html 2>/dev/null
   echo "html move finished with: \$?"
-  mv ${outdir}/\${badname}.zip ${outdir}/r\${read_num}_trimmed_fastqc.zip 2>/dev/null
+  mv $paths->{output_dir}/\${badname}.zip $paths->{output_dir}/r\${read_num}_trimmed_fastqc.zip 2>/dev/null
   echo "zip move finished with: $?"
-  mv ${outdir}/\${badname} outputs/01fastqc/r\${read_num}_trimmed_fastqc 2>/dev/null
+  mv $paths->{output_dir}/\${badname} outputs/01fastqc/r\${read_num}_trimmed_fastqc 2>/dev/null
   echo "directory move finished with: \$?"
   let "read_num++"
 done
 !;
     }
-
-    my $comment = qq!## This FastQC run is against $options->{filtered} data and is used for
-## an initial estimation of the overall sequencing quality.!;
     my $fqc = $class->Submit(
-        comment => $comment,
-        jcpu => 8,
-        jname => $jname,
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        jwalltime => '03:00:00',
         prescript => $options->{prescript},
         postscript => $options->{postscript},
-        output => qq"$options->{jprefix}fastqc.html",
-        summary => $summary,
-        txtfile => $txtfile,
-        stdout => $stdout,
-        stderr => $stderr);
-
+        outputs => $outputs,);
     my $stats = $class->Bio::Adventure::Metadata::Fastqc_Stats(
-        input => $fqc->{txtfile},
-        jcpu => 1,
-        jmem => 1,
-        jprefix => qq"$options->{jprefix}_1",
-        jwalltime => '00:03:00',
+        input => $outputs->{main},
         jdepends => $fqc->{job_id},);
     $fqc->{stats} = $stats;
     return($fqc);
@@ -236,11 +199,10 @@ done
 
 sub MultiQC {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         input => 'preprocessing',
         jprefix => '12',);
-    my $job_name = $class->Get_Job_Name();
     my $comment = '## A Multiqc run!';
     my $stderr = 'multiqc.stderr';
     my $stdout = 'multiqc.stdout';
@@ -251,7 +213,7 @@ multiqc --no-ansi . 2>${stderr} 1>${stdout}
     my $multiqc = $class->Submit(
         comment => $comment,
         input => $options->{input},
-        jname => qq"multiqc_${job_name}",
+        jname => qq"multiqc_$options->{job_basename}",
         jprefix => $options->{jprefix},
         jstring => $jstring,
         stderr => $stderr,

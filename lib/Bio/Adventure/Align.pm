@@ -49,35 +49,21 @@ sub Cleanup {
 =cut
 sub Concatenate_Searches {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        jmem => 8,
-        jprefix => '90',
         workdir => '',);
     my $finished = 0;
-    my $output = qq"$options->{workdir}/split_search.txt";
-    $output .= ".xz" unless ($output =~ /\.xz$/);
-    my $comment_string = qq"## Concatenating the blast output files:
-##  $options->{input}
-##  into ${output}
-";
     my $jstring = qq!
-rm -f ${output}
+rm -f $outputs->{main}
 for i in $options->{input}; do
-  xz -9e -c \$i >> ${output}
+  cat \$i >> $outputs->{fasta}
 done
+xz -9e -f $outputs->{fasta}
 !;
     my $concatenate = $class->Submit(
-        comment => $comment_string,
         depends_type => 'array',
-        jdepends => $options->{jdepends},
-        jname => "concat",
-        jmem => $options->{jmem},
         jstring => $jstring,
-        jprefix => $options->{jprefix},
-        language => 'bash',
-        stdout => $output,
-        output => $output,);
+        outputs => $outputs,);
     return($concatenate);
 }
 
@@ -88,9 +74,8 @@ done
 =cut
 sub Duplicate_Remove {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args);
     my $input = $options->{input};
-    my $output = qq"${input}_removed.txt";
     my $in = FileHandle->new("<$input");
     my @entries = ();
     while (my $line = <$in>) {
@@ -102,7 +87,7 @@ sub Duplicate_Remove {
         push(@entries, $entry);
     }
     $in->close();
-    my $out = FileHandle->new(">$output");
+    my $out = FileHandle->new(">$outputs->{output}");
     my $num_found = 0;
     while (scalar(@entries) > 0) {
         my $keeper = shift(@entries);
@@ -114,25 +99,25 @@ sub Duplicate_Remove {
         ## Now remove all instances of the 'others' from the list and future consideration.
         my $other_length = scalar(@{$others});
       OTHERS: foreach my $other (@{$others}) {
-          my ($other_name, $other_ident, $other_e) = split(/:/, $other);
-          print "Checking for ${other_name} in entries.\n";
-          my @tmp = @entries;
-          my $length = scalar(@tmp);
-          my @new = ();
-          print "The length of entries is now: ${length}\n";
-        CHECK: foreach my $tmp_entry (@tmp) {
-            my $self_check = $tmp_entry->{self};
-            if ($self_check eq $other_name) {
-                $num_found = $num_found + 1;
-                ## print "FOUND! $self_check $other_name\n";
-                next CHECK;
-            } else {
-                ## print "NOT FOUND! $self_check $other_name\n";
-                push(@new, $tmp_entry);
+            my ($other_name, $other_ident, $other_e) = split(/:/, $other);
+            print "Checking for ${other_name} in entries.\n";
+            my @tmp = @entries;
+            my $length = scalar(@tmp);
+            my @new = ();
+            print "The length of entries is now: ${length}\n";
+          CHECK: for my $tmp_entry (@tmp) {
+                my $self_check = $tmp_entry->{self};
+                if ($self_check eq $other_name) {
+                    $num_found = $num_found + 1;
+                    ## print "FOUND! $self_check $other_name\n";
+                    next CHECK;
+                } else {
+                    ## print "NOT FOUND! $self_check $other_name\n";
+                    push(@new, $tmp_entry);
+                }
             }
+            @entries = @new;
         }
-          @entries = @new;
-      }
     }
     $out->close();
     return($num_found);
@@ -148,9 +133,10 @@ sub Duplicate_Remove {
 =cut
 sub Get_Substitution_Matrix {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         matrix => 'BLOSUM50',);
+    my $matrix_file = $outputs->{matrix_file};
     my $matrix = 'BLOSUM50';
     $matrix = $options->{matrix} if (defined($options->{matrix}));
     my $download_url = $matrix;
@@ -159,9 +145,9 @@ sub Get_Substitution_Matrix {
     }
     ## For now, just download it to the cwd.
     my $mech = WWW::Mechanize->new;
-    my $downloaded = $mech->get($download_url, ':content_file' => $matrix);
+    my $downloaded = $mech->get($download_url, ':content_file' => $matrix_file);
     my $parser = Bio::Matrix::IO->new(-format => 'scoring',
-                                      -file => $matrix,);
+                                      -file => $matrix_file,);
     $matrix = $parser->next_matrix;
     return($matrix);
 }
@@ -179,7 +165,7 @@ sub Get_Substitution_Matrix {
 =cut
 sub Get_Split {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args);
     my $in = Bio::SeqIO->new(-file => $options->{input},);
     my $seqs = 0;
     while (my $in_seq = $in->next_seq()) {
@@ -194,6 +180,7 @@ sub Get_Split {
     my $ret = {
         num_per_split => $seqs_per_job,
         seqs => $seqs,
+        jobs => $options->{align_jobs},
     };
     return($ret);
 }
@@ -205,7 +192,7 @@ sub Get_Split {
 =cut
 sub Ids_to_Sequences {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args);
     my $id_input_file = $options->{id_list};
     my $id_in = FileHandle->new("<${id_input_file}");
     my $chromosomes = $class->Read_Genome(genome => $class->{genome});
@@ -233,14 +220,12 @@ $sequences{$seq}
     $id_out->close();
     $id_in->close();
     ## This should generate files which end in _parsed.txt for the library
-    my $concat = Bio::Tools::Adventure::Align_Fasta::Split_Align_Fasta(
-        $class,
+    my $concat = $class->Bio::Tools::Adventure::Align_Fasta::Split_Align_Fasta(
         library => $id_output_file,
         max_significance => 0.0001,
         min_percent => 0.80,
         query => $id_output_file,);
-    my $duplicates = Bio::Tools::Adventure::Align::Duplicate_Remove(
-        $class,
+    my $duplicates = $class->Bio::Tools::Adventure::Align::Duplicate_Remove(
         input => $id_output_file,);
     return($concat);
 }
@@ -253,7 +238,7 @@ $sequences{$seq}
 =cut
 sub Make_Directories {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         num_per_split => 100,
         align_jobs => 40,);
@@ -266,7 +251,6 @@ sub Make_Directories {
     ## 99 to 100 (2 characters to 3) as long as no one splits more than 9000 ways...
     print "Make_Directories: Making $options->{align_jobs} directories with ${num_per_split} sequences.\n";
     my $dir = $options->{array_start};
-
     remove_tree("$options->{workdir}/split", {verbose => 0 });
     for my $c ($dir .. ($dir + $splits)) {
         ## print "Making directory: split/$c\n";
@@ -307,10 +291,9 @@ ${seq}
             ## Therefore this keeps track of the last file written and uses that instead.
             my $max_dirs = $options->{array_start} - 1;
             $options->{num_dirs} = ($last - $max_dirs); ## This - 1000 is there because we start at job 1000, but we start counting at 0
-        }                      ## End for each iteration of $num_per_split files
-    }                          ## End while reading the fasta
+        }            ## End for each iteration of $num_per_split files
+    }                ## End while reading the fasta
     my $actual_number_dirs_used = $options->{num_dirs};
-    print "Finished writing files.\n";
     return($actual_number_dirs_used);
 }
 
@@ -324,11 +307,14 @@ sub Parse_Search {
     my $ret;
     if ($args{search_type} eq 'blastxml') {
         $ret = Bio::Adventure::Align_Blast::Parse_Blast($class, %args);
-    } elsif ($args{search_type} eq 'local_fasta') {
+    }
+    elsif ($args{search_type} eq 'local_fasta') {
         $ret = Bio::Adventure::Align_Fasta::Parse_Fasta($class, %args);
-    } elsif ($args{search_type} eq 'global_fasta') {
+    }
+    elsif ($args{search_type} eq 'global_fasta') {
         $ret = Bio::Adventure::Align_Fasta::Parse_Fasta_Global($class, %args);
-    } else {
+    }
+    else {
         $ret = Bio::Adventure::Align_Fasta::Parse_Fasta($class, %args);
     }
     return($ret);
@@ -346,11 +332,9 @@ sub Parse_Search {
 =cut
 sub Pairwise_Similarity_Matrix {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         cutoff => 500,
-        jcpu => 8,
-        modules => ['blast'],
         required => ['input',],);
     my $input = $options->{input};
     if (-d $input) {
@@ -376,18 +360,15 @@ sub Pairwise_Similarity_Matrix {
 
     my $pre = $input;
     $pre =~ s/\.faa//g;
-    my $pre_dir = dirname($input);
-
+    my $pre_dir = $paths->{output_dir};
     my $result_data = {};
     my $e_values = {};
     my $bit_values = {};
     my $scores = {};
-    my $evalue_fh = FileHandle->new(qq">${pre_dir}/${pre}_pairwise_evalues.tsv");
-    my $bit_fh = FileHandle->new(">${pre_dir}/${pre}_pairwise_bits.tsv");
-    my $score_fh = FileHandle->new(">${pre_dir}/${pre}_pairwise_scores.tsv");
-    my $output = FileHandle->new(">${pre_dir}/${pre}_out.txt");
+    my $evalue_fh = FileHandle->new(qq">$outputs->{evalues}");
+    my $bit_fh = FileHandle->new(">$outputs->{bit_scores}");
+    my $score_fh = FileHandle->new(">$outputs->{pair_scores}");
     my $prefix = basename($options->{input});
-
     my @params = (
         -create => 1,
         -db_data => $input,
@@ -396,71 +377,71 @@ sub Pairwise_Similarity_Matrix {
         -num_descriptions => $options->{cutoff},
         -num_threads => $options->{jcpu},
         -program => 'blastp',
-        );
+    );
 
     my $search = Bio::Tools::Run::StandAloneBlastPlus->new(@params);
     my @parameters = $search->get_parameters;
 
-    my $outfile = qq"outputs/${prefix}.txt";
+    my $outfile = $outputs->{output};
     my $blast_report = $search->blastp(-query => $input, -outfile => $outfile);
     my $search_output = Bio::SearchIO->new(-file => $outfile, -format => 'blast');
     my @hit_lst = ();
     my $number_hits = 0;
     my $number_result = 0;
   RESULTS: while (my $result = $search_output->next_result) {
-      $number_result++;
-      print "Result: ${number_result}\n";
-      my $query_name = $result->query_name();
-      my $query_length = $result->query_length();
-      my $query_descr = $result->query_description();
-      my $stats = $result->available_statistics();
-      my $hits = $result->num_hits();
-      my $datum_ref = {
-          description => $query_descr,
-          name => $query_name,
-          stats => $stats,
-          length => $query_length,
-          hit_data => {},
-      };
-      $result_data->{$query_name} = $datum_ref;
-      my $hit_count = 0;
-    HITLOOP: while (my $hits = $result->next_hit()) {
-        $number_hits = $number_hits++;
-        my $hit_name = $hits->name();
-        ## The hit_name should cross reference to one of the two accession columns in xref_aoh
-        ## from the beginning of this function.
-        my $longname = '';
-        my $hit_length = 0;
-        if (defined($hits->length())) {
-            $hit_length = $hits->length();
-        }
-        my $hit_acc = $hits->accession();
-        my $hit_descr = $hits->description();
-        my $hit_score = $hits->score();
-        my $hit_sig = $hits->significance();
-        my $hit_bits = $hits->bits();
+        $number_result++;
+        print "Result: ${number_result}\n";
+        my $query_name = $result->query_name();
+        my $query_length = $result->query_length();
+        my $query_descr = $result->query_description();
+        my $stats = $result->available_statistics();
+        my $hits = $result->num_hits();
+        my $datum_ref = {
+            description => $query_descr,
+            name => $query_name,
+            stats => $stats,
+            length => $query_length,
+            hit_data => {},
+        };
+        $result_data->{$query_name} = $datum_ref;
+        my $hit_count = 0;
+      HITLOOP: while (my $hits = $result->next_hit()) {
+            $number_hits = $number_hits++;
+            my $hit_name = $hits->name();
+            ## The hit_name should cross reference to one of the two accession columns in xref_aoh
+            ## from the beginning of this function.
+            my $longname = '';
+            my $hit_length = 0;
+            if (defined($hits->length())) {
+                $hit_length = $hits->length();
+            }
+            my $hit_acc = $hits->accession();
+            my $hit_descr = $hits->description();
+            my $hit_score = $hits->score();
+            my $hit_sig = $hits->significance();
+            my $hit_bits = $hits->bits();
 
-        ## Create our values matrices
-        $e_values->{$query_name}->{$hit_name} = $hit_sig;
-        $bit_values->{$query_name}->{$hit_name} = $hit_bits;
-        $scores->{$query_name}->{$hit_name} = $hit_score;
+            ## Create our values matrices
+            $e_values->{$query_name}->{$hit_name} = $hit_sig;
+            $bit_values->{$query_name}->{$hit_name} = $hit_bits;
+            $scores->{$query_name}->{$hit_name} = $hit_score;
 
-        #my %hit_datum = (
-        #    query_name => $query_name,
-        #    query_length => $query_length,
-        #    query_descr => $query_descr,
-        #    stats => $stats,
-        #    length => $hit_length,
-        #    acc => $hit_acc,
-        #    description => $hit_descr,
-        #    score => $hit_score,
-        #    sig => $hit_sig,
-        #    bit => $hit_bits,
-        #    longname => $longname,);
-        #push (@hit_lst, \%hit_datum);
-        #$result_data->{$query_name}->{hit_data}->{$hit_name} = \%hit_datum;
-    } ## End looking at this for this result.
-  } ## End iterating over the results for this sequence.
+            ## my %hit_datum = (
+            ##     query_name => $query_name,
+            ##     query_length => $query_length,
+            ##     query_descr => $query_descr,
+            ##     stats => $stats,
+            ##     length => $hit_length,
+            ##     acc => $hit_acc,
+            ##     description => $hit_descr,
+            ##     score => $hit_score,
+            ##     sig => $hit_sig,
+            ##     bit => $hit_bits,
+            ##     longname => $longname,);
+            ## push (@hit_lst, \%hit_datum);
+            ## $result_data->{$query_name}->{hit_data}->{$hit_name} = \%hit_datum;
+        }   ## End looking at this for this result.
+    }       ## End iterating over the results for this sequence.
 
     my @rows = keys %{$e_values};
     my $header_string = "ID\t";
@@ -511,21 +492,21 @@ sub Map_Accession {
     my $in = Bio::SeqIO->new(-file => $args{fasta}, -format => 'fasta');
     my $map = {};
   SEQS: while (my $seq = $in->next_seq) {
-      my $id = $seq->id;
-      my $short_id = $id;
-      $short_id =~ s/(^.*)\..*$/$1/g;
-      my $test = $seq->desc;
-      my $taxonomy = $test;
-      ## In theory I should be able to make a relatively simple capturing regex to
-      ## pull the taxonomy information.  I am insufficiently intelligent to do this.
-      my @stuff_taxonomy = split(/\[/, $taxonomy);
-      my $taxonomy_info = $stuff_taxonomy[$#stuff_taxonomy];
-      $taxonomy_info =~ s/\]$//g;
-      my ($genus, $species, $etc) = split(/\s+/, $taxonomy_info);
-      $species = '' if (!defined($species));
-      my $new = qq"${genus}_${species}_${short_id}";
-      $map->{$id} = $new;
-  }
+        my $id = $seq->id;
+        my $short_id = $id;
+        $short_id =~ s/(^.*)\..*$/$1/g;
+        my $test = $seq->desc;
+        my $taxonomy = $test;
+        ## In theory I should be able to make a relatively simple capturing regex to
+        ## pull the taxonomy information.  I am insufficiently intelligent to do this.
+        my @stuff_taxonomy = split(/\[/, $taxonomy);
+        my $taxonomy_info = $stuff_taxonomy[$#stuff_taxonomy];
+        $taxonomy_info =~ s/\]$//g;
+        my ($genus, $species, $etc) = split(/\s+/, $taxonomy_info);
+        $species = '' if (!defined($species));
+        my $new = qq"${genus}_${species}_${short_id}";
+        $map->{$id} = $new;
+    }
     return($map);
 }
 
@@ -547,59 +528,34 @@ sub Map_Accession {
 =back
 
 =cut
-sub ProgressiveMauve {
+sub Progressive_Mauve {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        required => ['input', 'reference'],
-        jmem => 24,
-        jprefix => '20',);
-    my $jname = 'pmauve';
-    my $outdir = qq"outputs/$options->{jprefix}pmauve";
-    make_path(qq"${outdir}");
-    my $stderr = qq"${outdir}/pmauve.stderr";
-    my $stdout = qq"${outdir}/pmauve.stdout";
-    my $comment = qq!## Attempting to run progressive mauve a directory of genbank/fasta files: $options->{input}.
-!;
-    my $mem = $options->{jmem} * 1000;
+        required => ['input', 'reference'],);
     my $jstring = qq!mauve=\$(type -ap Mauve)
 location=\$(dirname \${mauve})
 \${location}/progressiveMauve \\
-  --output=${outdir}/alignment \\
-  --output-guide-tree=${outdir}/guide_tree \\
-  --backbone-output=${outdir}/backbone \\
+  --output=$outputs->{output} \\
+  --output-guide-tree=$outputs->{guide_tree} \\
+  --backbone-output=$outputs->{backbone} \\
   $options->{reference} \\
   \$(/bin/find $options->{input})
 !;
     my $mauve = $class->Submit(
-        comment => $comment,
         input => $options->{input},
         library => $options->{library},
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => $jname,
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        output => qq"${outdir}/alignment",
-        stderr => $stderr,
-        stdout => $stdout,);
+        outputs => $outputs,);
     return($mauve);
 }
 
-sub MauveAligner {
+sub Mauve_Aligner {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        required => ['input', 'reference'],
-        jmem => 24,
-        jprefix => '20',);
-    my $jname = 'mauve';
-    my $outdir = qq"outputs/$options->{jprefix}mauve";
-    make_path(qq"${outdir}");
-    my $stderr = qq"${outdir}/mauve.stderr";
-    my $stdout = qq"${outdir}/mauve.stdout";
-    my $comment = qq!## Attempting to run mauveAligner using a directory of genbank/fasta files: $options->{input}.
-!;
+        required => ['input', 'reference'],);
     my @directory = ($options->{input});
     my @file_list = ();
     find(
@@ -612,49 +568,23 @@ sub MauveAligner {
         $input_files .= qq"${in} ";
     }
     $input_files =~ s/ $//g;
-    my $mem = $options->{jmem} * 1000;
     my $jstring = qq!mauveAligner \\
-  --output=${outdir} \\
+  --output=$paths->{output_dir} \\
   --island-size=50 \\
-  --island-output=${outdir}/islands.txt \\
+  --island-output=$outputs->{islands} \\
   --backbone-size=50 --max-backbone-gap=50 \\
-  --backbone-output=${outdir}/backbone.txt \\
-  --id-matrix=${outdir}/id_matrix.txt \\
-  --output-alignment=${outdir}/alignment.txt \\
-  --output-guide-tree=${outdir}/test.guide.tree \\
+  --backbone-output=$outputs->{backbone} \\
+  --id-matrix=$outputs->{id_matrix} \\
+  --output-alignment=$outputs->{output} \\
+  --output-guide-tree=$outputs->{guide_tree} \\
   ${input_files}
-
-    /z1/scratch/atb/dnaseq/cdc1551_pknf_2025/preprocessing/mauve/MD76CY_1_rerun_Sample_1_1.fsa
-    /z1/scratch/atb/dnaseq/cdc1551_pknf_2025/preprocessing/mauve/MD76CY_1_rerun_Sample_1_1.fsa.sslist
-    /z1/scratch/atb/dnaseq/cdc1551_pknf_2025/preprocessing/mauve/MD76CY_2_rerun_Sample_2_2.fsa
-    /z1/scratch/atb/dnaseq/cdc1551_pknf_2025/preprocessing/mauve/MD76CY_2_rerun_Sample_2_2.fsa.sslist
-    /z1/scratch/atb/dnaseq/cdc1551_pknf_2025/preprocessing/mauve/MD76CY_3_rerun_Sample_3_3.fsa
-    /z1/scratch/atb/dnaseq/cdc1551_pknf_2025/preprocessing/mauve/MD76CY_3_rerun_Sample_3_3.fsa.sslist
-    /z1/scratch/atb/dnaseq/cdc1551_pknf_2025/preprocessing/mauve/mycobacterium_tuberculosis_cdc1551.fasta
-    /z1/scratch/atb/dnaseq/cdc1551_pknf_2025/preprocessing/mauve/mycobacterium_tuberculosis_cdc1551.fasta.sslist
-Sequence loaded successfully.
-
-
-location=\$(dirname Mauve)
-\${location}/progressiveMauve \
-  --output=${outdir}/alignment \
-  --output-guide-tree=${outdir}/guide_tree \
-  --backbone-output=${outdir}/backbone \
-  $options->{library} \
-  \$(/bin/find $options->{input})
 !;
     my $mauve = $class->Submit(
-        comment => $comment,
         input => $options->{input},
         library => $options->{library},
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => $jname,
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        output => qq"${outdir}/alignment",
-        stderr => $stderr,
-        stdout => $stdout,);
+        outputs => $outputs,);
     return($mauve);
 }
 
@@ -677,94 +607,51 @@ Directory name containing input fasta files.
 =cut
 sub OrthoFinder {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        required => ['input'],
-        jmem => 24,
-        jprefix => '50',);
-    my $jname = 'orthofinder';
-    my $outdir = qq"outputs/$options->{jprefix}orthofinder";
-    make_path(qq"${outdir}/input");
-    if (-d "${outdir}/output") {
+        required => ['input'],);
+    make_path(qq"$paths->{output_dir}/input");
+    if (-d "$paths->{output_dir}/output") {
         print("The output directory already exists, moving it to a randomly generated name.");
         my $move_path = tmpnam();
         my $move_name = basename($move_path);
-        my $new_dir = qq"${outdir}/output_${move_name}";
-        print "Moving from ${outdir}/output to ${new_dir}\n";
-        my $moved = qx!mv "${outdir}/output" "${new_dir}"!;
+        my $new_dir = qq"$paths->{output_dir}/output_${move_name}";
+        print "Moving from $paths->{output_dir}/output to ${new_dir}\n";
+        my $moved = qx!mv "$paths->{output_dir}/output" "${new_dir}"!;
     }
 
     my $month_date = strftime "%h%d", localtime;
-
     ## Check that it is not a set of files
     if ($options->{input} =~ /$options->{delimiter}/) {
         my @inputs = split(/$options->{delimiter}/, $options->{input});
         for my $in (@inputs) {
-            my $copied = copy($in, qq"${outdir}/input");
+            my $copied = copy($in, qq"$paths->{output_dir}/input");
         }
-        $options->{input} = qq"${outdir}/input";
+        $options->{input} = qq"$paths->{output_dir}/input";
     }
-
-    my $stderr = qq"${outdir}/orthofinder.stderr";
-    my $stdout = qq"${outdir}/orthofinder.stdout";
-    my $comment = qq!## Attempting to run orthofinder using a faa directory in $options->{input}.
-!;
     my $jstring = qq!
 orthofinder -f $options->{input} \\
-  -o ${outdir}/output \\
-  2>>${stderr} 1>>${stdout}
-mv ${outdir}/output/Results_${month_date}/* ${outdir}/output
-rmdir ${outdir}/output/Results_${month_date}
+  -o $paths->{output_dir}/output \\
+  2>>$outputs->{stderr} 1>>$outputs->{stdout}
+mv $paths->{output_dir}/output/Results_${month_date}/* $paths->{output_dir}/output
+rmdir $paths->{output_dir}/output/Results_${month_date}
 !;
-    my $orthofinder_all_output = qq"${outdir}/output/Orthogroups/Orthogroups.tsv";
-    my $orthofinder_single_output = qq"${outdir}/output/Orthogroups/Orthogroups_SingleCopyOrthologues.txt";
-    my $namer_out = qq"${outdir}/orthogroups_all_named.tsv";
-    my $single_out = qq"${outdir}/orthogroups_single_named.tsv";
-    my $fasta_dir = qq"${outdir}/input";
     my $ortho = $class->Submit(
-        comment => $comment,
         input => $options->{input},
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => $jname,
-        jprefix => qq"$options->{jprefix}_1",
         jstring => $jstring,
-        output => $orthofinder_all_output,
-        single_out => $orthofinder_single_output,
-        named_out => $namer_out,
-        single_name_out => $single_out,
-        stderr => $stderr,
-        stdout => $stdout,);
-    $comment = qq'## Extracting ortholog names.';
-    $stdout = qq"${outdir}/name_orthogroups.stdout";
-    $stderr = qq"${outdir}/name_orthogroups.stderr";
-    $jname = qq'orthofinder_namer';
+        outputs => $outputs,);
+    my $jcomment = qq'## Extracting ortholog names.';
     $jstring = qq!use Bio::Adventure::Align;
 my \$result = \$h->Bio::Adventure::Align::Orthofinder_Names_Worker(
-  all_input => '${orthofinder_all_output}',
-  single_input => '${orthofinder_single_output}',
-  named_out => '${namer_out}',
-  single_name_out => '${single_out}',
-  fasta_dir => '${fasta_dir}',
-  stdout => '${stdout}',
-  stderr => '${stderr}',);
+  all_input => '$outputs->{all}',);
 !;
     my $namer = $class->Submit(
-        all_input => $orthofinder_all_output,
-        comment => $comment,
-        fasta_dir => $fasta_dir,
+        all_input => $outputs->{all},
+        fasta_dir => $paths->{fasta_dir},
         jstring => $jstring,
         jdepends => $ortho->{job_id},
-        jname => $jname,
-        jprefix => qq"$options->{jprefix}_2",
-        language => 'perl',
-        single_input => $orthofinder_single_output,
-        output => $orthofinder_all_output,
-        single_out => $orthofinder_single_output,
-        named_out => $namer_out,
-        single_name_out => $single_out,
-        stdout => $stdout,
-        stderr => $stderr,);
+        language => 'perl',);
     $ortho->{namer} = $namer;
     $ortho->{job_id} = $namer->{job_id};
     return($ortho);
@@ -795,23 +682,23 @@ Ibid, but for 1:1 mapped groups.
 =back
 
 =cut
+
+
 sub Orthofinder_Names_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        jmem => 24,
         named_out => 'all_orthogroups_named.tsv',
-        single_name_out => 'single_orthogroups_named.tsv',
-        jprefix => '50',);
+        single_name_out => 'single_orthogroups_named.tsv',);
     my $protein_desc = {};
     my $ortho_names = {};
-    my $all_groups = $options->{all_input};
-    my $single_groups = $options->{single_input};
+    my $all_groups = $outputs->{all};
+    my $single_groups = $outputs->{single};
     my $outdir = dirname($all_groups);
-    my $log = FileHandle->new(">${outdir}/orthonamer.log");
-    my $all_out = $options->{named_out};
-    my $single_out = $options->{single_name_out};
-    my $fasta_dir = $options->{fasta_dir};
+    my $log = FileHandle->new(">$outputs->{namer_log}");
+    my $all_out = $outputs->{named};
+    my $single_out = $outputs->{single_named};
+    my $fasta_dir = $paths->{fasta_dir};
     my @input_files = glob("${fasta_dir}/*.fa*");
     my $species_gene_id = '';
     for my $in (@input_files) {
@@ -820,30 +707,28 @@ sub Orthofinder_Names_Worker {
         my $seqio_in = Bio::SeqIO->new(-format => 'fasta', -file => $in);
         my $id_count = 0;
       SEQ: while (my $seq = $seqio_in->next_seq) {
-          my $id = $seq->id;
-          my $desc = $seq->desc;
-          $desc =~ s/^.* \[protein=//g;
-          $desc =~ s/^(.*?)\].*$/$1/g;
-          $desc =~ s/\r\n/\n/g;
-          $desc =~ s/\r/\n/g;
-          if ($desc =~ /description:/) {
-              $desc =~ s/^(.*)description:(.*)$/$2/g;
-          }
-          if ($desc =~ / ; /) {
-              $desc =~ s/^(.*) ; (.*)$/$2/g;
-          }
-          if ($desc =~ / \[.*/) {
-              $desc =~ s/ \[.*//g;
-          }
-          ##while ($id_count < 10) {
-          ##    $id_count++;
-          ##}
-
-          $protein_desc->{$species_name}->{$id} = $desc;
-      }
+            my $id = $seq->id;
+            my $desc = $seq->desc;
+            $desc =~ s/^.* \[protein=//g;
+            $desc =~ s/^(.*?)\].*$/$1/g;
+            $desc =~ s/\r\n/\n/g;
+            $desc =~ s/\r/\n/g;
+            if ($desc =~ /description:/) {
+                $desc =~ s/^(.*)description:(.*)$/$2/g;
+            }
+            if ($desc =~ / ; /) {
+                $desc =~ s/^(.*) ; (.*)$/$2/g;
+            }
+            if ($desc =~ / \[.*/) {
+                $desc =~ s/ \[.*//g;
+            }
+            ##while ($id_count < 10) {
+            ##    $id_count++;
+            ##}
+            $protein_desc->{$species_name}->{$id} = $desc;
+        }
         print $log "Finished extracting ids from: ${species_name}.\n";
     }
-
     die("Could not find the file of all groups.") unless (-f $all_groups);
     print $log "Opening all_groups: ${all_groups}\n";
     my $orth = FileHandle->new("<${all_groups}");
@@ -856,83 +741,78 @@ sub Orthofinder_Names_Worker {
     $header_line =~ s/\t$//g;
     $header_line .= "\n";
     print $new_orth $header_line;
-
     my $line_count = 0;
     my @group_order = ();
   LOOP: while (my $line = <$orth>) {
-      ## Dos2unix!  It is not clear to me if these are encoded as \r or \r\n?
-      $line =~ s/\r\n/\n/g;
-      $line =~ s/\r/\n/g;
-      chomp $line;
-      $line_count++;
-      my @groups = split(/\t/, $line);
-      my $group = shift @groups;
-      if ($line_count == 1) {
-          @group_order = @groups;
-          next LOOP;
-      }
-
-      my $write_string = qq!"${group}"!;
-      my $species_count = 0;
-    SPECIES_IDS: for my $sp (0 .. $#group_order) {
-        my $species = $group_order[$sp];
-        print $log "Seeking out species IDs for ${species}\n";
-        my $group_ids = $groups[$sp];
-        my @species_gene_ids = ();
-        if (defined($group_ids)) {
-            @species_gene_ids = split(/[:;,]/, $group_ids);
-        } else {
-            print $log "I do not have group IDs for $species on line ${line_count}\n";
-            print $log "${line}\n";
+        ## Dos2unix!  It is not clear to me if these are encoded as \r or \r\n?
+        $line =~ s/\r\n/\n/g;
+        $line =~ s/\r/\n/g;
+        chomp $line;
+        $line_count++;
+        my @groups = split(/\t/, $line);
+        my $group = shift @groups;
+        if ($line_count == 1) {
+            @group_order = @groups;
+            next LOOP;
         }
-        my $first_name = 'undef';
-        my $number_species_hits = scalar(@species_gene_ids);
-        if ($number_species_hits > 0) {
-            $species_gene_id = $species_gene_ids[0];
-            my $test_name = $protein_desc->{$species}->{$species_gene_id};
-            if (defined($protein_desc->{$species}->{$species_gene_id})) {
-                print $log "The first ID in this group is: ${species_gene_id} with name: $test_name\n";
-                my $tmp = 0;
+
+        my $write_string = qq!"${group}"!;
+        my $species_count = 0;
+      SPECIES_IDS: for my $sp (0 .. $#group_order) {
+            my $species = $group_order[$sp];
+            print $log "Seeking out species IDs for ${species}\n";
+            my $group_ids = $groups[$sp];
+            my @species_gene_ids = ();
+            if (defined($group_ids)) {
+                @species_gene_ids = split(/[:;,]/, $group_ids);
             } else {
-                my $tmp = 0;
-                print $log "I do not appear to have an entry for ${species} and ${species_gene_id}\n";
+                print $log "I do not have group IDs for $species on line ${line_count}\n";
+                print $log "${line}\n";
             }
-        } elsif ($number_species_hits == 0) {
-            if (!defined($group_ids)) {
-                $group_ids = 'undefined';
+            my $first_name = 'undef';
+            my $number_species_hits = scalar(@species_gene_ids);
+            if ($number_species_hits > 0) {
+                $species_gene_id = $species_gene_ids[0];
+                my $test_name = $protein_desc->{$species}->{$species_gene_id};
+                if (defined($protein_desc->{$species}->{$species_gene_id})) {
+                    print $log "The first ID in this group is: ${species_gene_id} with name: $test_name\n";
+                    my $tmp = 0;
+                } else {
+                    my $tmp = 0;
+                    print $log "I do not appear to have an entry for ${species} and ${species_gene_id}\n";
+                }
+            } elsif ($number_species_hits == 0) {
+                if (!defined($group_ids)) {
+                    $group_ids = 'undefined';
+                }
+                $species_gene_id = $group_ids;
+            } else {
+                $species_gene_id = 'undefined';
             }
-            $species_gene_id = $group_ids;
-        } else {
-            $species_gene_id = 'undefined';
+            if (!defined($species_gene_id)) {
+                $species_gene_id = 'undefined';
+            }
+            print $log "About to extract first name: ${species_gene_id}\n";
+            my $first_description = '';
+            if (defined($protein_desc->{$species}->{$species_gene_id})) {
+                $first_description = $protein_desc->{$species}->{$species_gene_id};
+            }
+            my $group_string = $groups[$species_count];
+            if (!defined($group_string)) {
+                $group_string = 'undefined';
+            }
+            if (!defined($first_description)) {
+                $first_description = 'no description found';
+            }
+            $write_string .= qq!\t"${group_string}"\t"${species_gene_id}"\t"${first_description}"!;
+            $ortho_names->{$species}->{$group}->{id} = $species_gene_id;
+            $ortho_names->{$species}->{$group}->{descr} = $first_description;
+            $species_count++;
         }
-
-        if (!defined($species_gene_id)) {
-            $species_gene_id = 'undefined';
-        }
-        print $log "About to extract first name: ${species_gene_id}\n";
-
-        my $first_description = '';
-        if (defined($protein_desc->{$species}->{$species_gene_id})) {
-            $first_description = $protein_desc->{$species}->{$species_gene_id};
-        }
-        my $group_string = $groups[$species_count];
-        if (!defined($group_string)) {
-            $group_string = 'undefined';
-        }
-        if (!defined($first_description)) {
-            $first_description = 'no description found';
-        }
-        $write_string .= qq!\t"${group_string}"\t"${species_gene_id}"\t"${first_description}"!;
-        $ortho_names->{$species}->{$group}->{id} = $species_gene_id;
-        $ortho_names->{$species}->{$group}->{descr} = $first_description;
-
-        $species_count++;
+        $write_string =~ s/\t$//g;
+        $write_string .= "\n";
+        print $new_orth $write_string;
     }
-      $write_string =~ s/\t$//g;
-      $write_string .= "\n";
-      print $new_orth $write_string;
-  }
-
     $orth->close();
     $new_orth->close();
 
@@ -944,22 +824,21 @@ sub Orthofinder_Names_Worker {
     $single_header =~ s/\t$//g;
     $single_header .= "\n";
     print $new_single_orth $single_header;
-
     my $single_orth = FileHandle->new("<${single_groups}");
 
   SINGLES: while (my $group = <$single_orth>) {
-      $group =~ s/\r\n/\n/g;
-      $group =~ s/\r/\n/g;
-      chomp $group;
-      my $print_string = qq"${group}\t";
-      for my $sp (@group_order) {
-          ## $ortho_names->{$sp}->{$group} = $first_species_name;
-          $print_string .= qq"$ortho_names->{$sp}->{$group}->{id}\t$ortho_names->{$sp}->{$group}->{descr}\t";
-      }
-      $print_string =~ s/\t$//g;
-      $print_string .= "\n";
-      print $new_single_orth $print_string;
-  }
+        $group =~ s/\r\n/\n/g;
+        $group =~ s/\r/\n/g;
+        chomp $group;
+        my $print_string = qq"${group}\t";
+        for my $sp (@group_order) {
+            ## $ortho_names->{$sp}->{$group} = $first_species_name;
+            $print_string .= qq"$ortho_names->{$sp}->{$group}->{id}\t$ortho_names->{$sp}->{$group}->{descr}\t";
+        }
+        $print_string =~ s/\t$//g;
+        $print_string .= "\n";
+        print $new_single_orth $print_string;
+    }
     $single_orth->close();
     $new_single_orth->close();
     $log->close();

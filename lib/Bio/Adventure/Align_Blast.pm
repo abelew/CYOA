@@ -54,13 +54,11 @@ use POSIX qw"ceil";
 =cut
 sub Make_Blast_Job {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $input, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         blast_format => 5,
-        jdepends => '',
-        jprefix =>'89',
-        jmem => 24,);
+        jdepends => '',);
     my $dep = $options->{jdepends};
     my $library = $options->{library};
     my $array_end = 100 + $options->{align_jobs};
@@ -74,8 +72,7 @@ sub Make_Blast_Job {
     } elsif ($options->{cluster} eq 'torque') {
         $array_id_string = '${PBS_ARRAYID}';
     }
-
-    my $job_basename = $class->Get_Job_Name();
+    my $job_basename = $options->{job_basename};
     ## The fine folks at NCBI changed the numbers of the blast outputs!
     ## 0=pairwise ; 1=query_anchored identies ; 2=query_anchored no identities ;
     ## 3=flat identities ; 4=flat no identities ; 5=blastxml ; 6=tabular
@@ -87,8 +84,6 @@ sub Make_Blast_Job {
         sleep(3);
     }
     my $jstring = '';
-    my $stdout = qq"$options->{workdir}/make_blast_job.stdout";
-    my $stderr = qq"$options->{workdir}/make_blast_job.stderr";
     my $output;
     if ($options->{cluster}) {
         $output = qq"$options->{workdir}/split/*/*.out";
@@ -101,8 +96,8 @@ if [[ -f "\${IN}" ]]; then
     -query \${IN} \\
     -db ${library} ${blast_args} \\
     -out $options->{workdir}/split/${array_id_string}/${array_id_string}.out \\
-    1>${stdout} \\
-    2>>${stderr}
+    1>$paths->{stdout} \\
+    2>>$paths->{stderr}
 else
   echo "The input does not exist: \${IN}"
   exit 0
@@ -117,22 +112,15 @@ $options->{blast_tool} -outfmt $options->{blast_format} \\
   -query $options->{input} \\
   -db ${library} \\
   -out ${output} \\
-  1>${stdout} \\
-  2>>${stderr}
+  1>$paths->{stdout} \\
+  2>>$paths->{stderr}
 !;
     }
-    my $comment = '## Running multiple blast jobs.';
     my $blast_jobs = $class->Submit(
         array_string => $array_string,
-        comment => $comment,
-        jname => $job_basename,
         jdepends => $dep,
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        jmem => $options->{jmem},
-        output => $output,
-        stdout => $stdout,
-        stderr => $stderr,);
+        outputs => $outputs,);
     return($blast_jobs);
 }
 
@@ -153,12 +141,11 @@ $options->{blast_tool} -outfmt $options->{blast_format} \\
 =cut
 sub Merge_Parse_Blast {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        required => ['output'],
-        jmem => 8,);
+        required => ['output'],);
     my $concat = $class->Bio::Adventure::Align::Concatenate_Searches();
-    my $input = $options->{output};
+    my $input = $outputs->{output};
     my $jstring = qq!
 use Bio::Adventure;
 use Bio::Adventure::Align;
@@ -168,9 +155,8 @@ my \$final = \$h->Bio::Adventure::Align_Blast->Parse_Search(search_type => 'blas
 !;
     my $parse = $class->Submit(
         jdepends => $concat->{job_id},
-        jmem => $options->{jmem},
-        jname => 'parse_search',
         jstring => $jstring,
+        outputs => $outputs,
         language => 'perl',);
     return($parse);
 }
@@ -195,7 +181,7 @@ my \$final = \$h->Bio::Adventure::Align_Blast->Parse_Search(search_type => 'blas
 =cut
 sub Parse_Blast {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $path, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         best_only => 0,
@@ -268,10 +254,10 @@ sub Parse_Blast {
                 $hsp_identical = $hsp_identical * 100;
 
                 ## $hsp_cons = $hsp->frac_cons('total');
-                last HSP;      ## The 'HSP: ' is a label given to a logical loop
+                last HSP; ## The 'HSP: ' is a label given to a logical loop
                 ## If you then say next HSP; it will immediately stop processing the loop and move to the next iteration of the loop
                 ## If instead you say last HSP; it will immediately break out of the loop.
-            }   ## next hsp
+            } ## next hsp
 
             ## This prints %identity with respect to the overlap of the component
             ## Then the score of the hit, its Evalue, and the component length.
@@ -320,29 +306,25 @@ sub Parse_Blast {
 =cut
 sub Run_Parse_Blast {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'library'],
         blast_tool => 'blastp',
-        evalue => 0.01,
-        output => 'blast_output.txt',);
+        evalue => 0.01,);
     my %modules = Get_Modules(caller => 1);
     my $loaded = $class->Module_Loader(%modules);
-    my $job_basename = $class->Get_Job_Name();
     my $query = $options->{input};
     my $library_path = $class->Bio::Adventure::Index::Check_Blastdb(%args);
     my $library = $options->{library};
     my $number_hits = 0;
     my $libname = basename($library, ('.fasta'));
     ## my $query_library = Bio::SeqIO->new(-file => ${query}, -format => 'Fasta');
-    my $output_directory = qq"$options->{basedir}/outputs/${query}_vs_${libname}";
-    make_path("${output_directory}") unless (-d $output_directory);
-    my $counts = FileHandle->new(">${output_directory}/counts.txt");
-    my $zeros = FileHandle->new(">${output_directory}/zeros.fasta");
-    my $singles = FileHandle->new(">${output_directory}/singles.fasta");
-    my $doubles = FileHandle->new(">${output_directory}/doubles.fasta");
-    my $few = FileHandle->new(">${output_directory}/few.fasta");
-    my $many = FileHandle->new(">${output_directory}/many.fasta");
+    my $counts = FileHandle->new(">$outputs->{counts}");
+    my $zeros = FileHandle->new(">$outputs->{zeros}");
+    my $singles = FileHandle->new(">$outputs->{singles}");
+    my $doubles = FileHandle->new(">$outputs->{doubles}");
+    my $few = FileHandle->new(">$outputs->{few}");
+    my $many = FileHandle->new(">$outputs->{many}");
     my $seq_count = 0;
 
     my @params = (
@@ -369,23 +351,23 @@ sub Run_Parse_Blast {
         ## $blast_output = $search->blastall($query_library);
         if ($options->{blast_tool} eq 'blastp') {
             $blast_output = $search->blastp(-query => $options->{input},
-                                            -outfile => $options->{output});
+                                            -outfile => $outputs->{output});
         } elsif ($options->{blast_tool} eq 'blastn') {
             $blast_output = $search->blastn(-query => $options->{input},
-                                            -outfile => $options->{output});
+                                            -outfile => $outputs->{output});
         } elsif ($options->{blast_tool} eq 'tblastx') {
             $blast_output = $search->tblastx(-query => $options->{input},
-                                             -outfile => $options->{output});
+                                             -outfile => $outputs->{output});
         } else {
             $blast_output = $search->blastx(-query => $options->{input},
-                                            -outfile => $options->{output});
+                                            -outfile => $outputs->{output});
         }
     };
     if ($@) {
         print "Error? $@\n";
     }
     my $blast_results = Bio::SearchIO->new(-format => 'blast',
-        -file => $options->{output});
+        -file => $outputs->{output});
 
     my $result_count = 0;
     while (my $result = $blast_results->next_result()) {
@@ -486,7 +468,7 @@ Report only the best hits per search?
 =cut
 sub Split_Align_Blast {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         align_jobs => 40,
         align_parse => 0,
@@ -494,8 +476,6 @@ sub Split_Align_Blast {
         blast_format => 5,
         blast_tool => 'blastn',
         interactive => 0,
-        jmem => 8,
-        jprefix => '86',
         num_dirs => 0,
         param => ' -evalue 10 ',
         required => ['input', 'library',],);
@@ -507,7 +487,6 @@ blastn is normal nucleotide/nucleotide
 blastp is normal protein/protein.
 ";
     sleep(1);
-    my $job_basename = $class->Get_Job_Name();
     ## Also set the default blastdb if it didn't get set.
     if ($options->{blast_tool} eq 'blastn' or
         $options->{blast_tool} eq 'tblastn' or
@@ -524,38 +503,36 @@ blastp is normal protein/protein.
     }
     my $lib = basename($options->{library}, ('.fasta'));
     my $que = basename($options->{input}, ('.fasta'));
-    my $outdir = qq"$options->{basedir}/outputs/$options->{jprefix}${job_basename}";
-    make_path("${outdir}/blastdb") unless(-d ${outdir});
-    my $output = qq"${outdir}/${que}_vs_${lib}.txt";
-    $ENV{BLASTDB} = qq"${outdir}/blastdb";
+    make_path("$paths->{output_dir}/blastdb") unless(-d $paths->{output_dir});
+    $ENV{BLASTDB} = qq"$paths->{output_dir}/blastdb";
     my $blast_lib = $class->Bio::Adventure::Index::Check_Blastdb(
-        %args, workdir => $outdir, input => abs_path($options->{library}));
+        %args, workdir => $paths->{output_dir}, input => abs_path($options->{library}));
     my $split_info = $class->Bio::Adventure::Align::Get_Split(
         %args, align_jobs => $align_jobs);
     my $actual = $class->Bio::Adventure::Align::Make_Directories(
-        workdir => $outdir,
+        workdir => $paths->{output_dir},
         num_per_split => $split_info->{num_per_split},);
     print "Actually used ${actual} directories to write files.\n";
     my $alignment = $class->Bio::Adventure::Align_Blast::Make_Blast_Job(
         library => $lib,
         align_jobs => $actual,
         input => abs_path($options->{input}),
-        jname => qq"${job_basename}_makeblastjob",
+        jname => qq"$options->{job_basename}_makeblastjob",
         jprefix => qq"$options->{jprefix}_1",
-        workdir => $outdir,
+        workdir => $paths->{output_dir},
         output_type => $options->{blast_format},);
     my $concat_job = $class->Bio::Adventure::Align::Concatenate_Searches(
-        input => $alignment->{output},
+        input => $outputs->{output},
         jdepends => $alignment->{job_id},
-        jname => qq"${job_basename}_concatblast",
+        jname => qq"$options->{job_basename}_concatblast",
         jprefix => qq"$options->{jprefix}_2",
-        workdir => $outdir,);
+        workdir => $paths->{output_dir},);
+    ## FIXME: Clean this up
     my $parse_input = $concat_job->{output};
     my $parse_output = $parse_input;
     $parse_output =~ s/\.txt\.xz/_parsed.txt/g;
     my $count_output = $parse_input;
     $count_output =~ s/_parsed\.txt/_counts\.txt/g;
-    my $comment_string = qq!## I don't know if this will work.!;
     my $jstring = qq?
 use Bio::Adventure;
 use Bio::Adventure::Align;
@@ -568,14 +545,12 @@ my \$result = \$h->Bio::Adventure::Align::Parse_Search(
   best => $options->{best_only});
 ?;
     my $parse_job = $class->Submit(
-        comment => $comment_string,
         count_output => $count_output,
         jdepends => $concat_job->{job_id},
-        jmem => $options->{jmem},
-        jname => qq"${job_basename}_parseblast",
         jprefix => qq"$options->{jprefix}_3",
         jstring => $jstring,
         language => 'perl',
+        outputs => $outputs,
         parsed_output => $parse_output,);
     $concat_job->{parser} = $parse_job;
     $parse_job->{job_id} = $parse_job->{job_id};
@@ -592,33 +567,22 @@ my \$result = \$h->Bio::Adventure::Align::Parse_Search(
 =cut
 sub OrthoMCL_Pipeline {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],);
-    my $job_name = 'orthomcl';
     ## Note that I am cheating and using a pre-defined pipeline for orthomcl
     ## https://github.com/apetkau/orthomcl-pipeline
     ## This also assumes that everything for orthomcl and its pipeline has already been configured.
-    my $inputs = $class->Get_Path_Info($options->{input});
-    my $cwd_name = basename(cwd());
-
-    my $comment = '## This is a orthomcl submission script.';
     my $jstring = qq!
 orthomcl-pipeline.pl -i input -o output \\
   --nocompliant --yes
 !;
     my $job = $class->Submit(
-        comment => $comment,
-        jcpu => 12,
         jdepends => $options->{jdepends},
-        jname => 'orthomcl',
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        jmem => 16,
-        output => 'output',
+        outputs => $outputs,
         prescript => $options->{prescript},
-        postscript => $options->{postscript},
-        walltime => '144:00:00',);
+        postscript => $options->{postscript},);
     return($job);
 }
 

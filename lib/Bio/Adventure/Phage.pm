@@ -47,12 +47,9 @@ use XML::LibXML;
 =cut
 sub Bacphlip {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        required => ['input'],
-        jmem => 12,
-        jname => 'bacphlip',
-        jprefix => '80',);
+        required => ['input'],);
     my @suffixes = split(/,/, $options->{suffixes});
     my $out_base = basename($options->{input}, @suffixes);
     my $in_base = basename($options->{input});
@@ -64,7 +61,6 @@ sub Bacphlip {
     my $output_tsv = qq"${output_dir}/${in_base}.hmmsearch.tsv";
     my $stderr = qq"${output_dir}/${out_base}.stderr";
     my $stdout = qq"${output_dir}/${out_base}.stdout";
-    my $comment = qq'## Running bacphlip using $options->{input}.';
     my $jstring = qq?mkdir -p ${output_dir}
 cp $options->{input} ${output_dir}
 start=\$(pwd)
@@ -85,12 +81,9 @@ bacphlip -f \${multi_arg} -i ${in_base} \\
 cd \${start}
 ?;
     my $job = $class->Submit(
-        comment => $comment,
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => $options->{jname},
-        jprefix => $options->{jprefix},
         jstring => $jstring,
+        outputs => $outputs,
         output => $output,
         output_hmm => $output_hmm,
         output_frames => $output_frames,
@@ -129,11 +122,9 @@ cd \${start}
 
 sub Caical {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        required => ['input', 'species'],
-        jmem => 4,
-        jprefix => '80',);
+        required => ['input', 'species'],);
     my $test = ref($options->{suffixes});
     my @suffixes = split(/,/, $options->{suffixes});
     my $species = $options->{species};
@@ -147,7 +138,6 @@ sub Caical {
     my $expected_cai = qq"${output_dir}/${out_base}_expected.txt";
     my $stderr = qq"${output_dir}/${out_base}.stderr";
     my $stdout = qq"${output_dir}/${out_base}.stdout";
-    my $comment = qq'## Running caical against ${species}.';
     my $jstring = qq!use Bio::Adventure::Phage;
 my \$result = \$h->Bio::Adventure::Phage::Caical_Worker(
   input => '$options->{input}',
@@ -163,13 +153,11 @@ my \$result = \$h->Bio::Adventure::Phage::Caical_Worker(
   output_dir => '${output_dir}',);
 !;
     my $cai = $class->Submit(
-        comment => $comment,
         expected_cai => $expected_cai,
         input => $options->{input},
         jdepends => $options->{jdepends},
-        jname => $jname,
-        jprefix => $options->{jprefix},
         jstring => $jstring,
+        outputs => $outputs,
         output => $output_cai,
         random_sequences => $random_sequences,
         species => $species,
@@ -182,15 +170,12 @@ my \$result = \$h->Bio::Adventure::Phage::Caical_Worker(
 
 sub Caical_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species'],
-        jmem => 4,
         random_sequences => '',
         expected_cai => '',
-        output => '',
-        jprefix => '80',);
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+        output => '',);
     my $species = $options->{species};
     ## Then the species argument is a filename, so pull the species from it.
     if (-r $species) {
@@ -227,12 +212,9 @@ sub Caical_Worker {
 ## cries if a sequence is not %3 == 0.  If so, use this.
 sub Caical_CDS {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        required => ['input', 'species'],
-        jmem => 4,
-        jprefix => '80',
-        modules => ['caical']);
+        required => ['input', 'species'],);
     my $seqio_in = Bio::SeqIO->new(-format => 'fasta', -file => $options->{input});
     my $output_dir = qq"";
     my $out_base = '';
@@ -274,25 +256,19 @@ sub Caical_CDS {
 =cut
 sub Classify_Phage {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         evalue => 0.01,
         blast_tool => 'tblastx',
         library => 'ictv',
-        topn => 5,
-        jmem => 12,
-        jprefix => '18',);
-    my $path_info = $class->Get_Path_Info($options->{input});
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+        topn => 5,);
     my $output_dir = $paths->{output_dir};
     my $stderr = qq"${output_dir}/$options->{library}.stderr";
     my $stdout = qq"${output_dir}/$options->{library}.stdout";
     my $output_tsv = qq"${output_dir}/$options->{library}_filtered.tsv";
     my $output_blast = qq"${output_dir}/$options->{library}_hits.txt";
     my $output_log = qq"${output_dir}/classify.log";
-    my $comment = qq"## This will perform a tblastx search against a manually curated set of
-## ICTV taxonomies and attempt to provide the most likely classification for this assembly.\n";
     my $jstring = qq?
 use Bio::Adventure;
 use Bio::Adventure::Phage;
@@ -303,7 +279,7 @@ my \$result = Bio::Adventure::Phage::Classify_Phage_Worker(\$h,
   library => '$options->{library}',
   output => '${output_tsv}',
   output_blast => '${output_blast}',
-  output_dir => '${output_dir}',
+ output_dir => '${output_dir}',
   output_log => '${output_log}',
   topn => '$options->{topn}',);
 ?;
@@ -311,14 +287,11 @@ my \$result = Bio::Adventure::Phage::Classify_Phage_Worker(\$h,
         blast_tool => $options->{blast_tool},
         evalue => $options->{evalue},
         input => $options->{input},
-        comment => $comment,
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => 'classify_ictv',
-        jprefix => $options->{jprefix},
         jstring => $jstring,
         language => 'perl',
         library => $options->{library},
+        outputs => $outputs,
         stderr => $stderr,
         stdout => $stdout,
         output => $output_tsv,
@@ -367,11 +340,10 @@ my \$result = Bio::Adventure::Phage::Classify_Phage_Worker(\$h,
 =cut
 sub Classify_Phage_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         blast_tool => 'tblastx',
         evalue => 0.01,
-        jcpu => 4,
         library => 'ictv',
         output_log => 'classify.log',
         output_blast => 'ictv_hits.txt',
@@ -384,8 +356,6 @@ sub Classify_Phage_Worker {
     my $loaded = $class->Module_Loader(%modules);
     my $blast_db = $ENV{BLASTDB};
     my $unloaded = $class->Module_Reset(env => $loaded);
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
-
     ## Read the xref file, located in the blast database directory as ${library}.csv
     my $xref_file = qq"${blast_db}/$options->{library}.csv";
     ## Use Text::CSV to create an array of hashes with keynames:
@@ -627,12 +597,10 @@ sub Download_NCBI_Assembly_Accession {
 =cut
 sub Filter_Host_Kraken {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'input_fastq'],
         jdepends => '',
-        jmem => 8,
-        jprefix => '06',
         htseq_stranded => 'no',);
     ## FIXME FIXME FIXME
     ## This needs to be changed to use the EUtilities as per Prepare::Download_NCBI_Accession().
@@ -640,7 +608,6 @@ sub Filter_Host_Kraken {
     ## javascript-heavy datasets tree.  As a result, the use of WWW::Mechanize is unlikely to
     ## continue working for a large number of assemblies.  Happily, I now have some examples
     ## of EUtilities searches/downloads which should make this reasonably easy to fix.
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $output_dir = $paths->{output_dir};
     my $comment = '## Use kraken results to choose a host species to filter against.';
     my $out_r1_name = 'r1_host_filtered.fastq';
@@ -668,17 +635,14 @@ my \$result = Bio::Adventure::Phage::Filter_Kraken_Worker(\$h,
   stranded => '$options->{stranded}',);
 !;
     my $host = $class->Submit(
-        comment => $comment,
         compress => $options->{compress},
         input => $options->{input},
         input_fastq => $options->{input_fastq},
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => 'hostfilter',
-        jprefix => $options->{jprefix},
         jstring => $jstring,
         language => 'perl',
         log => $paths->{log},
+        outputs => $outputs,
         stderr => $paths->{stderr},
         stdout => $paths->{stdout},
         output => $output_files,
@@ -707,14 +671,13 @@ my \$result = Bio::Adventure::Phage::Filter_Kraken_Worker(\$h,
 =cut
 sub Filter_Kraken_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         jname => 'krakenfilter',
         required => ['input', 'output'],
         output_unaligned => undef,
         stranded => 'no',
         type => 'species',);
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $log = FileHandle->new(">$paths->{log}");
     my $in = FileHandle->new("<$options->{input}");
     my $status;
@@ -950,6 +913,7 @@ sub Filter_Kraken_Worker {
         language => 'bash',
         libpath => $options->{libpath},
         libdir => $options->{libdir},
+        outputs => $outputs,
         output_dir => $options->{output_dir},
         output_unaligned => $options->{output_unaligned},
         species => $host_species_accession,
@@ -1083,10 +1047,9 @@ sub Get_DTR {
                     },);
                 $dtr_feature->display_name($dtr_name);
                 push(@dtr_features, $dtr_feature);
-            }                   ## End matching on this contig
-        }                       ## End iterating over the contigs
-    }
-    else {
+            } ## End matching on this contig
+        } ## End iterating over the contigs
+    } else {
         ## There is no dtr file, but there was a dtr type, so let us make a dummy feature for it.
         $dtr_count++;
         $dtr_name = qq"DTR${dtr_count}";
@@ -1141,14 +1104,9 @@ sub Get_DTR {
 =cut
 sub Phageterm {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        jcpu => 8,
-        jmem => 12,
-        jprefix => '14',
         required => ['input', 'library'],);
-    my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Path_Info($options->{input});
     my $cwd_name = basename(cwd());
     my $assembly_relative = $options->{library};
     my $assembly_full = abs_path($options->{library});
@@ -1160,11 +1118,6 @@ sub Phageterm {
     if (-d $output_dir) {
         my $removed = rmtree($output_dir);
     }
-
-    my $comment = qq!## This is a script to run phageterm.
-## Phageterm has some peculiarities which require one to be
-## extra careful when running it.
-!;
     my $test_file = qq"${output_dir}/${cwd_name}_direct-term-repeats.fasta";
     my $cwd_test_file = basename($test_file);
     my $stdout = qq"${output_dir}/phageterm.stdout";
@@ -1179,19 +1132,16 @@ my \$result = \$h->Bio::Adventure::Phage::Phageterm_Worker(
   input => '$options->{input}',
   library => '$options->{library}',
   jprefix => '$options->{jprefix}',
-  jname => 'phageterm_${job_name}',
+  jname => 'phageterm_$options->{job_basename}',
   output_dir => '${output_dir}',
   output => '${output_file}',);
 ?;
     my $phageterm_run = $class->Submit(
-        comment => $comment,
         input => $options->{input},
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => 'phageterm',
-        jprefix => $options->{jprefix},
         jstring => $jstring,
         language => 'perl',
+        outputs => $outputs,
         output => $output_file,
         output_type => $dtr_type_file,
         output_dtr => $dtr_sequence_file,
@@ -1214,7 +1164,7 @@ my \$result = \$h->Bio::Adventure::Phage::Phageterm_Worker(
 =cut
 sub Phageterm_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'library'],
         output_dir => '.',
@@ -1257,15 +1207,13 @@ sub Phageterm_Worker {
         if ($in[0] =~ /\.fastq$/) {
             $decompressed_r1 = qx"cp $in[0] ${workdir}/r1.fastq";
             $decompressed_r2 = qx"cp $in[1] ${workdir}/r2.fastq";
-        }
-        else {
+        } else {
             $decompressed_r1 = qx"less $in[0] > ${workdir}/r1.fastq";
             $decompressed_r2 = qx"less $in[1] > ${workdir}/r2.fastq";
         }
         print $phage_log "Copied reads to ${workdir} as r1.fastq and r2.fastq.\n";
         $read_string = 'r1.fastq r2.fastq';
-    }
-    else {
+    } else {
         my $r1_filename = basename($options->{input});
         my $r1_dirname = dirname($options->{input});
         my $r1 = abs_path($options->{input});
@@ -1274,8 +1222,7 @@ sub Phageterm_Worker {
         my $decompressed;
         if ($options->{input} =~ /\.fastq$/) {
             $decompressed = qx"cp $options->{input} ${workdir}/r1.fastq";
-        }
-        else {
+        } else {
             $decompressed = qx"less $options->{input} > ${workdir}/r1.fastq";
         }
         print $phage_log "Copied reads to ${workdir} as r1.fastq.\n";
@@ -1325,7 +1272,7 @@ PhageTerm.py -f ${read_string} \\
             $dtr_contig = $num;
             last DTR_HUNT;
         }
-    }                           ## End the DTR hunt
+    } ## End the DTR hunt
 
     ## Last step, if we found a dtr, rewrite the assembly with it as the first contig
     ## But first, handle the case where there is no DTR.
@@ -1333,8 +1280,7 @@ PhageTerm.py -f ${read_string} \\
         print $phage_log "No DTR was observed, copying the input to the phageterm output file.\n";
         my $copied = qx"cp $options->{library} ${workdir}/phageterm_final_assembly.fasta && \\
   echo 'no dtr' > ${workdir}/phageterm_final_nodtr.txt";
-    }
-    else {
+    } else {
         ## Otherwise, put the DTR as the first contig and copy the rest
         ## There is a caveat here, I need to rename the DTR containing contig to #1
         ## and then rename any following contigs to 2..n
@@ -1388,8 +1334,7 @@ PhageTerm.py -f ${read_string} \\
                 print "Renamed dtr sequence from: $start_name to $end_name\n";
                 $final_dtr_seq->write_seq($dtr_sequence);
             }
-        }
-        else {
+        } else {
             print $phage_log "There is not dtr fasta file for ${dtr_contig}.\n";
         }
         print $phage_log "Copying the NRT file from ${dtr_contig} to phageterm_final_nrt.txt.\n";
@@ -1422,32 +1367,24 @@ PhageTerm.py -f ${read_string} \\
 =cut
 sub Phastaf {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         input_phageterm => '', ## In case we want to re-analyze the assembly
         interpret => 1,
-        jcpu => 8,
-        jmem => 12,
-        jprefix => '14',
         required => ['input'],);
-    my $job_name = $class->Get_Job_Name();
-    my $input_paths = $class->Get_Path_Info($options->{input});
-    my $input_full = $input_paths->[0]->{fullpath};
+    my $input_full = $inputs->[0]->{fullpath};
     my $output_dir = qq"outputs/$options->{jprefix}phastaf";
-    $output_dir .= "_$input_paths->[0]->{dirname}" if (defined($input_paths->[0]->{dirname}));
+    $output_dir .= "_$inputs->[0]->{dirname}" if (defined($inputs->[0]->{dirname}));
     my $stdout = qq"${output_dir}/phastaf.stdout";
     my $stderr = qq"${output_dir}/phastaf.stderr";
     if (-d $output_dir) {
         my $removed = rmtree($output_dir);
     }
-    my $comment = '## This is a script to run phastaf.';
     my $coords = qq"${output_dir}/diamond.coords";
     my $input_fna = qq"${output_dir}/contigs.fna";
     my $bed = qq"${coords}.bed";
     my $phage_bed = qq"${output_dir}/phage.bed";
-    my $jstring = qq?
-mkdir -p ${output_dir}
-phastaf --force --outdir ${output_dir} \\
+    my $jstring = qq?phastaf --force --outdir ${output_dir} \\
   --cpus $options->{jcpu} \\
   $options->{input} \\
   2>${stderr} \\
@@ -1455,15 +1392,11 @@ phastaf --force --outdir ${output_dir} \\
 ?;
     my $output_file = qq"${output_dir}/something.txt";
     my $phastaf = $class->Submit(
-        comment => $comment,
         coordinates => $coords,
         bed => $bed,
-        jcpu => $options->{jcpu},
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => qq"phastaf_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
+        outputs => $outputs,
         output => $output_file,
         stderr => $stderr,
         stdout => $stdout,
@@ -1497,6 +1430,7 @@ my \$result = Bio::Adventure::Phage::Interpret_Phastaf_Worker(\$h,
             jprefix => $new_jprefix,
             jstring => $interpret_jstring,
             language => 'perl',
+            outputs => $outputs,
             stderr => $stderr,
             stdout => $stdout,);
     }
@@ -1505,12 +1439,11 @@ my \$result = Bio::Adventure::Phage::Interpret_Phastaf_Worker(\$h,
 
 sub Interpret_Phastaf_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         input_phageterm => '',
         input_phage => '',
-        required => ['input', 'input_fna'],
-        jprefix => '14',);
+        required => ['input', 'input_fna'],);
     my $output_dir = dirname($options->{input});
     my $output_file = qq"${output_dir}/interpret_phastaf.txt";
     my $log = FileHandle->new(">${output_dir}/interpret_phastaf.log");
@@ -1615,8 +1548,7 @@ sub Interpret_Phastaf_Worker {
 
     if ($num_contigs == 1) {
         print $log "There appears to be a single contig.\n";
-    }
-    elsif ($num_contigs == 2 && $num_contigs_with_hits == 2) {
+    } elsif ($num_contigs == 2 && $num_contigs_with_hits == 2) {
         print $log "There appears to be 2 contigs.  Let us see the intersection of them?\n";
         my @first = $contig_keys[0];
         my @second = $contig_keys[1];
@@ -1667,8 +1599,7 @@ sub Interpret_Phastaf_Worker {
                     input => $full_input);
                 chdir($new_output_base);
             }
-        }
-        else {
+        } else {
             print $log "There are ${num_inter} shared strains in these two contigs.\n";
         }
     }
@@ -1711,12 +1642,10 @@ sub Interpret_Phastaf_Worker {
 =cut
 sub Restriction_Catalog {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
-        library => 'host_species.txt',
-        jmem => 8,
-        jprefix => '29',);
+        library => 'host_species.txt',);
     my $output_dir = qq"outputs/$options->{jprefix}re_catalog";
     my $re_output = qq"${output_dir}/re_catalog.tsv";
     my $stdout = qq"${output_dir}/re_catalog.stdout";
@@ -1725,27 +1654,22 @@ sub Restriction_Catalog {
     if (-d $output_dir) {
         my $removed = rmtree($output_dir);
     }
-    my $paths = $class->Get_Path_Info($re_output);
     my $comment = '## Go on a restriction enzyme hunt!';
     my $jstring = qq!
 use Bio::Adventure;
 use Bio::Adventure::Phage;
 my \$result = Bio::Adventure::Phage::Restriction_Catalog_Worker(\$h,
   input => '$options->{input}',
-  jname => 're_catalog',
-  jprefix => '$options->{jprefix}',
   library => '$options->{library}',
   output => '${re_output}',);
 !;
     my $re_job = $class->Submit(
         comment => $comment,
         input => $options->{input},
-        jmem => $options->{jmem},
-        jname => 're_catalog',
-        jprefix => $options->{jprefix},
         jstring => $jstring,
         language => 'perl',
         library => $options->{library},
+        outputs => $outputs,
         stderr => $stderr,
         stdout => $stdout,
         output => $re_output,);
@@ -1763,10 +1687,9 @@ my \$result = Bio::Adventure::Phage::Restriction_Catalog_Worker(\$h,
 =cut
 sub Restriction_Catalog_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'library'],
-        jprefix => '29',
         output => 're_catalog.tsv',);
     my $output_dir = dirname($options->{output});
     my $log = FileHandle->new(">${output_dir}/re_catalog.log");
@@ -1849,20 +1772,16 @@ sub Restriction_Catalog_Worker {
 =cut
 sub Terminase_ORF_Reorder {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         evalue => 0.01,
         fasta_tool => 'fastx36',
         gcode => '11',
-        jmem => 8,
-        jprefix => '15',
         library => 'terminase',
         required => ['input'],
         species => 'phages',
         test_file => 'direct-term-repeats.fasta',);
     my $input_dir = basename(dirname($options->{input}));
-
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $output_dir = $paths->{output_dir};
     if (-d $paths->{output_dir}) {
         my $removed = rmtree($paths->{output_dir});
@@ -1874,7 +1793,6 @@ sub Terminase_ORF_Reorder {
         gcode => $options->{gcode},
         input => $options->{input},
         jdepends => $options->{jdepends},
-        jname => 'terminase_reorder',
         jprefix => $options->{jprefix},
         output_dir => $paths->{output_dir},
         prodigal_outname => $prodigal_outname,
@@ -1884,9 +1802,6 @@ sub Terminase_ORF_Reorder {
     ## I am duplicating a bunch of options here, that might be dumb.
     $options->{jdepends} = $term_prodigal->{job_id};
     my $prodigal_cds = $term_prodigal->{output_cds};
-    my $comment = qq"## This should use the predicted prodigal ORFs to search against a
-## local terminase sequence database.  Then for each contig, move the best
-## terminase hit to the front of the sequence.\n";
     my $output_tsv = qq"$paths->{output_dir}/$options->{library}_summary.tsv";
     my $jstring = qq!
 use Bio::Adventure;
@@ -1895,8 +1810,6 @@ my \$result = Bio::Adventure::Phage::Terminase_ORF_Reorder_Worker(\$h,
   evalue => '$options->{evalue}',
   fasta_tool => '$options->{fasta_tool}',
   input => '$options->{input}',
-  jname => 'terminase_reorder',
-  jprefix => '$options->{jprefix}',
   library => '$options->{library}',
   query => '${prodigal_cds}',
   output => '$paths->{output}',
@@ -1904,17 +1817,14 @@ my \$result = Bio::Adventure::Phage::Terminase_ORF_Reorder_Worker(\$h,
   test_file => '$options->{test_file}',);
 !;
     my $tjob = $class->Submit(
-        comment => $comment,
         evalue => $options->{evalue},
         fasta_tool => 'fastx36',
         input => $options->{input},
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => 'terminase_reorder',
-        jprefix => $options->{jprefix},
         jstring => $jstring,
         language => 'perl',
         library => $options->{library},
+        outputs => $outputs,
         output => $paths->{output},
         output_dir => $paths->{output_dir},
         output_tsv => $output_tsv,
@@ -1937,19 +1847,17 @@ my \$result = Bio::Adventure::Phage::Terminase_ORF_Reorder_Worker(\$h,
 =cut
 sub Terminase_ORF_Reorder_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'query'],
         evalue => 0.01,
         fasta_tool => 'fastx36',
-        jprefix => '15',
         library => 'terminase',
         output_file => 'final_assembly.fasta',
         test_file => '',);
     my %modules = Get_Modules(caller => 1);
     my $loaded = $class->Module_Loader(%modules);
     my $unloaded = $class->Module_Reset(env => $loaded);
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $output_dir = $paths->{output_dir};
     my $output_file = qq"${output_dir}/final_assembly.fasta";
     if ($options->{output_file}) {
@@ -2093,8 +2001,7 @@ Symlinking ${full_input} to ${full_new} and stopping.\n";
         my $linked = symlink($full_input, $full_new);
         if (-f $full_new) {
             print $log "The symlink succeeded, the file ${full_new} should exist.\n";
-        }
-        else {
+        } else {
             print $log "Something went wrong with ln -s ${full_input} ${full_new}\n";
             my $linked = qx"ln -s ${full_input} ${full_new}";
         }
@@ -2190,8 +2097,7 @@ Symlinking ${full_input} to ${full_new} and stopping.\n";
         my $current_length = $seqobj->length();
         if ($current_id eq $best_contig) {
             $first_object = $seqobj;
-        }
-        else {
+        } else {
             push(@other_objects, $seqobj);
         }
         $assembly_lengths{$current_id} = $current_length;
@@ -2224,8 +2130,7 @@ Symlinking ${full_input} to ${full_new} and stopping.\n";
   ${first_start}:${first_end} and ${second_start}:${second_end}.\n";
         print $log "Merging two + strand pieces:
   ${first_start}:${first_end} and ${second_start}:${second_end}.\n";
-    }
-    else {
+    } else {
         $first_start = 1;
         $first_end = $best_seq_end;
         $second_start = $best_seq_end + 1;
@@ -2247,8 +2152,7 @@ Symlinking ${full_input} to ${full_new} and stopping.\n";
             $second_seq =~ tr/ATGCUatgcu/TACGAtacga/;
             print $log " and ${second_start}:${second_end}";
             print " and ${second_start}:${second_end}";
-        }
-        else {
+        } else {
             print $log " and nothing, something is weird with the second sequence.";
             print " and nothing, something is weird with the second sequence.";
         }
@@ -2257,8 +2161,7 @@ Symlinking ${full_input} to ${full_new} and stopping.\n";
     my $final_sequence;
     if (defined($second_seq)) {
         $final_sequence = $first_seq . $second_seq;
-    }
-    else {
+    } else {
         $final_sequence = $first_seq;
     }
 
@@ -2279,40 +2182,28 @@ Symlinking ${full_input} to ${full_new} and stopping.\n";
 
 sub Xref_Crispr {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
-        test_file => 'crispr_sequences.csv',
-        jmem => 8,
-        jprefix => '15',);
+        test_file => 'crispr_sequences.csv',);
     my $input_dir = basename(dirname($options->{input}));
     my $output_dir = qq"outputs/$options->{jprefix}xref_crispr";
     my $final_output = qq"${output_dir}/crispr_hits.tsv";
     if (-d $output_dir) {
         my $removed = rmtree($output_dir);
     }
-    my $paths = $class->Get_Path_Info($final_output);
-
-    my $comment = qq"## This should cross reference a database of crispr sequences
-## against an assembly to see if there are likely overlaps.";
     my $jstring = qq!
 use Bio::Adventure;
 use Bio::Adventure::Phage;
 my \$result = Bio::Adventure::Phage::Xref_Crispr_Worker(\$h,
   input => '$options->{input}',
-  jname => 'xref_crispr',
-  jprefix => '$options->{jprefix}',
   output => '${final_output}',
   output_dir => '${output_dir}',
   test_file => '$options->{test_file}',);
 !;
     my $xref = $class->Submit(
-        comment => $comment,
         input => $options->{input},
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => 'xref_crispr',
-        jprefix => $options->{jprefix},
         jstring => $jstring,
         language => 'perl',
         output => $final_output,
@@ -2324,13 +2215,11 @@ my \$result = Bio::Adventure::Phage::Xref_Crispr_Worker(\$h,
 
 sub Xref_Crispr_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input',],
-        jprefix => '15',
         test_file => 'crispr_sequences.csv',
         output_file => 'crispr_xref.tsv',);
-
     my $output_dir = dirname($options->{output});
     my $log = FileHandle->new(">${output_dir}/xref.log");
     my $input_sequences = qq"$options->{libpath}/$options->{test_file}";

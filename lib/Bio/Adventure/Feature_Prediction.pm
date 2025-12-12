@@ -51,21 +51,17 @@ use Text::CSV_XS::TSV;
 =cut
 sub Aragorn {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         arbitrary => ' -rp -fasta -w -m -t ',
-        species => undef,
-        jmem => 4,
-        jprefix => 21,);
+        species => undef,);
     my $aragorn_args = $options->{arbitrary};
-    my $job_name = $class->Get_Job_Name();
     my $output_dir = qq"outputs/$options->{jprefix}aragorn";
     my $output_file = qq"${output_dir}/aragorn.txt";
     my $stdout = qq"${output_dir}/aragorn.stdout";
     my $stderr = qq"${output_dir}/aragorn.stderr";
     my $species_string = '';
-    my $comment = '## This is a script to run aragorn.';
     my $jstring = qq!mkdir -p ${output_dir} && \\
   aragorn $options->{arbitrary} \\
     -o ${output_file} \\
@@ -74,13 +70,9 @@ sub Aragorn {
     1>${stdout}
 !;
     my $aragorn = $class->Submit(
-        comment => $comment,
-        jcpu => 1,
         jdepends => $options->{jdepends},
-        jname => qq"aragorn_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        jmem => $options->{jmem},
+        outputs => $outputs,
         output => $output_file,
         prescript => $options->{prescript},
         postscript => $options->{postscript},
@@ -113,16 +105,12 @@ sub Aragorn {
 =cut
 sub Glimmer {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        required => ['input'],
-        jmem => 8,
-        jprefix => '16',);
-    my $job_name = $class->Get_Job_Name();
+        required => ['input'],);
     my $output_dir = qq"outputs/$options->{jprefix}glimmer";
     my $stdout = qq"${output_dir}/cyoa_glimmer.stdout";
     my $stderr = qq"${output_dir}/cyoa_glimmer.stderr";
-    my $comment = '## This is a script to run glimmer.';
 ##    my $jstring = qq!mkdir -p ${output_dir}
 ##long-orfs -n -t 1.15 $options->{input} ${output_dir}/first_run_longorfs.txt \\
 ##  2> ${output_dir}/first_run_longorfs.out 1>&2
@@ -156,14 +144,10 @@ cyoa_invoke_glimmer.pl --input $options->{input} \\
 
     ## FIXME: There are a bunch of potentially useful glimmer outputs which should be put here.
     my $glimmer = $class->Submit(
-        comment => $comment,
-        jcpu => 1,
         jdepends => $options->{jdepends},
-        jname => qq"glimmer_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        jmem => $options->{jmem},
-        output => qq"${output_dir}/${job_name}_glimmer.out",
+        outputs => $outputs,
+        output => qq"${output_dir}/$options->{job_basename}_glimmer.out",
         prescript => $options->{prescript},
         postscript => $options->{postscript},
         stderr => $stderr,
@@ -198,18 +182,14 @@ cyoa_invoke_glimmer.pl --input $options->{input} \\
 =cut
 sub Glimmer_Single {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         cutoff => 1.1,
         overlap => 20,
         minlength => 45,
-        threshold => 30,
-        jmem => 8,
-        jprefix => '16',);
-    my $job_name = $class->Get_Job_Name();
+        threshold => 30,);
     my $output_dir = qq"outputs/$options->{jprefix}glimmer";
-    my $comment = '## This is a script to run glimmer.';
     my $final_output = qq"${output_dir}/glimmer3.txt";
     my $final_error = qq"${output_dir}/glimmer3.err";
     my $jstring = qq!mkdir -p ${output_dir}
@@ -229,13 +209,9 @@ glimmer3 -o$options->{overlap} -g$options->{minlength} -t$options->{threshold} \
   1>${final_output}
 !;
     my $glimmer = $class->Submit(
-        comment => $comment,
-        jcpu => 1,
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => qq"glimmer_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
+        outputs => $outputs,
         output => qq"${output_dir}/glimmer3.predict",
         output_detail => qq"${output_dir}/glimmer3.detail",
         output_icm => qq"${output_dir}/single_run.icm",
@@ -280,7 +256,7 @@ glimmer3 -o$options->{overlap} -g$options->{minlength} -t$options->{threshold} \
 =cut
 sub Phagepromoter {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         format => 'fasta',
@@ -289,9 +265,7 @@ sub Phagepromoter {
         family => 'Podoviridae',
         host => 'Pseudomonas',
         phage_type => 'virulent',
-        model => 'SVM2400',
-        jmem => 6,
-        jprefix => '30',);
+        model => 'SVM2400',);
     ## Here are the lines which define what is passed to it on ARGV : defaults
     ## gen_format = sys.argv[1] : genbank or fasta
     ## genome_file = sys.argv[2] : input file
@@ -301,14 +275,11 @@ sub Phagepromoter {
     ## host = sys.argv[6] : Pseudomonas
     ## phage_type = sys.argv[7] : virulent
     ## model = sys.argv[8] : SVM2400
-    my $job_name = $class->Get_Job_Name();
     my $output_dir = qq"outputs/$options->{jprefix}phagepromoter";
     my $stdout = qq"${output_dir}/phagepromoter.stdout";
     my $stderr = qq"${output_dir}/phagepromoter.stderr";
-    my $output_file = qq"${output_dir}/${job_name}_phagepromoter.tsv";
-    my $input_paths = $class->Get_Path_Info($options->{input});
-    my $input_full = $input_paths->[0]->{fullpath};
-    my $comment = '## This is a script to run phagepromoter.';
+    my $output_file = qq"${output_dir}/$options->{job_basename}_phagepromoter.tsv";
+    my $input_full = $inputs->[0]->{fullpath};
     my $output_fasta = qq"${output_dir}/output.fasta";
     my $jstring = qq!start=\$(pwd)
 mkdir -p ${output_dir}
@@ -328,13 +299,9 @@ fi
 cd \${start}
 !;
     my $phagepromoter = $class->Submit(
-        comment => $comment,
-        jcpu => 1,
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => qq"phagepromoter",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
+        outputs => $outputs,
         output => qq"${output_file}.xz",
         output_fasta => $output_fasta,
         stderr => $stderr,
@@ -371,17 +338,13 @@ cd \${start}
 =cut
 sub Phanotate {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        required => ['input'],
-        jmem => 6,
-        jprefix => '17',);
-    my $job_name = $class->Get_Job_Name();
+        required => ['input'],);
     my $output_dir = qq"outputs/$options->{jprefix}phanotate";
     my $stderr = qq"${output_dir}/phanotate.stderr";
     my $stdout = qq"${output_dir}/phanotate.stdout";
-    my $output_file = qq"${output_dir}/${job_name}_phanotate.tsv";
-    my $comment = '## This is a script to run phanotate.';
+    my $output_file = qq"${output_dir}/$options->{job_basename}_phanotate.tsv";
     my $jstring = qq!
 mkdir -p ${output_dir}
 phanotate.py \\
@@ -392,13 +355,9 @@ phanotate.py \\
 xz -9e -f ${output_file}
 !;
     my $phanotate = $class->Submit(
-        comment => $comment,
-        jcpu => 1,
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => qq"phanotate_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
+        outputs => $outputs,
         output => qq"${output_file}.xz",
         stderr => $stderr,
         stdout => $stdout,
@@ -435,22 +394,16 @@ xz -9e -f ${output_file}
 =cut
 sub Prodigal {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         species => undef,
         gcode => '11',
         output_dir => undef,
         prodigal_outname => undef,
-        edge => 0,
-        jmem => 8,
-        jprefix => '17',);
+        edge => 0,);
     my $edge_string = ' -c ';
     $edge_string = '' if ($options->{edge});
-    my $inputs = $class->Get_Path_Info($options->{input});
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
-    my $job_name = $class->Get_Job_Name();
-    $job_name = basename($job_name, ('.fsa'));
     my $train_string = '';
     my $library_file;
     if ($options->{species}) {
@@ -503,14 +456,11 @@ sleep 3
 !;
     my $prodigal = $class->Submit(
         comment => $comment,
-        jcpu => 1,
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => qq"prodigal_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
         stderr => $paths->{stderr},
         stdout => $paths->{stdout},
+        outputs => $outputs,
         output => $gbk_file,
         output_cds => $cds_file,
         output_gff => $gff_file,
@@ -544,14 +494,11 @@ sleep 3
 =cut
 sub Rho_Predict {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        jmem => 12,
-        jprefix => '51',
         required => ['input',],);
-    my $input_paths = $class->Get_Path_Info($options->{input});
-    my $input_full = $input_paths->[0]->{fullpath};
-    my $input_file = $input_paths->[0]->{filename};
+    my $input_full = $inputs->[0]->{fullpath};
+    my $input_file = $inputs->[0]->{filename};
     my $cwd_name = basename(cwd());
     my $output_dir = qq"outputs/$options->{jprefix}rhotermpredict_${cwd_name}";
     my $stderr = qq"${output_dir}/rhotermpredict.stderr";
@@ -569,12 +516,9 @@ cd \${start}
 ?;
 
     my $rhoterm = $class->Submit(
-        jcpu => 1,
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => 'rhotermpredict',
-        jprefix => $options->{jprefix},
         jstring => $jstring,
+        outputs => $outputs,
         stderr => $stderr,
         stdout => $stdout,
         output => $output_file,
@@ -608,12 +552,11 @@ sub Train_Prodigal {
     my ($class, %args) = @_;
     my $check = which('prodigal');
     die('Could not find prodigal in your PATH.') unless($check);
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species'],
         gcode => '11',
         jmem => 8,);
-    my $job_name = $class->Get_Job_Name();
     my $kingdom_string = '';
     my $output_dir = qq"$options->{libpath}/hmm";
     my $made = make_path($output_dir);
@@ -628,13 +571,10 @@ prodigal -i $options->{input} \\
   1>${stdout}
 !;
     my $prodigal = $class->Submit(
-        jcpu => 1,
         comment => $comment,
         jdepends => $options->{jdepends},
-        jname => qq"prodigal_training_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        jmem => $options->{jmem},
+        outputs => $outputs,
         output => $output,
         stderr => $stderr,
         stdout => $stdout,
@@ -671,22 +611,18 @@ prodigal -i $options->{input} \\
 =cut
 sub tRNAScan {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         arbitrary => ' -G ',
         species => undef,
         suffix => 'general',
-        tool => 'trnascan',
-        jmem => 6,
-        jprefix => '28',);
+        tool => 'trnascan',);
     my $trnascan_args = $options->{arbitrary};
-    my $job_name = $class->Get_Job_Name();
     my $output_dir = qq"outputs/$options->{jprefix}trnascan";
     my $output_file = qq"${output_dir}/trnascan_$options->{suffix}.txt";
     my $output_file_v2 = qq"${output_dir}/trnascan_$options->{suffix}_se.txt";
     my $species_string = '';
-    my $comment = '## This is a script to run trnascan.';
     my $stdout = qq"${output_dir}/trnascan.stdout";
     my $stderr = qq"${output_dir}/trnascan.stderr";
     my $stdout_v2 = qq"${output_dir}/trnascan_se.stdout";
@@ -711,13 +647,9 @@ second=\$(tRNAscan-SE -Q -G $options->{input} \\
 echo "Finished second run with $? at $(date)" >> ${output_dir}/trnascan_return.txt
 !;
     my $trnascan = $class->Submit(
-        comment => $comment,
-        jcpu => 1,
         jdepends => $options->{jdepends},
-        jname => qq"trnascan_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        jmem => $options->{jmem},
+        outputs => $outputs,
         output => $output_file,
         prescript => $options->{prescript},
         postscript => $options->{postscript},

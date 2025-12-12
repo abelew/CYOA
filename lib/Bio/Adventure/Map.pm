@@ -65,24 +65,20 @@ use File::Which qw"which";
 sub Bowtie {
     my ($class, %args) = @_;
     say('Recall that you can change the bowtie arguments via "bt_type".');
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species'],
         bt_type => 'v0M1',
         count => 1,
-        libtype => 'genome',
-        jmem => 12,
-        jprefix => '10',);
-    my $start_species = $options->{species};
-    my $species = $start_species;
-    my $paths = $class->Bio::Adventure::Config::Get_Paths(species => $species,
-                                                          bt_type => $options->{bt_type});
-    if ($species =~ /\:/) {
-        my @species_lst = split(/:/, $species);
+        libtype => 'genome',);
+    my $basename = $inputs->[0]->{basename};
+    if ($options->{species} =~ /:/) {
+        my $start_species = $options->{species};
+        my @species_lst = split(/:/, $options->{species});
         my @result_lst = ();
-        foreach my $sp (@species_lst) {
+        for my $sp (@species_lst) {
             print "Invoking bowtie on ${sp}\n";
-            $class->{species} = $sp;
+            $options->{species} = $sp;
             my $result = $class->Bio::Adventure::Map::Bowtie(%{$options});
             push (@result_lst, $result);
         }
@@ -112,90 +108,63 @@ sub Bowtie {
         $stranded = 'no';
     }
 
-    my $jname = qq"bt${bt_type}_${species}";
+    my $jname = qq"bt${bt_type}_$options->{species}";
     ## $jname = $options->{jname} if ($options->{jname});
     my $libtype = $options->{libtype};
-
     my $count = $options->{count};
-    my $bt_dir = qq"outputs/$options->{jprefix}bowtie_${species}";
-    $bt_dir = $options->{bt_dir} if ($options->{bt_dir});
 
     ## Check that the indexes exist
     my $bt_reftest = $paths->{index_file};
     my $current_prefix = 10;
-    if (defined($options->{jprefix})) {
-        $current_prefix = $options->{jprefix};
-    }
     my $index_job;
     if (!-r $bt_reftest && !$options->{bt1_indexjobs}) {
         $class->{bt1_indexjobs} = 1;
-        my $genome_input = qq"$options->{libpath}/$options->{libtype}/${species}.fasta";
+        my $genome_input = qq"$options->{libpath}/$options->{libtype}/$options->{species}.fasta";
         $index_job = $class->Bio::Adventure::Index::BT1_Index(
+            cluster => 0,
             input => $paths->{fasta},
             jdepends => $options->{jdepends},
-            jprefix => $current_prefix - 1,
             libtype => $libtype,);
         $options->{jdepends} = $index_job->{job_id};
     }
 
     my $bowtie_input_flag = "-q"; ## fastq by default
     $bowtie_input_flag = "-f" if ($options->{input} =~ /\.fasta/);
-    my $comment = qq!## This is a bowtie1 alignment of ${bt_input} against
-## $paths->{index} using arguments: ${bt_args}.!;
-    my $aligned_filename = qq"${bt_dir}/$options->{jbasename}-${bt_type}_aligned_${species}.fastq";
-    my $unaligned_filename = qq"${bt_dir}/$options->{jbasename}-${bt_type}_unaligned_${species}.fastq";
-    my $sam_filename = qq"${bt_dir}/$options->{jbasename}-${bt_type}.sam";
-    my $jstring = qq!mkdir -p ${bt_dir}
-bowtie \\
+    my $jstring = qq!bowtie \\
   $paths->{index} \\
   ${bt_args} \\
   -p $options->{jcpu} \\
   ${bowtie_input_flag} ${bt_input} \\
-  --un ${unaligned_filename} \\
-  --al ${aligned_filename} \\
-  -S ${sam_filename} \\
-  2>$paths->{stderr} \\
-  1>$paths->{stdout}
+  --un $outputs->{unaligned} \\
+  --al $outputs->{aligned} \\
+  -S $outputs->{main} \\
+  2>$outputs->{stderr} \\
+  1>$outputs->{stdout}
 !;
-
     my $bt_job = $class->Submit(
-        aligned => $aligned_filename,
-        comment => $comment,
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => $jname,
-        jprefix => $options->{jprefix},
-        jstring => $jstring,
-        output => $sam_filename,
-        postscript => $options->{postscript},
-        prescript => $options->{prescript},
-        stderr => $paths->{stderr},
-        stdout => $paths->{stdout},
-        unaligned => $unaligned_filename,);
+        jstring => $jstring,);
     if (defined($index_job)) {
         $bt_job->{index} = $index_job;
     }
 
-    my $expected_hours = $class->Bio::Adventure::Config::Estimate_Time_Composite(process => 'bt1');
+    my $expected_hours = $class->Bio::Adventure::Config::Estimate_Time_Composite(
+        options => $options,
+        paths => $paths,
+        inputs => $inputs,
+        process => 'bt1',);
     my $time_string = qq"${expected_hours}:00:00";
-    my $compress_files = qq"${bt_dir}/$options->{jbasename}-${bt_type}_unaligned_${species}.fastq:${bt_dir}/$options->{jbasename}-${bt_type}_aligned_${species}.fastq";
+    my $compress_files = qq"$outputs->{unaligned}:$outputs->{aligned}";
     my $comp = $class->Bio::Adventure::Compress::Compress(
-        comment => '## Compressing the sequences which failed to align against ${bt_reflib} using options ${bt_args}.',
         jdepends => $bt_job->{job_id},
-        jname => qq"${jname}_xzun",
-        jprefix => $options->{jprefix} + 1,
-        jwalltime => $time_string,
+        jprefix => $options->{jprefix},
         input => $compress_files,);
     $bt_job->{compression} = $comp;
-
     ## BT1_Stats also reads the trimomatic output, which perhaps it should not.
     my $trim_output_file = qq"outputs/trimomatic_stats.csv";
     my $sam_job = $class->Bio::Adventure::Convert::Samtools(
-        jcpu => 1,
-        input => $sam_filename,
+        input => $outputs->{main},
         jdepends => $bt_job->{job_id},
-        jname => qq"s2b_${jname}",
-        jprefix => $options->{jprefix} + 3,
         paired => $paired,
         species => $options->{species},);
     $bt_job->{samtools} = $sam_job;
@@ -204,10 +173,8 @@ bowtie \\
     if ($count) {
         if ($libtype eq 'rRNA') {
             $htmulti = $class->Bio::Adventure::Count::HTSeq(
-                input => $sam_job->{output},
+                input => $sam_job->{main},
                 jdepends => $sam_job->{job_id},
-                jname => qq"ht_${jname}",
-                jprefix => $options->{jprefix} + 4,
                 libtype => $libtype,
                 mapper => 'bowtie1',
                 stranded => $stranded,
@@ -215,10 +182,8 @@ bowtie \\
             $bt_job->{rRNA_count} = $htmulti;
         } else {
             $htmulti = $class->Bio::Adventure::Count::HT_Multi(
-                input => $sam_job->{output},
+                input => $sam_job->{main},
                 jdepends => $sam_job->{job_id},
-                jname => qq"ht_${jname}",
-                jprefix => $options->{jprefix} + 4,
                 libtype => $libtype,
                 mapper => 'bowtie1',
                 stranded => $stranded,
@@ -228,12 +193,11 @@ bowtie \\
     }  ## End if ($count)
 
     my $stats = $class->Bio::Adventure::Metadata::BT1_Stats(
-        input => $paths->{stderr},
+        input => $outputs->{stderr},
         bt_type => $bt_type,
-        count_table => $bt_job->{htseq}->[0]->{output},
+        count_table => $bt_job->{htseq}->[0]->{main},
         jdepends => $bt_job->{job_id},
-        jname => qq"${jname}_stats",
-        jprefix => $options->{jprefix} + 2,
+        jprefix => $options->{jprefix},
         trim_input => ${trim_output_file},);
     $bt_job->{stats} = $stats;
     $bt_job->{job_id} = $stats->{job_id};
@@ -274,28 +238,24 @@ bowtie \\
 =cut
 sub Bowtie2 {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['species', 'input',],
-        count => 1,
-        jmem => 28,
-        jprefix => '20',);
-    if ($options->{species} =~ /\:/) {
+        count => 1,);
+    if ($options->{species} =~ /:/) {
+        my $start_species = $options->{species};
         my @species_lst = split(/:/, $options->{species});
         my @result_lst = ();
-        my $start_species = $options->{species};
-        foreach my $sp (@species_lst) {
+        for my $sp (@species_lst) {
             print "Invoking bowtie2 on ${sp}\n";
             $class->{species} = $sp;
-            my $result = Bio::Adventure::Map::Bowtie2($class, %{$options});
+            my $result = $class->Bio::Adventure::Map::Bowtie2(%{$options});
             push (@result_lst, $result);
         }
         $options->{species} = $start_species;
         return(@result_lst);
     }
 
-    my $ready = $class->Check_Input(files => $options->{input},);
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my %bt_jobs = ();
     my $libtype = 'genome';
     my $bt2_args = $options->{bt2_args};
@@ -353,14 +313,11 @@ sub Bowtie2 {
     $bowtie_input_flag = '-f ' if (${bt_input} =~ /\.fasta$/);
 
     my $jcpu = $options->{jcpu};
-    my $stderr = qq"${bt_dir}/$options->{jbasename}.stderr";
-    my $stdout = qq"${bt_dir}/$options->{jbasename}.stdout";
-    my $comment = qq!## This is a bowtie2 alignment of ${bt_input} against
-## ${bt_reflib} using arguments: ${bt2_args}.
-!;
-    my $aligned_filename = qq"${bt_dir}/$options->{jbasename}_aligned_$options->{species}.fastq";
-    my $unaligned_filename = qq"${bt_dir}/$options->{jbasename}_unaligned_$options->{species}.fastq";
-    my $sam_filename = qq"${bt_dir}/$options->{jbasename}.sam";
+    my $stderr = qq"${bt_dir}/$options->{job_basename}.stderr";
+    my $stdout = qq"${bt_dir}/$options->{job_basename}.stdout";
+    my $aligned_filename = qq"${bt_dir}/$options->{job_basename}_aligned_$options->{species}.fastq";
+    my $unaligned_filename = qq"${bt_dir}/$options->{job_basename}_unaligned_$options->{species}.fastq";
+    my $sam_filename = qq"${bt_dir}/$options->{job_basename}.sam";
     my $jstring = qq!mkdir -p ${bt_dir}
 bowtie2 -x ${bt_reflib} ${bt2_args} \\
     -p ${jcpu} \\
@@ -373,21 +330,13 @@ bowtie2 -x ${bt_reflib} ${bt2_args} \\
 !;
     my $bt2_job = $class->Submit(
         aligned => $aligned_filename,
-        comment => $comment,
         cluster => $cluster,
         input => $bt_input,
-        jname => $bt2_name,
         jdepends => $options->{jdepends},
         jstring => $jstring,
-        jprefix => $options->{jprefix},
-        jmem => $options->{jmem},
-        output => $sam_filename,
-        prescript => $options->{prescript},
-        postscript => $options->{postscript},
-        stderr => $stderr,
-        stdout => $stdout,
+        outputs => $outputs,
         unaligned => $unaligned_filename,);
-    my $compression_files = qq"${bt_dir}/$options->{jbasename}_unaligned_$options->{species}.fastq:${bt_dir}/$options->{jbasename}_aligned_$options->{species}.fastq";
+    my $compression_files = qq"${bt_dir}/$options->{job_basename}_unaligned_$options->{species}.fastq:${bt_dir}/$options->{job_basename}_aligned_$options->{species}.fastq";
     $job_suffix++;
     my $comp = $class->Bio::Adventure::Compress::Recompress(
         comment => '## Compressing the sequences which failed to align against ${bt_reflib} using options ${bt2_args}.',
@@ -398,12 +347,12 @@ bowtie2 -x ${bt_reflib} ${bt2_args} \\
         jprefix => qq"$options->{jprefix}_${job_suffix}",);
     $bt2_job->{compression} = $comp;
     ## BT1_Stats also reads the trimomatic output, which perhaps it should not.
-    ## my $trim_output_file = qq"outputs/$options->{jbasename}-trimomatic.out";
+    ## my $trim_output_file = qq"outputs/$options->{job_basename}-trimomatic.out";
     $job_suffix++;
     my $stats = $class->Bio::Adventure::Metadata::BT2_Stats(
         input => $stderr,
         cluster => $cluster,
-        count_table => qq"$options->{jbasename}.count.xz",
+        count_table => qq"$options->{job_basename}.count.xz",
         jdepends => $bt2_job->{job_id},
         jname => qq"bt2st_${suffix_name}",
         jprefix => qq"$options->{jprefix}_${job_suffix}",);
@@ -461,20 +410,20 @@ bowtie2 -x ${bt_reflib} ${bt2_args} \\
 =cut
 sub Bowtie_RRNA {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         exclude => 0,
         required => ["species"],);
-    my $job_name = qq"rRNA_$options->{jbasename}";
     my $exclude = $options->{exclude};
     my $species = $options->{species};
     my ${bt_dir} = qq"outputs/bowtie_$options->{species}";
     my $job = $class->Bio::Adventure::Map::Bowtie(
         jdepends => $options->{jdepends},
-        jname => $job_name,
-        libtype => 'rRNA',
-        prescript => $args{prescript},
-        postscript => $args{postscript},);
+        jname => $options->{jname},
+        jmem => $options->{jmem},
+        jcpu => $options->{jcpu},
+        jwalltime => $options->{jwalltime},
+        libtype => 'rRNA',);
     return($job);
 }
 
@@ -492,7 +441,7 @@ sub Bowtie_RRNA {
 =cut
 sub BT_Multi {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['species', 'input'],);
     my $bt_input = $options->{input};
@@ -500,15 +449,11 @@ sub BT_Multi {
     my %bt_types = %{$options->{bt_args}};
     my $count = 0;
     my $job;
-    foreach my $type (keys %bt_types) {
-        my $jname = qq"bt${type}_${species}";
+    for my $type (keys %bt_types) {
         my $bt_job = $class->Bio::Adventure::Map::Bowtie(
             input => $bt_input,
             bt_type => $type,
-            jdepends => $options->{jdepends},
-            jname => $jname,
-            prescript => $args{prescript},
-            postscript => $args{postscript},);
+            jdepends => $options->{jdepends},);
         if ($count == 0) {
             $job = $bt_job;
         } else {
@@ -549,20 +494,16 @@ sub BT_Multi {
 =cut
 sub BWA {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        jcpu => 8,
-        jmem => 40,
-        jprefix => 30,
-        jwalltime => '72:00:00',
         required => ['input', 'species'],
         samtools_mapped => 1,
         samtools_unmapped => 1);
-    if ($options->{species} =~ /\:/) {
+    if ($options->{species} =~ /:/) {
+        my $start_species = $options->{species};
         my @species_lst = split(/:/, $options->{species});
         my @result_lst = ();
-        my $start_species = $options->{species};
-        foreach my $sp (@species_lst) {
+        for my $sp (@species_lst) {
             print "Invoking bwa on ${sp}\n";
             $options->{species} = $sp;
             my $result = $class->Bio::Adventure::Map::BWA(%{$options});
@@ -571,8 +512,6 @@ sub BWA {
         $options->{species} = $start_species;
         return(@result_lst);
     }
-
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $bwa_input = $options->{input};
     my $stranded = $options->{stranded};
     my $test_file = '';
@@ -610,12 +549,8 @@ sub BWA {
         $forward_reads = $bwa_input;
     }
 
-    my $jname = qq"bwa_$options->{species}";
-    $jname = $options->{jname} if ($options->{jname});
-
     my $bwa_dir = $paths->{output_dir};
     $bwa_dir = $options->{bwa_dir} if ($options->{bwa_dir});
-
     my $uncompress_jobid = undef;
     my $index_jobid = undef;
     ## Check that the indexes exist
@@ -630,7 +565,8 @@ sub BWA {
             jprefix => $options->{jprefix} - 1,
         };
 
-        my %index_args = $class->Extra_Options(options => $options, extras => $index_extras, cluster => 0);
+        my %index_args = $class->Extra_Options(options => $options,
+                                               extras => $index_extras, cluster => 0);
         $index_job = $class->Bio::Adventure::Index::BWA_Index(%index_args);
         $options->{jdepends} = $index_job->{job_id};
     }
@@ -644,9 +580,8 @@ sub BWA {
     my $stderr = qq"${bwa_dir}/bwa.stderr";
     my $stdout = qq"${bwa_dir}/bwa.stdout";
     my $htmulti;
-
     for my $method (@bwa_methods) {
-        my $sam_out = qq"${bwa_dir}/$options->{jbasename}_${method}.sam";
+        my $sam_out = qq"${bwa_dir}/$options->{job_basename}_${method}.sam";
         push(@sam_files, $sam_out);
         $sam_outs = qq"${sam_out}:";
         my $extra_args = qq" $options->{arbitrary} -t $options->{jcpu} ";
@@ -676,7 +611,7 @@ fi
 bwa ${method} ${extra_args} \\
   ${bwa_reflib} \\
   ${forward_reads} \\
-  1>${bwa_dir}/$options->{jbasename}_aln-r1.sai \\
+  1>${bwa_dir}/$options->{job_basename}_aln-r1.sai \\
   2>>${bwa_dir}/bwa_${method}_r1.stderr
 test=\$?
 if [[ "\${test}" -eq "0" ]]; then
@@ -691,7 +626,7 @@ fi
 bwa ${method} ${extra_args} \\
   ${bwa_reflib} \\
   ${reverse_reads} \\
-  1>${bwa_dir}/$options->{jbasename}_aln-r2.sai \\
+  1>${bwa_dir}/$options->{job_basename}_aln-r2.sai \\
   2>>${bwa_dir}/bwa_${method}_r1.stderr
 test=\$?
 if [[ "\${test}" -eq "0" ]]; then
@@ -703,8 +638,8 @@ fi
 
 bwa sampe \\
   ${bwa_reflib} \\
-  ${bwa_dir}/$options->{jbasename}_aln-r1.sai \\
-  ${bwa_dir}/$options->{jbasename}_aln-r2.sai \\
+  ${bwa_dir}/$options->{job_basename}_aln-r1.sai \\
+  ${bwa_dir}/$options->{job_basename}_aln-r2.sai \\
   ${bwa_input} \\
   1>${sam_out} \\
   2>>${bwa_dir}/bwa_sampe.stderr
@@ -720,7 +655,7 @@ fi
                 $job_string .= qq!
 bwa samse \\
   ${bwa_reflib} \\
-  ${bwa_dir}/$options->{jbasename}_aln-r1.sai \\
+  ${bwa_dir}/$options->{job_basename}_aln-r1.sai \\
   ${bwa_input} \\
   1>${sam_out} \\
   2>>${bwa_dir}/bwa_samse.stderr
@@ -738,7 +673,7 @@ fi
                 $job_string .= qq!
 bwa samse ${extra_args} \\
   ${bwa_reflib} \\
-  ${bwa_dir}/$options->{jbasename}_aln-r1.sai \\
+  ${bwa_dir}/$options->{job_basename}_aln-r1.sai \\
   ${bwa_input} \\
   1>${sam_out} \\
   2>>${bwa_dir}/bwa_samse.stderr
@@ -754,8 +689,8 @@ fi
             $job_string .= qq!
 bwa sampe ${extra_args} \\
   ${bwa_reflib} \\
-  ${bwa_dir}/$options->{jbasename}_aln-r1.sai \\
-  ${bwa_dir}/$options->{jbasename}_aln-r2.sai \\
+  ${bwa_dir}/$options->{job_basename}_aln-r1.sai \\
+  ${bwa_dir}/$options->{job_basename}_aln-r2.sai \\
   ${bwa_input} \\
   1>${sam_out} \\
   2>>${bwa_dir}/bwa_sampe.stderr
@@ -772,12 +707,9 @@ fi
     $sam_outs =~ s/:$//g;
     my %submit_extras = (
         cluster => $cluster,
-        comment => $comment,
         input => $bwa_input,
-        jname => qq"bwa_$options->{species}",
         jstring => $job_string,
-        stdout => $stdout,
-        stderr => $stderr,);
+        outputs => $outputs,);
     my $bwa_job = $class->Submit(%submit_extras);
     my @samtools_jobs = ();
     my $sam_count = 0;
@@ -825,39 +757,34 @@ fi
 =cut
 sub Downsample_Guess_Strand {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['species', 'input'],
-        jmem => 24,
-        reads => 1000000, ## Needs to be big enough for salmon to smaple
-        jprefix => '45',);
+        reads => 1000000,);
+        ## Needs to be big enough for salmon to smaple
+    my $ready = $class->Check_Input(files => $options->{input});
     my $depends = $options->{jdepends};
-    if ($options->{species} =~ /\:/) {
+    if ($options->{species} =~ /:/) {
+        my $start_species = $options->{species};
         my @species_lst = split(/:/, $options->{species});
         my @result_lst = ();
-        my $start_species = $options->{species};
-        foreach my $sp (@species_lst) {
+        for my $sp (@species_lst) {
             print "Invoking salmon on ${sp}\n";
             $options->{species} = $sp;
-            my $result = Bio::Adventure::Map::Salmon($class, %{$options});
+            my $result = $class->Bio::Adventure::Map::Salmon(%{$options});
             push (@result_lst, $result);
         }
         $options->{species} = $start_species;
         return(@result_lst);
     }
-
-    my $ready = $class->Check_Input(files => $options->{input});
     my %sa_jobs = ();
     my $libtype = 'genome';
     $libtype = $options->{libtype} if ($options->{libtype});
     my $species = $options->{species};
-
-    my $jname = qq"sal_${species}";
     ## $jname = $options->{jname} if ($options->{jname});
     my $outdir = qq"outputs/$options->{jprefix}salmon_${species}";
     my $stderr = qq"${outdir}/salmon_${species}.stderr";
     my $stdout = qq"${outdir}/salmon_${species}.stdout";
-
     my $sa_args = '';
     my $sa_input = $options->{input};
     my $input_name = $sa_input;
@@ -893,10 +820,6 @@ sampled_r2=\$( { less $pair_listing[1] ||:; } |\\
             libtype => $libtype,);
         $options->{jdepends} = $index_job->{job_id};
     }
-
-    my $comment = qq!## This is a salmon pseudoalignment of ${sa_input} against
-## ${sa_reflib}.
-!;
     my $jstring = qq!mkdir -p ${outdir}
 ## For reasons passing my understanding, the less downsample is throwing a ERR
 ## when running in the script; but the outputs are created correctly.
@@ -910,18 +833,10 @@ salmon quant -i ${sa_reflib} \\
 ${sa_rm}
 !;
     my $salmon = $class->Submit(
-        comment => $comment,
         input => $sa_input,
         jdepends => $options->{jdepends},
-        jname => $jname,
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        jmem => $options->{jmem},
-        output => qq"${outdir}/quant.sf",
-        stderr => $stderr,
-        stdout => $stdout,
-        prescript => $args{prescript},
-        postscript => $args{postscript},);
+        outputs => $outputs,);
     $salmon->{index_job} = $index_job;
     my $strand = $class->Bio::Adventure::Metadata::Salmon_Strand(
         input => $stderr,
@@ -957,17 +872,13 @@ ${sa_rm}
 =cut
 sub Hisat2 {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         compress => 1,
         count => 1,
         counter => 'featureCounts',
-        jcpu => 8,
-        jmem => 48,
-        jname => 'hisat',
-        jprefix => '40',
-        jwalltime => '36:00:00',
         get_insertsize => 1,
+        libtype => 'genome',
         maximum => undef,
         output_dir => undef,
         output_unaligned => undef,
@@ -978,7 +889,7 @@ sub Hisat2 {
         my $start_species = $options->{species};
         my @species_lst = split(/:/, $options->{species});
         my @result_lst = ();
-        foreach my $sp (@species_lst) {
+        for my $sp (@species_lst) {
             print "Invoking hisat2 on ${sp}\n";
             $options->{species} = $sp;
             my $result = $class->Bio::Adventure::Map::Hisat2(%{$options});
@@ -993,9 +904,6 @@ sub Hisat2 {
         sleep(5);
     }
 
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
-    print "In Map::Hisat2 the output directory is: $paths->{output_dir}\n";
-    print "Hisat output directory does not exist!\n" unless (-d $paths->{output_dir});
     my $ready;
     if (!$options->{jdepends}) {
         $ready = $class->Check_Input(files => $options->{input},);
@@ -1005,6 +913,8 @@ sub Hisat2 {
     if ($options->{task} eq 'dnaseq' or !$options->{introns}) {
         $hisat_args .= qq" --no-spliced-alignment ";
     }
+
+    ## Set up the names of this and the following jobs.
     my $prefix_name = 'hisat';
     $prefix_name .= qq"_k$options->{maximum}" if (defined($options->{maximum}));
     my $hisat_name = qq"${prefix_name}_$options->{species}_$options->{libtype}";
@@ -1013,42 +923,33 @@ sub Hisat2 {
     my $counter_jname = qq"counter_${hisat_name}";
     my $stat_jname = qq"${hisat_name}_stat";
 
-    my $hisat_input = $options->{input};
-    my $test_file = '';
-    my $paired = 0;
+    ## A couple of notes
+
+    ## After years of working without problem, suddenly my lesspipe
+    ## process substitution pre-filter for arbitrarily compressed files
+    ## stopped working and might well give me an aneurysm trying to figure out.
+    ## It turns out that there is a race condition somewhere which is triggered when
+    ## less buffers its output -- so make sure the environment variable 'LESS'
+    ## contains --unbuffered
+
+    ## It is noteworthy that I modified hisat2 on my computer
+    ## so that it supports xz inputs.
     my $stranded = $options->{stranded};
-    my @pair_listing;
-    if ($hisat_input =~ /$options->{delimiter}/) {
-        @pair_listing = split(/$options->{delimiter}/, $hisat_input);
-        $paired = 1;
-        $pair_listing[0] = File::Spec->rel2abs($pair_listing[0]);
-        $pair_listing[1] = File::Spec->rel2abs($pair_listing[1]);
-        ## After years of working without problem, suddenly my lesspipe
-        ## process substitution pre-filter for arbitrarily compressed files
-        ## stopped working and might well give me an aneurysm trying to figure out.
-        ## It turns out that there is a race condition somewhere which is triggered when
-        ## less buffers its output -- so make sure the environment variable 'LESS'
-        ## contains --unbuffered
-        $hisat_input = qq" -1 $pair_listing[0] -2 $pair_listing[1] ";
-        if ($pair_listing[0] =~ /\.[x|g|b]z$/) {
-            ## It is noteworthy that I modified hisat2 on my computer
-            ## so this is never necessary.
-            ## my $r1_fd = $class->Get_FD(input => $pair_listing[0]);
-            ## my $r2_fd = $class->Get_FD(input => $pair_listing[1]);
-            $hisat_input = qq" -1 $pair_listing[0] -2 $pair_listing[1] ";
-            ## $hisat_input = qq" -1 <(less $pair_listing[0]) -2 <(less $pair_listing[1]) ";
-        }
-        $test_file = $pair_listing[0];
-    } else {
+    my $number_inputs = scalar(@{$inputs});
+    my $paired = 0;
+    my $input_string = '';
+    my $test_file = $inputs->[0]->{fullpath};
+    if ($number_inputs == 1) {
+        $input_string = qq" -U ${test_file} ";
         $stranded = 'no';
         $options->{get_insertsize} = 0;
-        $test_file = File::Spec->rel2abs($hisat_input);
-        $hisat_input = qq" -U ${test_file} ";
-        if ($test_file =~ /\.[x|g|b]z$/) {
-            ## It is noteworthy that I modified hisat2 on my computer so this is never necessary.
-            $hisat_input = qq" -U ${test_file} ";
-        }
+    } elsif ($number_inputs == 2) {
+        $paired = 1;
+        $input_string = qq" -1 ${test_file} -2 $inputs->[1]->{fullpath} ";
+    } else {
+        die("This number of inputs is unsuitable: ${number_inputs}.\n");
     }
+
     ## Check that the indexes exist
     my $cluster = $options->{cluster};
     if (!-r $paths->{index_file} && !-r $paths->{index_file2}) {
@@ -1056,7 +957,7 @@ sub Hisat2 {
         my $index_job = $class->Bio::Adventure::Index::Hisat2_Index(
             cluster => 0,
             input => $genome_fasta,
-            jprefix => qq"$options->{jprefix}_0",
+            prefix => $options->{jprefix},
             output_dir => $paths->{output_dir},
             jdepends => $options->{jdepends},
             libtype => $options->{libtype},);
@@ -1065,74 +966,46 @@ sub Hisat2 {
     }
 
     my $hisat_input_flag = '-q '; ## fastq by default
-    $hisat_input_flag = '-f ' if (${hisat_input} =~ /\.fasta$/);
-    my $jcpu = $options->{jcpu};
+    $hisat_input_flag = '-f ' if ($test_file =~ /\.fasta$/);
 
-    my $stderr = qq"$paths->{output_dir}/hisat_$options->{species}_$options->{libtype}";
-    my $stdout = $stderr;
-    my $metrics = $stderr;
-    if (defined($options->{jbasename})) {
-        $stderr .= "_$options->{jbasename}.stderr";
-        $stdout .= "_$options->{jbasename}.stdout";
-        $metrics .= "_$options->{jbasename}.metrics";
-    } else {
-        $stderr .= ".stderr";
-        $stdout .= ".stdout";
-        $metrics .= ".metrics";
-    }
-    my $comment = qq!## This is a hisat2 alignment of ${hisat_input} against $paths->{index_shell}
-!;
-    $comment .= qq"## This alignment is using arguments: ${hisat_args}.\n" unless ($hisat_args eq '');
-    my $aligned_discordant_filename = qq"$paths->{output_dir}/aldis_$options->{species}_$options->{libtype}.fastq";
-    my $unaligned_discordant_filename = qq"$paths->{output_dir}/unaldis_$options->{species}_$options->{libtype}.fastq";
-    if (defined($options->{unaligned_discordant})) {
-        $unaligned_discordant_filename = $options->{unaligned_discordant};
-    }
-    my $aligned_concordant_filename = qq"$paths->{output_dir}/alcon_$options->{species}_$options->{libtype}.fastq";
-    my $unaligned_concordant_filename = qq"$paths->{output_dir}/unalcon_$options->{species}_$options->{libtype}.fastq";
-    if (defined($options->{unaligned_output})) {
-        $unaligned_concordant_filename = $options->{unaligned_output};
-    }
-    my $sam_filename = qq"$paths->{output_dir}/$options->{species}_$options->{libtype}.sam";
-    my $jstring = qq!mkdir -p $paths->{output_dir}
-mapped=1
+    my $jstring = qq!mapped=1
 {
-  /usr/bin/time -v -o ${stdout}.time -a hisat2 -x $paths->{index_shell} ${hisat_args} \\
-    -p ${jcpu} \\
-    ${hisat_input_flag} ${hisat_input} \\
+  /usr/bin/time -v -o $paths->{time}.time -a hisat2 -x $paths->{index_shell} ${hisat_args} \\
+    -p $options->{jcpu} \\
+    ${hisat_input_flag} ${input_string} \\
     --phred$options->{phred} \\
-    --un ${unaligned_discordant_filename} \\
-    --al ${aligned_discordant_filename} \\
+    --un $outputs->{unaligned_discordant} \\
+    --al $outputs->{aligned_discordant} \\
 !;
     ## Record the aligned/unaligned filenames both before and after compression.
-    my $aligned_filenames = $aligned_discordant_filename;
+    my $aligned_filenames = $outputs->{aligned_discordant};
     my $aligned_xz = qq"${aligned_filenames}.xz";
-    my $unaligned_filenames = $unaligned_discordant_filename;
+    my $unaligned_filenames = $outputs->{unaligned_discordant};
     my $unaligned_xz = qq"${unaligned_filenames}.xz";
     if ($paired) {
         ## The concordant flag tries to send reads to xxx.1 and xxx.2 even if
         ## the data is not paired.
-        $jstring .= qq!    --un-conc ${unaligned_concordant_filename} \\
-    --al-conc ${aligned_concordant_filename} \\
+        $jstring .= qq!    --un-conc $outputs->{unaligned_concordant} \\
+    --al-conc $outputs->{aligned_concordant} \\
 !;
-        my $aligned_base = basename($aligned_concordant_filename, ('.fastq', '.fasta'));
-        my $unaligned_base = basename($unaligned_concordant_filename, ('.fastq', '.fastq'));
-        my $the_dirname = dirname($aligned_concordant_filename);
+        my $aligned_base = basename($outputs->{aligned_concordant}, ('.fastq', '.fasta'));
+        my $unaligned_base = basename($outputs->{unaligned_concordant}, ('.fastq', '.fastq'));
+        my $the_dirname = dirname($outputs->{aligned_concordant});
         ## For the set of all aligned filenames, there should now be 3, the original discordant and two more.
         ## For the xz filenames, there should be 2, just the concordant; because these will be used downstream.
         $aligned_filenames .= qq":${the_dirname}/${aligned_base}.1.fastq:${the_dirname}/${aligned_base}.2.fastq";
         $aligned_xz = qq"${the_dirname}/${aligned_base}.1.fastq.xz:${the_dirname}/${aligned_base}.2.fastq.xz";
 
-        $unaligned_filenames = qq"${the_dirname}/${unaligned_base}.1.fastq:${the_dirname}/${unaligned_base}.2.fastq:${unaligned_discordant_filename}";
-        $unaligned_xz = qq"${the_dirname}/${unaligned_base}.1.fastq.xz:${the_dirname}/${unaligned_base}.2.fastq.xz:${unaligned_discordant_filename}.xz";
+        $unaligned_filenames = qq"${the_dirname}/${unaligned_base}.1.fastq:${the_dirname}/${unaligned_base}.2.fastq:$outputs->{unaligned_discordant}";
+        $unaligned_xz = qq"${the_dirname}/${unaligned_base}.1.fastq.xz:${the_dirname}/${unaligned_base}.2.fastq.xz:$outputs->{unaligned_discordant}.xz";
     }
     my $all_filenames = qq"${aligned_filenames}:${unaligned_filenames}";
-    $jstring .= qq!    -S ${sam_filename} \\
-    --met-file ${metrics} \\
-    2>${stderr} \\
-    1>${stdout}
+    $jstring .= qq!    -S $outputs->{main} \\
+    --met-file $outputs->{metrics} \\
+    2>$outputs->{stderr} \\
+    1>$outputs->{stdout}
 } || {
-  echo 'hisat2 failed.' >> ${stderr}
+  echo 'hisat2 failed.' >> $outputs->{stderr}
 }
 ## It seems like small files on NFS can cause a race condition leading to failure to properly
 ## read the sam/un(aligned) outputs.
@@ -1143,42 +1016,22 @@ sync
     ## accidental overwriting of indexes by multiple jobs.
     my $hisat_job = $class->Submit(
         cluster => $cluster,
-        comment => $comment,
         jdepends => $options->{jdepends},
-        input => $hisat_input,
-        jname => $hisat_name,
         jstring => $jstring,
-        jprefix => $options->{jprefix},
-        jmem => $options->{jmem},
-        paired => $paired,
-        output => $sam_filename,
-        output_metrics => $metrics,
-        prescript => $options->{prescript},
-        postscript => $options->{postscript},
-        aligned => $aligned_filenames,
-        aligned_comp => $aligned_xz,
-        stderr => $stderr,
-        stdout => $stdout,
-        unaligned => $unaligned_filenames,
-        unaligned_dis => $unaligned_discordant_filename,
-        unaligned_comp => $unaligned_xz,);
-    my $new_jprefix = qq"$options->{jprefix}_1";
+        paired => $paired,);
     ## HT1_Stats also reads the trimomatic output, which perhaps it should not.
-    ## my $trim_output_file = qq"outputs/$options->{jbasename}-trimomatic.out";
-    my $sam_jprefix = qq"$options->{jprefix}_2";
+    ## my $trim_output_file = qq"outputs/$options->{job_basename}-trimomatic.out";
     my $sam_job = $class->Bio::Adventure::Convert::Samtools(
-        input => $sam_filename,
-        jcpu => 1,
+        input => $outputs->{main},
         jdepends => $hisat_job->{job_id},
-        jname => $sam_jname,
-        jprefix => $sam_jprefix,
+        jprefix => $options->{jprefix},
         paired => $paired,
         species => $options->{species},);
     $hisat_job->{samtools} = $sam_job;
     if ($options->{compress}) {
         my $comp = $class->Bio::Adventure::Compress::Compress(
             jname => $xz_jname,
-            jprefix => $new_jprefix,
+            jprefix => $options->{jprefix},
             input => qq"${aligned_filenames}:${unaligned_filenames}",
             jdepends => $sam_job->{job_id});
         $hisat_job->{compression} = $comp;
@@ -1189,8 +1042,8 @@ sync
 
     if ($options->{get_insertsize}) {
         my $sizes = $class->Bio::Adventure::Count::Insert_Size(
-            input => $sam_job->{output},
-            jprefix => qq"$options->{jprefix}_3",
+            input => $sam_job->{main},
+            jprefix => $options->{jprefix},
             jdepends => $sam_job->{job_id},);
         $hisat_job->{insertsizes} = $sizes;
     }
@@ -1198,15 +1051,14 @@ sync
         my $duplication = $class->Bio::Adventure::Convert::GATK_Dedup(
             input => $sam_job->{output},
             remove => $options->{remove},
-            jprefix => qq"$options->{jprefix}_6",
+            jprefix => $options->{jprefix},
             jdepends => $sam_job->{job_id},);
     }
-    $new_jprefix = qq"$options->{jprefix}_3";
     my $counter_input;
     if ($paired) {
-        $counter_input = $sam_job->{paired_output};
+        $counter_input = $sam_job->{paired};
     } else {
-        $counter_input = $sam_job->{output};
+        $counter_input = $sam_job->{main};
     }
     my $counter_out = '';
     my $counter;
@@ -1215,8 +1067,7 @@ sync
             $counter = $class->Bio::Adventure::Count::HTSeq(
                 input => $counter_input,
                 jdepends => $sam_job->{job_id},
-                jname => $counter_jname,
-                jprefix => $new_jprefix,
+                jprefix => $options->{jprefix},
                 libtype => $options->{libtype},
                 mapper => 'hisat2',
                 paired => $paired,
@@ -1225,8 +1076,7 @@ sync
             $counter = $class->Bio::Adventure::Count::HT_Multi(
                 input => $counter_input,
                 jdepends => $sam_job->{job_id},
-                jname => $counter_jname,
-                jprefix => $new_jprefix,
+                jprefix => $options->{jprefix},
                 libtype => $options->{libtype},
                 mapper => 'hisat2',
                 paired => $paired,
@@ -1234,9 +1084,9 @@ sync
         }
         $hisat_job->{htseq} = $counter;
         if (ref($hisat_job->{htseq}) eq 'ARRAY') {
-            $counter_out = $hisat_job->{htseq}->[0]->{output};
+            $counter_out = $hisat_job->{htseq}->[0]->{main};
         } else {
-            $counter_out = $hisat_job->{htseq}->{output};
+            $counter_out = $hisat_job->{htseq}->{main};
         }
         ## If this is not the final job in a chain, then make sure
         ## that any jobs queued after it do not start until
@@ -1245,8 +1095,7 @@ sync
         $counter = $class->Bio::Adventure::Count::Feature_Counts(
             input => $counter_input,
             jdepends => $sam_job->{job_id},
-            jname => $counter_jname,
-            jprefix => $new_jprefix,
+            jprefix => $options->{jprefix},
             libtype => $options->{libtype},
             mapper => 'hisat2',
             paired => $paired,
@@ -1257,12 +1106,11 @@ sync
         $hisat_job->{job_id} = $counter->{job_id};
     }
     $hisat_job->{counter} = $counter;
-    my $stats = $class->Bio::Adventure::Metadata::HT2_Stats(
-        input => $stderr,
+    my $stats = $class->Bio::Adventure::Metadata::Hisat2_Stats(
+        input => $outputs->{stderr},
         count_table => $counter_out,
         jdepends => $hisat_job->{job_id},
-        jname => $stat_jname,
-        jprefix => $new_jprefix,
+        jprefix => $options->{jprefix},
         output_dir => $paths->{output_dir},);
     $hisat_job->{stats} = $stats;
     $hisat_job->{job_id} = $stats->{job_id};
@@ -1289,19 +1137,15 @@ sync
 =cut
 sub Kallisto {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        jcpu => 8,
-        jwalltime => '8:00:00',
-        jmem => 24,
-        jprefix => '46',
         required => ['input', 'species',],);
     die('No species provided.') unless($options->{species});
-    if ($options->{species} =~ /\:/) {
+    if ($options->{species} =~ /:/) {
+        my $start_species = $options->{species};
         my @species_lst = split(/:/, $options->{species});
         my @result_lst = ();
-        my $start_species = $options->{species};
-        foreach my $sp (@species_lst) {
+        for my $sp (@species_lst) {
             print "Invoking kallisto on ${sp}\n";
             $options->{species} = $sp;
             my $result = $class->Bio::Adventure::Map::Kallisto(%{$options});
@@ -1310,7 +1154,6 @@ sub Kallisto {
         $options->{species} = $start_species;
         return(@result_lst);
     }
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my %ka_jobs = ();
     my $ka_depends_on = '';
     my $libtype = 'genome';
@@ -1376,7 +1219,6 @@ kallisto quant ${ka_args} \\
   1>${output_sam} && \\
   cut -d "	" -f 1,4 ${outdir}/abundance.tsv > ${outdir}/${input_name}_abundance.count && \\
   xz -9e -f ${outdir}/${input_name}_abundance.count
-  echo "Finished kallisto." >${stdout}
 !;
     ## Newer kallisto does not seem to do this well anymore...
 ##  samtools view -u -t ${ka_reflib} -S ${output_sam} \\
@@ -1392,16 +1234,9 @@ kallisto quant ${ka_args} \\
         comment => $comment,
         input => $ka_input,
         depends => $options->{jdepends},
-        jname => qq"${jname}",
-        jprefix => '30',
         jstring => $jstring,
-        jmem => $options->{jmem},
-        output => qq"${outdir}/abundance.tsv",
-        count => qq"${outdir}/${input_name}_abundance.count",
-        stderr => $stderr,
-        stdout => $stdout,
-        prescript => $args{prescript},
-        postscript => $args{postscript},);
+        outputs => $outputs,
+        count => qq"${outdir}/${input_name}_abundance.count",);
     $kallisto->{index} = $index_job;
     return($kallisto);
 }
@@ -1443,26 +1278,22 @@ kallisto quant ${ka_args} \\
 =cut
 sub PolyA_Recorder {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['species', 'input',],
         input_gff => '',
         gff_type => 'protein_coding_gene',
         gff_tag => 'ID',
-        output_type => 'polyA_gene',
-        jprefix => '50',);
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+        output_type => 'polyA_gene',);
     my $output_dir = $paths->{output_dir};
     make_path($output_dir) unless (-d $output_dir);
     my $output_gff = qq"${output_dir}/$options->{species}_maximum_3p_utr.gff";
     my $output_tsv = qq"${output_dir}/$options->{species}_recorded_polyA.tsv";
-    my $jname = qq"polyA_$options->{species}";
     my $jstring = qq!use Bio::Adventure::Map;
 my \$result = \$h->Bio::Adventure::Map::PolyA_Recorder_Worker(
   gff_type => '$options->{gff_type}',
   gff_tag => '$options->{gff_tag}',
   input => '$options->{input}',
-  jname => '${jname}',
   output => '${output_gff}',
   output_tsv => '${output_tsv}',
   output_dir => '${output_dir}',
@@ -1471,16 +1302,13 @@ my \$result = \$h->Bio::Adventure::Map::PolyA_Recorder_Worker(
 !;
     my $comment = qq!## Seek polyA positions.!;
     my $polyA = $class->Submit(
-        comment => $comment,
         gff_type => $options->{gff_type},
         gff_tag => $options->{gff_tag},
         input => $options->{input},
         input_gff => $options->{input_gff},
         jdepends => $options->{jdepends},
-        jname => $jname,
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        output => $output_gff,
+        outputs => $outputs,
         output_dir => $output_dir,
         output_tsv => $output_tsv,
         output_type => $options->{output_type},
@@ -1500,7 +1328,7 @@ my \$result = \$h->Bio::Adventure::Map::PolyA_Recorder_Worker(
 =cut
 sub PolyA_Recorder_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['species', 'input',],
         input_gff => '',
@@ -1511,41 +1339,31 @@ sub PolyA_Recorder_Worker {
     ## 1.  These are all extracted from larger polyA containing reads
     ##     Thus I should not need to think about R1 vs R2 nor the read strand, only the
     ##     relative position of the nearest stop codon.
-
-    my $input_gff = $options->{input_gff};
-    unless ($input_gff) {
-        $input_gff = qq"$options->{libpath}/$options->{libtype}/gff/$options->{species}.gff";
-        print "Input gff file not provided, using:
-${input_gff}.\n";
-    }
-    my $fasta = qq"$options->{libpath}/$options->{libtype}/fasta/$options->{species}.fasta";
     unless (-r $options->{input}) {
         die("Unable to find input bam alignment.");
     }
-    my $output_dir = $options->{output_dir};
-    make_path($output_dir) unless (-d $output_dir);
     ## Set up the output filehandles:
     ##  The output csv file.
-    my $output_tsv_filename = qq"${output_dir}/$options->{species}_recorded_polya.tsv";
-    my $output_tsv = FileHandle->new(qq">${output_dir}/$options->{species}_recorded_sl.tsv");
+    my $output_tsv_filename = qq"$paths->{output_dir}/$options->{species}_recorded_polya.tsv";
+    my $output_tsv = FileHandle->new(qq">$paths->{output_dir}/$options->{species}_recorded_sl.tsv");
     print $output_tsv qq"$options->{gff_tag}\tstart\tend\tstrand\trelative_pos\tnum_reads\n";
     ## The output gff file, this will receive individual gff strings:
-    my $gff_output_filename = qq"${output_dir}/$options->{species}_3p_modified_genes.gff";
+    my $gff_output_filename = qq"$paths->{output_dir}/$options->{species}_3p_modified_genes.gff";
     my $gff_out = FileHandle->new(">${gff_output_filename}");
     ## Use Bio::Tools::GFF to create the gff strings.
     my $gffout_io = Bio::Tools::GFF->new(-noparse => 1, -gff_version => 3);
     ## The log file:
-    my $log_file = qq"${output_dir}/polya_recorder.log";
+    my $log_file = qq"$paths->{output_dir}/polya_recorder.log";
     my $log = FileHandle->new(">${log_file}");
     print $log "Starting PolyA Recorder, reading $options->{gff_tag} tags from $options->{gff_type}
-entries of ${input_gff}.
+entries of $paths->{gff}.
 Writing results to ${gff_output_filename}.\n";
     my ($counters, $observed) = $class->Bio::Adventure::Parsers::Count_Extract_GFF(
-        gff => $input_gff, log => $log, gff_type => $options->{gff_type},
+        gff => $paths->{gff}, log => $log, gff_type => $options->{gff_type},
         gff_tag => $options->{gff_tag},);
     print $log "Beginning to read alignments from: $options->{input}.\n";
     my $sam = Bio::DB::Sam->new(-bam => $options->{input},
-                                -fasta => ${fasta},);
+                                -fasta => $paths->{fasta},);
     my @targets = $sam->seq_ids;
     my $num = scalar(@targets);
     my $bam = Bio::DB::Bam->open($options->{input});
@@ -1836,25 +1654,22 @@ Currently everything else is left as the default.
 =cut
 sub RSEM {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        required => ['species', 'input'],
-        jmem => 24,);
-    if ($options->{species} =~ /\:/) {
+        required => ['species', 'input'],);
+    if ($options->{species} =~ /:/) {
+        my $start_species = $options->{species};
         my @species_lst = split(/:/, $options->{species});
         my @result_lst = ();
-        my $start_species = $options->{species};
-        foreach my $sp (@species_lst) {
+        for my $sp (@species_lst) {
             print "Invoking RSEM on ${sp}\n";
             $options->{species} = $sp;
-            my $result = Bio::Adventure::Map::RSEM($class, %{$options});
+            my $result = $class->Bio::Adventure::Map::RSEM(%{$options});
             push (@result_lst, $result);
         }
         $options->{species} = $start_species;
         return(@result_lst);
     }
-
-    my $jbasename = $class->Get_Job_Name();
     my $cds = qq"$options->{libpath}/$options->{libtype}/$options->{species}_cds_nt.fasta";
     my $idx = qq"$options->{libpath}/$options->{libtype}/indexes/rsem/$options->{species}";
     my $test_idx = qq"${idx}.transcripts.fa";
@@ -1868,7 +1683,7 @@ sub RSEM {
             input => $cds,
             index => $idx,
             jdepends => $options->{jdepends},
-            jname => qq"rsidx_${jbasename}",
+            jname => qq"rsidx_$options->{job_basename}",
             libtype => $options->{libtype},
             modules => $options->{modules},);
         $options->{jdepends} = $index_job->{job_id};
@@ -1890,7 +1705,6 @@ sub RSEM {
     my $rsem_dir = qq"outputs/rsem_$options->{species}";
     my $stderr = qq"${rsem_dir}/$options->{species}.stderr";
     my $stdout = qq"${rsem_dir}/$options->{species}.stdout";
-    my $rsem_comment = '## This is a rsem invocation script.';
     my $output_file = qq"$options->{species}_something.txt";
     my $jstring = qq"mkdir -p ${rsem_dir} && rsem-calculate-expression --bowtie2 \\
   --calc-ci ${rsem_input} \\
@@ -1900,18 +1714,10 @@ sub RSEM {
   1>${stdout}
 ";
     my $rsem = $class->Submit(
-        comment => $rsem_comment,
         input => $rsem_input,
-        jname => qq"rsem_${jbasename}",
         jdepends => $options->{jdepends},
         jstring => $jstring,
-        jprefix => '28',
-        mem => $options->{jmem},
-        output => $output_file,
-        stderr => $stderr,
-        stdout => $stdout,
-        prescript => $options->{prescript},
-        postscript => $options->{postscript},);
+        outputs => $outputs,);
     $rsem->{index_job} = $index_job;
     return($rsem);
 }
@@ -1933,27 +1739,21 @@ sub RSEM {
 =cut
 sub Salmon {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['species', 'input'],
-        jcpu => 8,
         libtype => 'CDS',
-        jwalltime => '4:00:00',
-        jmem => 24,
-        stranded => 'A',
-        jprefix => '45',);
+        stranded => 'A',);
     if ($options->{libtype} ne 'CDS') {
         print "The library type for salmon generally needs to be CDS unless this is something special.
 Waiting 10 seconds to see if you change your mind.\n";
         sleep(10);
     }
-    my $depends = $options->{jdepends};
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
-    if ($options->{species} =~ /\:/) {
+    if ($options->{species} =~ /:/) {
+        my $start_species = $options->{species};
         my @species_lst = split(/:/, $options->{species});
         my @result_lst = ();
-        my $start_species = $options->{species};
-        foreach my $sp (@species_lst) {
+        for my $sp (@species_lst) {
             print "Invoking salmon on ${sp}\n";
             $options->{species} = $sp;
             my $result = $class->Bio::Adventure::Map::Salmon(%{$options});
@@ -1970,9 +1770,8 @@ Waiting 10 seconds to see if you change your mind.\n";
     my %sa_jobs = ();
     my $libtype = 'genome';
     $libtype = $options->{libtype} if ($options->{libtype});
-    my $species = $options->{species};
 
-    my $jname = qq"sal_${species}_$options->{libtype}";
+    my $jname = qq"sal_$options->{species}_$options->{libtype}";
     ## $jname = $options->{jname} if ($options->{jname});
     my $sa_args = '';
     my $sa_input = $options->{input};
@@ -2031,24 +1830,17 @@ Waiting 10 seconds to see if you change your mind.\n";
         my %index_args = $class->Extra_Options(options => $options, extras => $index_extras);
         $index_job = $class->Bio::Adventure::Index::Salmon_Index(%index_args, cluster => 0);
     }
-    my $outdir = $paths->{output_dir};
-    my $stderr = $paths->{stderr};
-    my $stdout = $paths->{stdout};
-    my $comment = qq!## This is a salmon pseudoalignment of ${sa_input} against
-## ${sa_reflib}.
-!;
-    my $jstring = qq!mkdir -p ${outdir}
-mapped=1
+    my $jstring = qq!mapped=1
 {
-  /usr/bin/time -v -o ${stdout}.time -a \\
+  /usr/bin/time -v -o $outputs->{stdout}.time -a \\
     salmon quant -i ${sa_reflib} \\
       -l ${strand_string} --gcBias --validateMappings  \\
       ${sa_args} \\
-      -o ${outdir} \\
-      2>${stderr} \\
-      1>${stdout}
+      -o $paths->{outdir} \\
+      2>$outputs->{stderr} \\
+      1>$outputs->{stdout}
 } || {
-  echo 'salmon failed.' >> ${stderr}
+  echo 'salmon failed.' >> $outputs->{stderr}
 }
 !;
     ## Explicitly setting the cluster state to whatever it was before
@@ -2056,22 +1848,14 @@ mapped=1
     ## to run outside of the context of a cluster.
     my $salmon = $class->Submit(
         cluster => $cluster,
-        comment => $comment,
         input => $sa_input,
         jdepends => $options->{jdepends},
-        jname => $jname,
         jstring => $jstring,
-        output => $paths->{output},
-        stderr => $stderr,
-        stdout => $stdout,
-    );
+        outputs => $outputs,);
     $salmon->{index_job} = $index_job;
     my $stats = $class->Bio::Adventure::Metadata::Salmon_Stats(
-        input => qq"${outdir}/lib_format_counts.json",
-        jdepends => $salmon->{job_id},
-        jprefix => qq"$options->{jprefix}_1",
-        jname => qq"sastats_$options->{species}",
-    );
+        input => qq"$paths->{outdir}/lib_format_counts.json",
+        jdepends => $salmon->{job_id},);
     $salmon->{stats} = $stats;
     $salmon->{job_id} = $stats->{job_id};
     return($salmon);
@@ -2085,15 +1869,14 @@ mapped=1
 =cut
 sub STAR {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        required => ['species', 'input'],
-        jmem => 48,);
-    if ($options->{species} =~ /\:/) {
+        required => ['species', 'input'],);
+    if ($options->{species} =~ /:/) {
         my @species_lst = split(/:/, $options->{species});
         my @result_lst = ();
         my $start_species = $options->{species};
-        foreach my $sp (@species_lst) {
+        for my $sp (@species_lst) {
             print "Invoking STAR on ${sp}\n";
             $options->{species} = $sp;
             my $result = $class->Bio::Adventure::Map::STAR(%{$options});
@@ -2134,11 +1917,6 @@ sub STAR {
     my $outdir = qq"outputs/star_${species}";
     my $stderr = qq"${outdir}/star_${species}.stderr";
     my $stdout = qq"${outdir}/star_${species}.stdout";
-    my $comment = qq!## This is a star pseudoalignment of ${star_input} against
-## ${star_reflib}.
-## This jobs depended on: $options->{jdepends}
-## Currently, this only works with the module star/git_201803
-!;
     my $jstring = qq!mkdir -p ${outdir}
 STAR \\
   --genomeDir ${star_refdir} \\
@@ -2168,17 +1946,10 @@ STAR \\
 !;
 
     my $star_job = $class->Submit(
-        comment => $comment,
         input => $star_input,
         jdepends => $options->{jdepends},
-        jname => qq"${jname}",
-        jprefix => '33',
         jstring => $jstring,
-        jmem => $options->{jmem},
-        prescript => $args{prescript},
-        postscript => $args{postscript},
-        stderr => $stderr,
-        stdout => $stdout,);
+        outputs => $outputs,);
     $star_job->{index_job} = $index_job;
     return($star_job);
 }
@@ -2194,16 +1965,14 @@ STAR \\
 =cut
 sub Tophat {
     my ($class, %args) = @_;
-    my $check = which('tophat');
-    die('Could not find tophat in your PATH.') unless($check);
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['species', 'input', 'gff_type'],);
-    if ($options->{species} =~ /\:/) {
+    if ($options->{species} =~ /:/) {
+        my $start_species = $options->{species};
         my @species_lst = split(/:/, $options->{species});
         my @result_lst = ();
-        my $start_species = $options->{species};
-        foreach my $sp (@species_lst) {
+        for my $sp (@species_lst) {
             print "Invoking tophat on ${sp}\n";
             $options->{species} = $sp;
             my $result = Bio::Adventure::Map::Tophat($class, %{$options});
@@ -2214,18 +1983,18 @@ sub Tophat {
     }
 
     my $tophat_cpus = 4;
-    my $inputs = $options->{input};
-    my @in = split(/:/, $inputs);
-    $inputs =~ s/:/ /g;
+    my $input_files = $options->{input};
+    my @in = split(/:/, $input_files);
+    $input_files =~ s/:/ /g;
     my $paired = 0;
     if (scalar(@in) > 1) {
         my $r1_fd = $class->Get_FD(input => $in[0]);
         my $r2_fd = $class->Get_FD(input => $in[1]);
-        $inputs = qq" ${r1_fd} ${r2_fd} ";
+        $input_files = qq" ${r1_fd} ${r2_fd} ";
         $paired = 1;
     } else {
         my $r1_fd = $class->Get_FD(input => $in[0]);
-        $inputs = qq" ${r1_fd} ";
+        $input_files = qq" ${r1_fd} ";
     }
     my $tophat_args = ' -g 1 --microexon-search --b2-very-sensitive ';
     if ($options->{tophat_args}) {
@@ -2313,17 +2082,9 @@ fi
 !;
     my $tophat = $class->Submit(
         comment => $comment,
-        jcpu => $tophat_cpus,
         jdepends => $options->{jdepends},
-        jname => $options->{jname},
-        jprefix => '31',
         jstring => $jstring,
-        jmem => $tophat_mem,
-        stderr => $stderr,
-        stdout => $stdout,
-        prescript => $options->{prescript},
-        postscript => $options->{postscript},
-        jwalltime => $tophat_walltime,);
+        outputs => $outputs,);
     ## Set the input for htseq
     my $accepted = qq"${tophat_dir}/accepted_hits.bam";
     $accepted = $options->{accepted_hits} if ($options->{accepted_hits});

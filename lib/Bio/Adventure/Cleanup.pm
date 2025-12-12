@@ -26,7 +26,7 @@ Delete the various directories/files from the RNASeq tools invoked by Bio::Adven
 =cut
 sub Cleanup {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars();
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars();
     my $depends = $options->{depends};
     my $input_files = $class->{input};
     $input_files =~ s/:/ /g;
@@ -47,14 +47,10 @@ sub Cleanup {
 
 sub Cleanup_Phage_Assembly {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         jprefix => '99',
         jname => 'cleanup_phage');
-
-    my $job_name = $class->Get_Job_Name();
-    my $input_paths = $class->Get_Path_Info($options->{input});
-
     my $jstring = qq!## Rando fastq files
 stuff=\$(find . -type f -name '*.fastq')
 for file in \${stuff}; do

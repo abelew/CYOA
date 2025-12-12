@@ -1,0 +1,10 @@
+trimmed=1
+{
+  /usr/bin/time -v -o [% time %] -a \
+    fastp [% umi_flags %] [% input_string %] \
+      [% report_flags %] [% extra_args %] \
+      2>[% stderr %] \
+      1>[% stdout %]
+} || {
+  echo 'fastp failed with $!.' >>[% stderr %]
+}

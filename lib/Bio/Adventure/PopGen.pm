@@ -34,12 +34,11 @@ use Math::Round qw":all";
 =cut
 sub Angsd_Filter {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         pval => 0.01,);
-    my $input_paths = $class->Get_Path_Info($options->{input});
-    my $output_dir = qq"outputs/$options->{jprefix}angsd_$input_paths->{dirname}";
+    my $output_dir = qq"outputs/$options->{jprefix}angsd_$inputs->{dirname}";
     my $stdout = qq"${output_dir}/angsd.stdout";
     my $stderr = qq"${output_dir}/angsd.stderr";
     my $comment = '## angsd seems like it should be awesome, but it is fragile.';
@@ -51,7 +50,7 @@ angsd -b $options->{input} \\
 !;
     my $angsd_filter = $class->Submit(
         comment => $comment,
-        jname => qq"angsdfilter_$input_paths->{filename}",
+        jname => qq"angsdfilter_$inputs->{filename}",
         jprefix => $options->{jprefix},
         jstring => $jstring,
         stderr => $stderr,

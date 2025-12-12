@@ -66,7 +66,7 @@ use Text::CSV_XS::TSV;
 sub Collect_Assembly {
     my ($class, %args) = @_;
     my $start = basename(cwd());
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         input_fsa => qq"outputs/25mergeannot/${start}.fsa",
         input_genbank => qq"outputs/25mergeannot/${start}.gbk",
@@ -76,10 +76,7 @@ sub Collect_Assembly {
         input_tsv => qq"outputs/25mergeannot/${start}.tsv",
         input_xlsx => qq"outputs/25mergeannot/${start}.xlsx",
         input_faa => qq"outputs/19merge_cds_predictions/${start}.faa",
-        input_cds => qq"outputs/19merge_cds_predictions/${start}.ffn",
-        jmem => 2,
-        jprefix => '81',
-        jname => 'collect',);
+        input_cds => qq"outputs/19merge_cds_predictions/${start}.ffn",);
     my $output_dir = File::Spec->rel2abs("../");
     if ($output_dir =~ /preprocessing$/) {
         $output_dir = File::Spec->rel2abs("${output_dir}/../");
@@ -102,13 +99,10 @@ sub Collect_Assembly {
     ## $jstring .= qq"cp $options->{input_genome} ${output_dir}\n" if ($options->{input_genome});
 
     my $collect = $class->Submit(
-        jcpu => 1,
         jdepends => $options->{jdepends},
         jname => $options->{jname},
         jstring => $jstring,
-        jprefix => $options->{jprefix},
-        jmem => $options->{jmem},
-        jwalltime => '00:01:00',
+        outputs => $outputs,
         stderr => $stderr,
         stdout => $stdout,
         output => $output_dir,);
@@ -130,13 +124,10 @@ sub Collect_Assembly {
 =cut
 sub Generate_Samplesheet {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
-        type => 'rnaseq',
-        jmem => 12,);
-    my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Path_Info($options->{input});
+        type => 'rnaseq',);
     my $cwd_name = basename(cwd());
     my $output_filename = basename($options->{input}, ('.xlsx', '.tsv', '.csv'));
     my $output_dir = dirname($options->{input});
@@ -154,13 +145,12 @@ meta_written <- gather_preprocessing_metadata(basedir = "$options->{input}",
                                               species = "${species_string}")
 !;
     my $sample_sheet = $class->Submit(
-        jcpu => 1,
         jstring => $jstring,
         language => 'R',
+        outputs => $outputs,
         output => $output_file,
         stderr => $stderr,
         stdout => $stdout,
-        jmem => $options->{jmem},
         shell => '/usr/bin/env Rscript',);
     return($sample_sheet);
 }
@@ -259,7 +249,6 @@ sub Get_Aragorn {
               $trna_seq = $seq_portion;
           } elsif ($seq_portion =~ /^\w+/) {
               $trna_seq .= $seq_portion;
-
               $counter = 1;
               my $orf_id = qq"${current_contig}_tRNA_${formatted_number}";
               $single_annot{contig} = $current_contig;
@@ -430,14 +419,11 @@ sub Get_Metadata_Column {
 =cut
 sub Kraken_Best_Hit {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
-        library => 'viral',
-        jmem => 64,
-        jprefix => '11',);
+        library => 'viral',);
     ## kraken2 --db ${DBNAME} --paired --classified-out cseqs#.fq seqs_1.fq seqs_2.fq
-    my $job_name = $class->Get_Job_Name();
     my $input_directory = basename(cwd());
     my $output_dir = qq"outputs/$options->{jprefix}kraken_$options->{library}";
     my $stdout = qq"${output_dir}/kraken_best.stdout";
@@ -453,8 +439,6 @@ sub Kraken_Best_Hit {
         my $r1_fd = $class->Get_FD(input => $options->{input});
         $input_string = qq"${r1_fd} ";
     }
-    my $comment = qq!## This is a kraken2 submission script
-!;
     my $jstring = qq!kraken2 --db $ENV{KRAKEN2_DB_PATH}/$options->{library} \\
   --report ${output_dir}/kraken_report.txt --use-mpa-style \\
   --use-names ${input_string} \\
@@ -463,13 +447,9 @@ sub Kraken_Best_Hit {
   2>${stderr} 1>${stdout}
 !;
     my $kraken = $class->Submit(
-        comment => $comment,
-        jcpu => 4,
         jdepends => $options->{jdepends},
-        jname => qq"kraken_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        jmem => $options->{jmem},
+        outputs => $outputs,
         stderr => $stderr,
         stdout => $stdout,
         prescript => $options->{prescript},
@@ -490,7 +470,7 @@ sub Kraken_Best_Hit {
 =cut
 sub Merge_Annotations {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input_fsa', 'input_genbank', 'input_tsv'],
         evalue => '1e-10',
@@ -507,15 +487,11 @@ sub Merge_Annotations {
         product_columns => ['trinity_sprot_Top_BLASTX_hit', 'inter_Pfam', 'inter_TIGRFAM',],
         product_transmembrane => 'inter_TMHMM',
         product_signalp => 'trinity_SignalP',
-        suffix => '',
-        jmem => 12,
-        jprefix => '15',);
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+        suffix => '',);
     my $output_name = basename($options->{input_fsa}, ('.fsa'));
     if ($options->{suffix}) {
         $output_name .= qq"_$options->{suffix}";
     }
-    my $comment = qq"## Writing genbank files.\n";
     my $output_dir = $paths->{output_dir};
     my $output_fsa = qq"${output_dir}/${output_name}.fsa";
     my $output_xlsx = qq"${output_dir}/${output_name}.xlsx";
@@ -537,14 +513,11 @@ my \$result = \$h->Bio::Adventure::Metadata::Merge_Annotations_Worker(
   input_prodigal => '$options->{input_prodigal}',
   input_trinotate => '$options->{input_trinotate}',
   jdepends => '$options->{jdepends}',
-  jprefix => '$options->{jprefix}',
-  jname => 'merge_annotations',
   keep_genes => '$options->{keep_genes}',
   locus_tag => '$options->{locus_tag}',
   suffix => '$options->{suffix}',);
 ?;
     my $merge_job = $class->Submit(
-        comment => $comment,
         input_fsa => $options->{input_fsa},
         input_genbank => $options->{input_genbank},
         input_tsv => $options->{input_tsv},
@@ -555,16 +528,13 @@ my \$result = \$h->Bio::Adventure::Metadata::Merge_Annotations_Worker(
         input_phageterm => $options->{input_phageterm},
         input_prodigal => $options->{input_prodigal},
         input_trinotate => $options->{input_trinotate},
-        jcpu => 1,
         jdepends => $options->{jdepends},
-        jname => 'merge_annotations',
-        jmem => $options->{jmem},
-        jprefix => $options->{jprefix},
         jstring => $jstring,
         keep_genes => $options->{keep_genes},
         language => 'perl',
         library => $options->{library},
         locus_tag => 1,
+        outputs => $outputs,
         stdout => qq"${output_dir}/collect_annotations.stdout",
         output_dir => $output_dir,
         output_fsa => $output_fsa,
@@ -586,7 +556,7 @@ my \$result = \$h->Bio::Adventure::Metadata::Merge_Annotations_Worker(
 =cut
 sub Merge_Annotations_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input_fsa', 'input_genbank', 'input_tsv'],
         evalue => '1e-10',
@@ -605,9 +575,7 @@ sub Merge_Annotations_Worker {
         product_transmembrane => 'inter_TMHMM',
         product_signalp => 'inter_signal',
         suffix => '',
-        template_sbt => '',
-        jprefix => '15',);
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+        template_sbt => '',);
     my $output_dir = $paths->{output_dir};
     my $high_confidence = undef;
     my $likely_maximum = undef;
@@ -628,7 +596,6 @@ sub Merge_Annotations_Worker {
     my $output_tbl = qq"${output_dir}/${output_name}.tbl";
     my $output_gbk = qq"${output_dir}/${output_name}.gbk";
     my $log = qq"${output_dir}/${output_name}_runlog.txt";
-
     my $log_fh = FileHandle->new(">${log}");
     print "Merging annotations and writing new output files.\n";
     print $log_fh "Merging annotations and writing new output files:
@@ -696,7 +663,6 @@ gbf: ${output_gbf}, tbl: ${output_tbl}, xlsx: ${output_xlsx}.\n";
 
     ## This is #1 above and should contain all the interesting stuff from 1a-1d
     my $merged_data = {};
-
     print $log_fh qq"Reading tsv data from $options->{input_tsv} to start.\n";
     ## 1a above, the starter set of annotations.
     unless (-r $options->{input_tsv}) {
@@ -962,7 +928,6 @@ gbf: ${output_gbf}, tbl: ${output_tbl}, xlsx: ${output_xlsx}.\n";
                     $inf = $feat->add_tag_value('inference', $inference_string);
                 }
           } ## End if there is already a product string associated with this feature.
-
         } ## End looking for CDS entries
 
         ## Another place to try to make my genbank file more similar to patric's
@@ -970,7 +935,6 @@ gbf: ${output_gbf}, tbl: ${output_tbl}, xlsx: ${output_xlsx}.\n";
         if (!$options->{locus_tag}) {
             $feat->remove_tag('locus_tag') if ($feat->has_tag('locus_tag'));
         }
-
         push(@new_features, $feat);
       } ## End iterating over the feature list
 
@@ -1368,11 +1332,10 @@ sub Merge_Start_Data {
 =cut
 sub Write_XLSX {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'output'],
         primary_key => 'locus_tag',);
-
     my $tsv_data = $options->{input};
     my $output = $options->{output};
     my $primary_key = $options->{primary_key};
@@ -1382,12 +1345,11 @@ sub Write_XLSX {
     my @table;
     ## I am tired, so I will just do a two-pass over the keys to get all of their names.
     my %observations = ();
-
-  COLHUNT: foreach my $rowname (keys %{$tsv_data}) {
+  COLHUNT: for my $rowname (keys %{$tsv_data}) {
       $tsv_data->{$rowname}->{$primary_key} = $rowname;
       next COLHUNT unless (defined($tsv_data->{$rowname}));
       my %internal = %{$tsv_data->{$rowname}};
-      foreach my $k (keys %internal) {
+      for my $k (keys %internal) {
           next if ($k eq $primary_key);
           ## push(@column_ids, $k) unless any { $_ eq $k } @column_ids;
           if ($internal{$k}) {
@@ -1432,7 +1394,7 @@ sub Write_XLSX {
   }
     push(@column_ids, 'aa_sequence');
     push(@column_ids, 'cds');
-    foreach my $locus_tag (sort keys %{$tsv_data}) {
+    for my $locus_tag (sort keys %{$tsv_data}) {
         my @row;
         for my $col (@column_ids) {
             my $cell;
@@ -1477,53 +1439,39 @@ sub Write_XLSX {
 =cut
 sub BT1_Stats {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        jmem => 1,
         required => ['input']);
-    my $bt_input = $options->{input};
-    my $paths = $class->Get_Path_Info($bt_input);
     my $bt_type = '';
     $bt_type = $options->{bt_type} if ($options->{bt_type});
-    my $jname = 'stats';
-    $jname = $options->{jname} if ($options->{jname});
-    my $jobid = qq"$paths->[0]->{jbasename}_stats";
     my $count_table = "";
     $count_table = $options->{count_table} if ($options->{count_table});
-    my $stat_output = qq"outputs/bowtie_stats.csv";
-    my $comment = qq!## This is a stupidly simple job to collect alignment statistics.!;
     my $jstring = qq!
-if [ \! -r "${stat_output}" ]; then
-  echo "name,type,original_reads,reads,one_hits,failed,samples,rpm,count_table" > ${stat_output}
+if [ \! -r "$outputs->{main}" ]; then
+  echo "name,type,original_reads,reads,one_hits,failed,samples,rpm,count_table" > $outputs->{main}
 fi
 original_reads=0
 if [ -r "outputs/trimomatic_stats.csv" ]; then
   original_reads_tmp=\$(tail -n 1 outputs/trimomatic_stats.csv | awk -F, '{print \$2}')
   original_reads=\${original_reads_tmp:-0}
 fi
-reads_tmp=\$( { grep "^# reads processed" ${bt_input} || test \$? = 1; } | awk -F: '{print \$2}' | sed 's/ //g')
+reads_tmp=\$( { grep "^# reads processed" $options->{input} || test \$? = 1; } | awk -F: '{print \$2}' | sed 's/ //g')
 reads=\${reads_tmp:-0}
-one_align_tmp=\$( { grep "^# reads with at least one reported" ${bt_input} || test \$? = 1; } | awk -F": " '{print \$2}' | sed 's/ .*//g')
+one_align_tmp=\$( { grep "^# reads with at least one reported" $options->{input} || test \$? = 1; } | awk -F": " '{print \$2}' | sed 's/ .*//g')
 one_align=\${one_align_tmp:-0}
-failed_tmp=\$( { grep "^# reads that failed to align" ${bt_input} || test \$? = 1; } | awk -F": " '{print \$2}' | sed 's/ .*//g')
+failed_tmp=\$( { grep "^# reads that failed to align" $options->{input} || test \$? = 1; } | awk -F": " '{print \$2}' | sed 's/ .*//g')
 failed=\${failed_tmp:-0}
-sampled_tmp=\$( { grep "^# reads with alignments sampled" ${bt_input} || test \$? = 1; } | awk -F": " '{print \$2}' | sed 's/ .*//g')
+sampled_tmp=\$( { grep "^# reads with alignments sampled" $options->{input} || test \$? = 1; } | awk -F": " '{print \$2}' | sed 's/ .*//g')
 sampled=\${sampled_tmp:-0}
-stat_string=\$(printf "$paths->[0]->{jbasename},${bt_type},%s,%s,%s,%s,%s,${count_table}" "\${original_reads}" "\${reads}" "\${one_align}" "\${failed}" "\${sampled}")
-echo "\$stat_string" >> ${stat_output}!;
+stat_string=\$(printf "$inputs->[0]->{jbasename},${bt_type},%s,%s,%s,%s,%s,${count_table}" "\${original_reads}" "\${reads}" "\${one_align}" "\${failed}" "\${sampled}")
+echo "\$stat_string" >> $outputs->{main}!;
     my $stats = $class->Submit(
-        comment => $comment,
-        input => $bt_input,
-        jcpu => 1,
+        options => $options,
+        paths => $paths,
+        inputs => $inputs,
+        outputs => $outputs,
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => $jname,
-        jprefix => $options->{jprefix},
-        jstring => $jstring,
-        jmem => 1,
-        output => $stat_output,
-        stdout => $stat_output,
-        jwalltime => '00:01:00',);
+        jstring => $jstring,);
     return($stats);
 }
 
@@ -1536,18 +1484,15 @@ echo "\$stat_string" >> ${stat_output}!;
 =cut
 sub BT2_Stats {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        jmem => 1,
         required => ['input']);
     my $bt_input = $options->{input};
-    my $paths = $class->Get_Path_Info($bt_input);
     my $jname = 'bt2_stats';
     $jname = $options->{jname} if ($options->{jname});
     my $jobid = qq"$paths->[0]->{jbasename}_stats";
     my $count_table = '';
     $count_table = $options->{count_table} if ($options->{count_table});
-    my $comment = qq!## This is a stupidly simple job to collect alignment statistics.!;
     my $output = "outputs/bowtie2_stats.csv";
     my $jstring = qq!
 if [ \! -e "${output}" ]; then
@@ -1566,16 +1511,11 @@ rpm=\${rpm_tmp:-0}
 stat_string=\$(printf "$paths->[0]->{jbasename},%s,%s,%s,%s,%s" "\${original_reads}" "\${one_align}" "\${failed}" "\${sampled}" "\${rpm}")
 echo "\$stat_string" >> ${output}!;
     my $stats = $class->Submit(
-        comment => $comment,
         input => $bt_input,
-        jcpu => 1,
         jdepends => $options->{jdepends},
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        stdout => $output,
-        jname => $jname,
-        jmem => 1,
-        jwalltime => '00:01:00',);
+        outputs => $outputs,
+        stdout => $output,);
     return($stats);
 }
 
@@ -1586,11 +1526,9 @@ Collect some alignment statistics from bwa.
 =cut
 sub BWA_Stats {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
-        args => \%args,
-        jmem => 1,);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
+        args => \%args,);
     my $aln_input = $options->{aln_output};
-    my $paths = $class->Get_Path_Info($aln_input);
     $aln_input = qq"${aln_input}.stats";
     my $mem_input = $options->{mem_output};
     $mem_input = qq"${mem_input}.stats";
@@ -1601,7 +1539,6 @@ sub BWA_Stats {
     my $jobid = qq"$paths->[0]->{jbasename}_stats";
     my $count_table = '';
     $count_table = $options->{count_table} if ($options->{count_table});
-    my $comment = qq!## This is a stupidly simple job to collect alignment statistics.!;
     my $jstring = qq!
 if [ \! -r "${stat_output}" ]; then
     echo "# original reads, reads used, aln-aligned reads, mem-aligned reads, rpm" > ${stat_output}
@@ -1622,16 +1559,11 @@ rpm=\${rpm_tmp:-0}
 stat_string=\$(printf "$paths->[0]->{jbasename},%s,%s,%s,%s,%s,${count_table}" "\${original_reads}" "\${reads}" "\${aln_aligned}" "\${mem_aligned}" "\$rpm")
 echo "\${stat_string}" >> ${stat_output}!;
     my $stats = $class->Submit(
-        comment => $comment,
         input => $aln_input,
         depends => $options->{jdepends},
-        jcpu => 1,
-        jmem => 1,
-        jname => $jname,
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        stdout => $stat_output,
-        jwalltime => '00:01:00',);
+        outputs => $outputs,
+        stdout => $stat_output,);
     return($stats);
 }
 
@@ -1645,53 +1577,97 @@ echo "\${stat_string}" >> ${stat_output}!;
 =cut
 sub Cutadapt_Stats {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        required => ['input'],
-        jmem => 1,
-        jname => 'cutst',
-        paired => 1,);
+        required => ['input'],);
     my $jname = $options->{jname};
-    my $input_file = $options->{input};
-    my $paths = $class->Get_Path_Info($options->{input})->[0];
-    my $input_dir = $paths->{directory};
-    my $stat_output = qq"${input_dir}/cutadapt_stats.csv";
-    my $comment = '## This should collect cutadapt statistics.';
-    my $jstring = qq!
+    my $stat_output = qq"$paths->{output_dir}/cutadapt_stats.csv";
+    my $jstring = '';
+    if ($options->{paired}) {
+        $jstring = qq!
 if [ \! -r "${stat_output}" ]; then
   echo "name,total_reads,adapter_reads,too_short,discarded_untrimmed,passed" > $stat_output
 fi
-total_reads_tmp=\$( { head -n 15 ${input_file} | grep "^Total reads processed" || test \$? = 1; } |\\
+total_reads_tmp=\$( { head -n 15 $options->{input} | grep "^Total read pairs processed" || test \$? = 1; } |\\
   awk '{print \$4}' | sed "s/\,//g")
 total_reads=\${total_reads_tmp:-0}
-adapter_tmp=\$( { head -n 15 ${input_file} | grep "^Reads with adapters" ${input_file} || test \$? = 1; } |\\
-  awk '{print \$4}' | sed "s/\,//g")
-adapter=\${adapter_tmp:-0}
-too_short_tmp=\$( { head -n 15 ${input_file} | grep "^Reads that were too short" || test \$? = 1; } |\\
+too_short_tmp=\$( { head -n 15 $options->{input} | grep "^Pairs that were too short" || test \$? = 1; } |\\
   awk '{print \$6}' | sed "s/\,//g")
 too_short=\${too_short_tmp:-0}
-discarded_untrimmed_tmp=\$( { head -n 15 ${input_file} | grep "^Reads discarded as untrimmed" || test \$? = 1; } |\\
+discarded_untrimmed_tmp=\$( { head -n 15 $options->{input} | grep "^Pairs discarded as untrimmed" || test \$? = 1; } |\\
   awk '{print \$5}' | sed "s/\,//g")
 discarded_untrimmed=\${discarded_untrimmed_tmp:-0}
-passed_tmp=\$( { head -n 15 ${input_file} | grep "^Reads written" || test \$? = 1; } |\\
+passed_tmp=\$( { head -n 15 $options->{input} | grep "^Pairs written" || test \$? = 1; } |\\
   awk '{print \$5}' | sed "s/\,//g")
 passed=\${passed_tmp:-0}
-stat_string=\$(printf "$options->{jname},%s,%s,%s,%s,%s" "\${total_reads}" "\${adapter}" \\
+stat_string=\$(printf "$options->{input_name},%s,%s,%s,%s" "\${total_reads}" \\
   "\${too_short}" "\${discarded_untrimmed}" "\${passed}")
 echo "\$stat_string" >> ${stat_output}
 !;
+    } else {
+        $jstring = qq!
+if [ \! -r "${stat_output}" ]; then
+  echo "name,total_reads,adapter_reads,too_short,discarded_untrimmed,passed" > $stat_output
+fi
+total_reads_tmp=\$( { head -n 15 $options->{input} | grep "^Total reads processed" || test \$? = 1; } |\\
+  awk '{print \$4}' | sed "s/\,//g")
+total_reads=\${total_reads_tmp:-0}
+adapter_tmp=\$( { head -n 15 $options->{input} | grep "^Reads with adapters" || test \$? = 1; } |\\
+  awk '{print \$4}' | sed "s/\,//g")
+adapter=\${adapter_tmp:-0}
+too_short_tmp=\$( { head -n 15 $options->{input} | grep "^Reads that were too short" || test \$? = 1; } |\\
+  awk '{print \$6}' | sed "s/\,//g")
+too_short=\${too_short_tmp:-0}
+discarded_untrimmed_tmp=\$( { head -n 15 $options->{input} | grep "^Reads discarded as untrimmed" || test \$? = 1; } |\\
+  awk '{print \$5}' | sed "s/\,//g")
+discarded_untrimmed=\${discarded_untrimmed_tmp:-0}
+passed_tmp=\$( { head -n 15 $options->{input} | grep "^Reads written" || test \$? = 1; } |\\
+  awk '{print \$5}' | sed "s/\,//g")
+passed=\${passed_tmp:-0}
+stat_string=\$(printf "$options->{input_name},%s,%s,%s,%s,%s" "\${total_reads}" "\${adapter}" \\
+  "\${too_short}" "\${discarded_untrimmed}" "\${passed}")
+echo "\$stat_string" >> ${stat_output}
+!;
+    }
     my $stats = $class->Submit(
-        comment => $comment,
-        input => $input_file,
-        jcpu => 1,
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => $jname,
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        jwalltime => '00:01:00',
-        stdout => $stat_output,
-        output => $stat_output,);
+        output => ${stat_output},
+        outputs => $outputs,);
+    ## Added to return the state of the system to what it was
+    ## before we messed with the options.
+    return($stats);
+}
+
+
+=head2 C<Fastp_Stats>
+
+ Collect fastp results.
+
+ Collect some information from the cutadapt output files and present them in a
+ simple-to-read csv file.
+
+=cut
+sub Fastp_Stats {
+    my ($class, %args) = @_;
+    my $function_info = Bio::Adventure::Config::Get_Function_Vars($class, \%args);
+    my $paths = $function_info->{paths};
+    my $inputs = $function_info->{inputs};
+    my $options = $class->current_state;
+    $function_info->{template} = $function_info->{single_template};
+    if ($options->{paired}) {
+        $function_info->{template} = $function_info->{paired_template};
+    }
+    my $template_args = {
+        stat_output => $paths->{main},
+        input => $inputs->[0]->{input},
+
+    };
+    my $updated = $class->Bio::Adventure::Config::Update_Spec(
+        jdepends => $options->{jdepends},
+        function_info => $function_info,
+        template_args => $template_args,);
+    my $stats = $class->Submit();
     ## Added to return the state of the system to what it was
     ## before we messed with the options.
     return($stats);
@@ -1707,25 +1683,14 @@ echo "\$stat_string" >> ${stat_output}
 =cut
 sub Fastqc_Stats {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
-        jmem => 1,
-        jname => 'fqcst',
         paired => 1,);
-    my $jname = $options->{jname};
-    my $paths = $class->Get_Path_Info($options->{input})->[0];
     my $input_file = $options->{input};
-    my $input_dir = $paths->{directory};
-    my $stat_output = qq"${input_dir}/fastqc_stats.csv";
-    if ($options->{direction}) {
-        $stat_output = qq"${input_dir}/fastqc_$options->{direction}_stats.csv";
-        $jname = qq"$options->{jname}_$options->{direction}";
-    }
-    my $comment = '## This is a stupidly simple job to collect alignment statistics.';
     my $jstring = qq!
-if [ \! -r "${stat_output}" ]; then
-  echo "name,total_reads,poor_quality,per_quality,per_base_content,per_sequence_gc,per_base_n,per_seq_length,over_rep,adapter_content,kmer_content" > $stat_output
+if [ \! -r "$outputs->{main}" ]; then
+  echo "name,total_reads,poor_quality,per_quality,per_base_content,per_sequence_gc,per_base_n,per_seq_length,over_rep,adapter_content,kmer_content" > $outputs->{main}
 fi
 total_reads_tmp=\$( { grep "^Total Sequences" ${input_file} || test \$? = 1; } | awk -F '\\\\t' '{print \$2}')
 total_reads=\${total_reads_tmp:-0}
@@ -1747,74 +1712,49 @@ adapter_content_tmp=\$( { grep "Adapter Content" ${input_file} || test \$? = 1; 
 adapter_content=\${adapter_content_tmp:-0}
 kmer_content_tmp=\$( { grep "Kmer Content" ${input_file} || test \$? = 1; } | awk -F '\\\\t' '{print \$2}')
 kmer_content=\${kmer_content_tmp:-0}
-
 stat_string=\$(printf "$options->{jname},%s,%s,%s,%s,%s,%s,%s,%s,%s,%s" "\${total_reads}" "\${poor_quality}" "\${per_quality}" "\${per_base_content}" "\${per_sequence_gc}" "\${per_base_n}" "\${per_seq_length}" "\${over_rep}" "\${adapter_content}" "\${kmer_content}")
-echo "\$stat_string" >> ${stat_output}
+echo "\$stat_string" >> $outputs->{main}
 !;
     my $stats = $class->Submit(
-        comment => $comment,
         input => $input_file,
-        jcpu => 1,
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => $jname,
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        jwalltime => '00:01:00',
-        stdout => $stat_output,
-        output => $stat_output,);
+        outputs => $outputs,);
     ## Added to return the state of the system to what it was
     ## before we messed with the options.
     return($stats);
 }
 
-=head2 C<HT2_Stats>
+=head2 C<Hisat2_Stats>
 
  Collect alignment statistics from hisat 2.
 
 =cut
-sub HT2_Stats {
+sub Hisat2_Stats {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        jmem => 1,
-        output_dir => 'outputs',);
-    my $ht_input = $options->{input};
-    my $paths = $class->Get_Path_Info($ht_input);
-    my $jname = 'ht2_stats';
-    $jname = $options->{jname} if ($options->{jname});
-    my $jobid = qq"$options->{jname}_stats";
+        required => ['input']);
     my $count_table = '';
     $count_table = $options->{count_table} if ($options->{count_table});
-    my $comment = qq!## This is a stupidly simple job to collect alignment statistics.!;
-    my $output = qq"$options->{output_dir}/hisat2_stats.csv";
     my $jstring = qq!
-if [ \! -e "${output}" ]; then
-    echo "id, original reads, single hits, failed reads, multi-hits" > ${output}
+if [ \! -e "$outputs->{main}" ]; then
+    echo "id, original reads, single hits, failed reads, multi-hits" > $outputs->{main}
 fi
-original_reads_tmp=\$( { grep " reads; of these" "${ht_input}" 2>/dev/null || test \$? = 1; } | awk '{print \$1}' | sed 's/ //g')
+original_reads_tmp=\$( { grep " reads; of these" "$options->{input}" 2>/dev/null || test \$? = 1; } | awk '{print \$1}' | sed 's/ //g')
 original_reads=\${original_reads_tmp:-0}
-one_align_tmp=\$( { grep " aligned exactly 1 time" "${ht_input}" || test \$? = 1; } | awk '{print \$1}' | sed 's/ .*//g')
+one_align_tmp=\$( { grep " aligned exactly 1 time" "$options->{input}" || test \$? = 1; } | awk '{print \$1}' | sed 's/ .*//g')
 one_align=\${one_align_tmp:-0}
-failed_tmp=\$( { grep " aligned 0 times" "${ht_input}" || test \$? = 1; } | tail -n 1 | awk '{print \$1}' | sed 's/ .*//g')
+failed_tmp=\$( { grep " aligned 0 times" "$options->{input}" || test \$? = 1; } | tail -n 1 | awk '{print \$1}' | sed 's/ .*//g')
 failed=\${failed_tmp:-0}
-sampled_tmp=\$( { grep " aligned >1 times" "${ht_input}" || test \$? = 1; } | awk '{print \$1}' | sed 's/ .*//g')
+sampled_tmp=\$( { grep " aligned >1 times" "$options->{input}" || test \$? = 1; } | awk '{print \$1}' | sed 's/ .*//g')
 sampled=\${sampled_tmp:-0}
-stat_string=\$(printf "$paths->[0]->{jbasename},%s,%s,%s,%s" "\${original_reads}" "\${one_align}" "\${failed}" "\${sampled}")
-echo "\$stat_string" >> ${output}
+stat_string=\$(printf "$inputs->[0]->{jbasename},%s,%s,%s,%s" "\${original_reads}" "\${one_align}" "\${failed}" "\${sampled}")
+echo "\$stat_string" >> $outputs->{main}
 !;
     my $stats = $class->Submit(
-        comment => $comment,
-        input => $ht_input,
-        jcpu => 1,
-        jmem => $options->{jmem},
-        jname => $jname,
         jdepends => $options->{jdepends},
-        jprefix => $options->{jprefix},
-        jstring => $jstring,
-        jwalltime => '00:01:00',
-        stdout => $output,
-        output => $output,);
+        jstring => $jstring,);
     return($stats);
 }
 
@@ -1825,17 +1765,13 @@ echo "\$stat_string" >> ${output}
 =cut
 sub Salmon_Stats {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
-        args => \%args,
-        jprefix => '16',
-        jmem => 1,);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
+        args => \%args,);
     my $jname = 'stats';
     $jname = $options->{jname} if ($options->{jname});
-    my $paths = $class->Get_Path_Info($options->{input});
     my $jobid = qq"$paths->[0]->{jbasename}_stats";
     my $outdir = dirname($options->{input});
     my $output = qq"${outdir}/salmon_stats.csv";
-    my $comment = qq"## This is a stupidly simple job to collect salmon alignment statistics.";
     my $jstring = qq!
 if [ \! -r "${output}" ]; then
   echo "basename,species,fragments,assigned,consistent,inconsistent,bias" > ${output}
@@ -1853,15 +1789,10 @@ bias=\${bias_tmp:-0}
 stat_string=\$(printf "$paths->[0]->{jbasename},$options->{species},%s,%s,%s,%s,%s" "\${reads}" "\${aligned}" "\${consistent}" "\${inconsistent}" "\${bias}")
 echo "\$stat_string" >> "${output}"!;
     my $stats = $class->Submit(
-        comment => $comment,
         input => $options->{input},
-        jcpu => 1,
-        jmem => 1,
-        jname => $jname,
         jdepends => $options->{jdepends},
-        jprefix => $args{jprefix},
         jstring => $jstring,
-        jwalltime => '00:01:00',
+        outputs => $outputs,
         stdout => '',
         output => $output,);
     return($stats);
@@ -1869,16 +1800,13 @@ echo "\$stat_string" >> "${output}"!;
 
 sub Salmon_Strand {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
-        args => \%args,
-        jmem => 1,);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
+        args => \%args,);
     my $jname = 'strand';
     $jname = $options->{jname} if ($options->{jname});
-    my $paths = $class->Get_Path_Info($options->{input});
     my $jobid = qq"$paths->[0]->{jbasename}_stats";
     my $outdir = dirname($options->{input});
     my $output = qq"${outdir}/salmon_strand.txt";
-    my $comment = qq"## This is a stupidly simple job to collect the autodetected strand.\n";
     my $jstring = qq!
 less $options->{input} |\\
   grep "Automatically detected" |\\
@@ -1898,15 +1826,10 @@ else
 fi
 !;
     my $strand = $class->Submit(
-        comment => $comment,
         input => $options->{input},
-        jcpu => 1,
-        jmem => 1,
-        jname => $jname,
         jdepends => $options->{jdepends},
-        jprefix => $args{jprefix},
         jstring => $jstring,
-        jwalltime => '00:01:00',
+        outputs => $outputs,
         stdout => '',
         output => $output,);
     return($strand);
@@ -1920,10 +1843,8 @@ fi
 =cut
 sub Tophat_Stats {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
-        args => \%args,
-        jmem => 1,);
-    my $paths = $class->Get_Path_Info($options->{accepted_input});
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
+        args => \%args,);
     my $accepted_input = $options->{accepted_input};
     my $accepted_output = qq"${accepted_input}.stats";
     my $unaccepted_input = $options->{unaccepted_input};
@@ -1936,7 +1857,6 @@ sub Tophat_Stats {
     $count_table = $options->{count_table} if ($options->{count_table});
     ## FIXME: Put this in the tophat_directory, but maybe who cares, just delete tophat.
     my $output = 'outputs/tophat_stats.csv';
-    my $comment = qq!## This is a stupidly simple job to collect tophat alignment statistics.!;
     my $jstring = qq!
 if [ \! -r "${output}" ]; then
   echo "basename,species,original_reads,aligned_reads,failed_reads,rpm,count_table" > ${output}
@@ -1962,16 +1882,11 @@ rpm=\${rpm_tmp:-0}
 stat_string=\$(printf "$paths->[0]->{jbasename},$options->{species},%s,%s,%s,%s,%s,${count_table}" "\${original_reads}" "\${reads}" "\${aligned}" "\${failed}" "\$rpm")
 echo "\$stat_string" >> "${output}"!;
     my $stats = $class->Submit(
-        comment => $comment,
         input => $accepted_input,
         stdout => $output,
-        jcpu => 1,
         jdepends => $options->{jdepends},
-        jmem => 1,
-        jname => $jname,
-        jprefix => $args{jprefix},
         jstring => $jstring,
-        jwalltime => '00:01:00',);
+        outputs => $outputs,);
     return($stats);
 }
 
@@ -1983,20 +1898,16 @@ echo "\$stat_string" >> "${output}"!;
 =cut
 sub Trimomatic_Stats {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        input => 'trimomatic.stdout',
-        jmem => 1,
-        output_dir => 'outputs',);
+        required => ['input'],);
     ## Dereferencing the options to keep a safe copy.
     my $basename = $options->{basename};
     my $jname = 'trimst';
     $jname = $options->{jname} if ($options->{jname});
-    my $comment = qq!## This is a stupidly simple job to collect trimomatic statistics!;
-    my $stat_output = qq"$options->{output_dir}/trimomatic_stats.csv";
     my $jstring = qq!
-if [ \! -r ${stat_output} ]; then
-  echo "total_reads,surviving_reads,dropped_reads" > ${stat_output}
+if [ \! -r $outputs->{main} ]; then
+  echo "total_reads,surviving_reads,dropped_reads" > $outputs->{main}
 fi
 total_reads_tmp=\$( { grep "^Input Reads" $options->{input} || test \$? = 1; } | awk '{print \$3}')
 total_reads=\${total_reads_tmp:-0}
@@ -2006,14 +1917,14 @@ dropped_reads_tmp=\$( { grep "^Input Reads" $options->{input} || test \$? = 1; }
 dropped_reads=\${dropped_reads_tmp:-0}
 
 stat_string=\$(printf "${basename},%s,%s,%s" "\${total_reads}" "\${surviving_reads}" "\${dropped_reads}")
-echo "\$stat_string" >> ${stat_output}
+echo "\$stat_string" >> $outputs->{main}
 !;
     if ($options->{pairwise}) {
         ## The output looks a bit different for pairwise input:
         ## Input Read Pairs: 10000 Both Surviving: 9061 (90.61%) Forward Only Surviving: 457 (4.57%) Reverse Only Surviving: 194 (1.94%) Dropped: 288 (2.88%)
         $jstring = qq!
-if [ \! -r ${stat_output} ]; then
-  echo "total_reads,surviving_both,surviving_forward,surviving_reverse,dropped_reads" > ${stat_output}
+if [ \! -r $outputs->{main} ]; then
+  echo "total_reads,surviving_both,surviving_forward,surviving_reverse,dropped_reads" > $outputs->{main}
 fi
 total_reads_tmp=\$( { grep "^Input Read Pairs" $options->{input} || test \$? = 1; } | awk '{print \$4}')
 total_reads=\${total_reads_tmp:-0}
@@ -2025,23 +1936,15 @@ surviving_reverse_tmp=\$( { grep "^Input Read Pairs" $options->{input} || test \
 surviving_reverse=\${surviving_reverse_tmp:-0}
 dropped_reads_tmp=\$( { grep "^Input Read Pairs" $options->{input} || test \$? = 1; } | awk '{print \$20}')
 dropped_reads=\${dropped_reads_tmp:-0}
-
 stat_string=\$(printf "${basename},%s,%s,%s,%s,%s" "\${total_reads}" "\${surviving_both}" "\${surviving_forward}" "\${surviving_reverse}" "\${dropped_reads}")
-echo "\$stat_string" >> ${stat_output}
+echo "\$stat_string" >> $outputs->{main}
 !;
     }
     my $stats = $class->Submit(
-        comment => $comment,
         input => $options->{input},
-        jcpu => 1,
         jdepends => $options->{jdepends},
-        jmem => 1,
-        jname => $jname,
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        jwalltime => '00:01:00',
-        stdout => $stat_output,
-        output => $stat_output,);
+        outputs => $outputs,);
     return($stats);
 }
 

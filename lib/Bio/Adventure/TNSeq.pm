@@ -49,12 +49,9 @@ use String::Approx qw"amatch";
 =cut
 sub Consolidate_TAs {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         input => 'r1_ca_v3.fastq.gz:r2_ca_v3.fastq.gz',
-        jmem => 8,
-        jname => 'consolidate',
-        jprefix => '59',
         minlength => 14,
         nota => 'notas.fastq',
         output => 'consolidated.fastq',);
@@ -73,9 +70,7 @@ my \$result = \$h->Bio::Adventure::TNSeq::Consolidate_TAs_Worker(
   minlength => '$options->{minlength}',);
 !;
     my $consolidate = $class->Submit(
-        comment => '# consolidate reads',
         input => $options->{input},
-        jname => $options->{jname},
         jstring => $jstring,
         language => 'perl',
         minlength => $options->{minlength},
@@ -90,7 +85,7 @@ my \$result = \$h->Bio::Adventure::TNSeq::Consolidate_TAs_Worker(
 
 sub Consolidate_TAs_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         output => 'consolidated.fastq',
@@ -207,20 +202,16 @@ sub Consolidate_Read_Pair {
 =cut
 sub Essentiality_TAs {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species'],
         htseq_type => 'gene',
         htseq_id => 'locus_tag',
-        jmem => 8,
-        jprefix => '40',
         output => '',);
-    my $job_name = $class->Get_Job_Name();
     my $outname = basename(cwd());
     my $output_dir = qq"outputs/essentiality_$options->{species}";
     my $output_log = qq"${output_dir}/count_ta.log";
     my $output = qq"${output_dir}/${outname}-v0M1_tas.txt";
-    my $comment = '## This is a submission script to count TAs for essentiality.';
     my $jstring = qq!
 use Bio::Adventure;
 use Bio::Adventure::TNSeq;
@@ -233,11 +224,7 @@ Bio::Adventure::TNSeq::Essentiality_TAs_Worker(\$h,
   output => '${output}',);
 !;
     my $ta_counter = $class->Submit(
-        comment => $comment,
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => qq"count_ta_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
         language => 'perl',
         output => $output,
@@ -261,7 +248,7 @@ Bio::Adventure::TNSeq::Essentiality_TAs_Worker(\$h,
 =cut
 sub Do_Sort_Indexes {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['index_file', 'input'],
         outdir => 'output',);
@@ -322,10 +309,9 @@ The total number of reads sorted in $options->{input}: $reads->{total}->{written
 =cut
 sub TA_Check {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],);
-    my $job_name = $class->Get_Job_Name();
     my $jstring = qq"
 use Bio::Adventure;
 use Bio::Adventure::TNSeq;
@@ -336,13 +322,8 @@ my \$ret = \$h->Bio::Adventure::TNSeq::TA_Check_Worker(
     $input_base = basename($input_base, ('.fastq', '.fasta'));
     my $sort_job = $class->Submit(
         comment => '## Check for tailing TAs!',
-        jcpu => 1,
         jdepends => $options->{jdepends},
-        jmem => 8,
-        jname => qq"tacheck_${job_name}",
-        jprefix => $options->{jprefix},
         jstring => $jstring,
-        jwalltime => "10:00:00",
         language => 'perl',
         output => qq"${input_base}_ta.fastq.xz",
         output_nota => qq"${input_base}_nota.fastq.xz",);
@@ -356,7 +337,7 @@ my \$ret = \$h->Bio::Adventure::TNSeq::TA_Check_Worker(
 =cut
 sub TA_Check_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args);
     my $input = $options->{input};
     my $input_base = basename($input, ('.gz', '.xz', '.bz2'));
     $input_base = basename($input_base, ('.fastq', '.fasta'));
@@ -408,7 +389,7 @@ ${qual}
 =cut
 sub Sort_Indexes {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'index_file'],
         outdir => 'output',);
@@ -416,24 +397,15 @@ sub Sort_Indexes {
     my $jstring = qq!
 use Bio::Adventure;
 my \$ret = \$h->Bio::Adventure::TNSeq::Do_Sort_Indexes(
-  jcpu => 1,
   input => "$options->{input}",
   index_file => "$options->{index_file}",
-  jname => 'sort_indexes',
-  jmem => 8,
   outdir => '$options->{outdir}',
   output => '$options->{outdir}/tnseq_sorting_out.txt');
 !;
     my $sort_job = $class->Submit(
-        comment => '## Sort those indexes!',
         input => $options->{input},
         index_file => $options->{index_file},
-        jcpu => 1,
-        jmem => 8,
-        jname => 'sort_indexes',
-        jprefix => '01',
         jstring => $jstring,
-        jwalltime => '60:00:00',
         language => 'perl',
         outdir => $options->{outdir},
         output => qq"$options->{outdir}/tnseq_sorting_out.txt",);
@@ -449,7 +421,7 @@ my \$ret = \$h->Bio::Adventure::TNSeq::Do_Sort_Indexes(
 =cut
 sub Sort_TNSeq_File_Approx {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         outdir => '.',
@@ -530,7 +502,7 @@ ${qual}
 =cut
 sub Sort_TNSeq_Dir {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         outdir => '.',
@@ -576,7 +548,7 @@ sub Sort_TNSeq_Dir {
 =cut
 sub Read_Indexes {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         outdir => 'output');
     make_path($options->{outdir}) if (!-d $options->{outdir});
@@ -652,7 +624,7 @@ sub Essentiality_TAs_Worker {
     ## A smarter way of handling counting inter-cds regions would be
     ## to use the Read_GFF() functions to pull the intercds regions
     ## rather than the hackish @inter_starts @inter_ends.
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['species', 'input'],
         htseq_type => 'gene',
@@ -797,7 +769,7 @@ variableStep chrom=${chr_name}\n";
 sub Run_Essentiality {
     my ($class, %args) = @_;
     my @param_list = ('1','2','4','8','16','32');
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species'],
         runs => 1000,);
@@ -813,7 +785,6 @@ sub Run_Essentiality {
     my $gff = qq"$options->{libdir}/genome/$options->{species}.gff";
     my $output_file = qq"tn_hmm-${output}.csv";
     my $error_file =  qq"tn_hmm-${output}.stderr";
-    my $comment = qq"## Performing tn_hmm on ${input_wig} using ${gff}\n";
     my $jstring = qq!## This only works with python 2.7.9
 eval \$(modulecmd bash purge)
 eval \$(modulecmd bash add Python2/2.7.9)
@@ -837,9 +808,6 @@ process_segments.py -f ${output_dir}/${output_file} \\
 !;
     ## tn-hmm requires a wig file and gff
     my $tn_hmm = $class->Submit(
-        comment => $comment,
-        jprefix => $options->{jprefix},
-        jname => qq"$options->{jprefix}tn_hmm",
         jstring => $jstring,
         output => $output_file,);
 
@@ -862,13 +830,10 @@ gumbelMH.py -f ${input} -m ${param} -s $options->{runs} \\
   1>${output_dir}/${output_file} \\
   2>${output_dir}/${error_file}
 !;
-        my $comment = qq!# Run mh-ess using the min hit: $param!;
         my $mh_ess = $class->Submit(
-            comment => $comment,
             jdepends => $options->{jdepends},
-            jname => qq"mh_ess${param}_$options->{species}",
-            jprefix => $options->{jprefix},
             jstring => $jstring,
+            outputs => $outputs,
             output => $output_file,
             prescript => $options->{prescript},
             postscript => $options->{postscript},);
@@ -884,7 +849,7 @@ gumbelMH.py -f ${input} -m ${param} -s $options->{runs} \\
 =cut
 sub Count_TAs {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         ## If the TA was trimmed off the reads, then the position will be off by 2 nucleotides, so
         ## set this.
@@ -1066,11 +1031,11 @@ sub Count_TAs {
 =cut
 sub Allocate_Genome {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(args => \%args);
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args);
     my $genome = { length => 0,
                    data => [],
                    sequences => 0,
-    };
+               };
     my $data = [];
     my $infile = Bio::SeqIO->new(-file => $args{fasta}, -format => 'Fasta');
     while (my $in_seq = $infile->next_seq()) {
@@ -1116,7 +1081,7 @@ sub Allocate_Genome {
 =cut
 sub Transit_TPP {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['species', 'input',],
         htseq_type => 'gene',
@@ -1125,13 +1090,7 @@ sub Transit_TPP {
         primer => '',
         protocol => 'Sassetti', ## Or Mme1 or Tn5
         transposon => 'Himar1',
-        do_htseq => 1,
-        jmem => 20,
-        jwalltime => 8,
-        jprefix => '61',);
-    my $job_name = $class->Get_Job_Name();
-    my $inputs = $class->Get_Path_Info($options->{input});
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
+        do_htseq => 1,);
     my $ready = $class->Check_Input(files => $options->{input},);
     my $sleep_time = 3;
     my $libtype = 'genome';
@@ -1198,9 +1157,6 @@ ${r2_fc} > ${tpp_dir}/r2.fastq";
     my $trimmed2_filename = qq"${tpp_output}.trimmed2";
 
     my $error_file = qq"${tpp_dir}/tpp_$options->{species}_${tpp_basename}.stderr";
-    my $comment = qq!## This is a transit preprocessing alignment of $options->{input} against
-## ${tpp_genome} using arguments: ${tpp_args}.
-!;
     my $jstring = qq!mkdir -p ${tpp_dir}
 rm -f tpp.cfg
 sleep ${sleep_time}
@@ -1215,10 +1171,9 @@ tpp -ref ${tpp_genome} \\
 ${tpp_post}
 !;
     my $tpp_job = $class->Submit(
-        comment => $comment,
         input => $tpp_input,
-        jname => $tpp_name,
         jstring => $jstring,
+        outputs => $outputs,
         output => $sam_filename,
         output_bam => $bam_filename,
         output_wig => $wig_filename,

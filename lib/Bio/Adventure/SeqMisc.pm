@@ -44,7 +44,7 @@ including via the external squid library.
 
 sub Fragment_Genome {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['species'],
         jmem => 8,
@@ -98,7 +98,7 @@ my \$result = \$h->Bio::Adventure::SeqMisc::Fragment_Genome_Worker(
 
 sub Fragment_Genome_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],);
     my $log = FileHandle->new(">>$options->{stdout}");

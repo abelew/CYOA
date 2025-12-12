@@ -24,10 +24,9 @@ use Spreadsheet::Read;
 use String::Approx qw"amatch";
 use Symbol qw"gensym";
 
-
 sub RMats {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species'],
         type => 'SE',
@@ -37,12 +36,9 @@ sub RMats {
         file_column => 'bamfile',
         mapper => 'hisat',
         paired => 0,
-        jcpu => 16,
-        jprefix => '90',
         read_length => 100,);
     my $jname = qq"rmats_$options->{species}_$options->{condition_column}";
     my $rmats_dir = qq"outputs/$options->{jprefix}${jname}";
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $gtf_file = $paths->{gtf};
     die("Rmats requires a gtf file: ${gtf_file}, which is missing.") unless (-r $gtf_file);
     if (!-r $options->{input}) {
@@ -175,13 +171,9 @@ rmats.py \\
   2>${stderr} 1>${stdout}
 !;
     my $rmats_job = $class->Submit(
-        comment => $comment,
-        cpus => $options->{jcpu},
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => $jname,
-        jprefix => $options->{jprefix},
         jstring => $jstring,
+        outputs => $outputs,
         output => qq"${rmats_dir}/rmats.stdout",
         stdout => qq"${rmats_dir}/rmats.stdout",
         stderr => qq"${rmats_dir}/rmats.stderr",);
@@ -190,7 +182,7 @@ rmats.py \\
 
 sub Spladder {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species'],
         type => 'SE',
@@ -200,12 +192,9 @@ sub Spladder {
         file_column => 'bamfile',
         mapper => 'hisat',
         paired => 0,
-        jcpu => 16,
-        jprefix => '90',
         read_length => 100,);
     my $jname = qq"spladder_$options->{species}_$options->{condition_column}";
     my $spladder_dir = qq"outputs/$options->{jprefix}${jname}";
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $gtf_file = $paths->{gtf};
     die("Spladder requires a gtf file: ${gtf_file}, which is missing.") unless (-r $gtf_file);
     if (!-r $options->{input}) {
@@ -250,19 +239,14 @@ spladder test \\
   --parallel 8 --high-memory \\
   2>>${stderr} 1>>${stdout}
 ";
-    my $comment = qq"## Invoke spladder.";
     my $jstring = qq!mkdir -p ${spladder_dir}
 ${build_string}
 ${test_string}
 !;
     my $spladder_job = $class->Submit(
-        comment => $comment,
-        cpus => $options->{jcpu},
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => $jname,
-        jprefix => $options->{jprefix},
         jstring => $jstring,
+        outputs => $outputs,
         output => qq"${spladder_dir}/spladder.stdout",
         stdout => qq"${spladder_dir}/spladder.stdout",
         stderr => qq"${spladder_dir}/spladder.stderr",);
@@ -291,7 +275,7 @@ ${test_string}
 =cut
 sub Suppa {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'species'],
         type => 'SE',
@@ -299,12 +283,9 @@ sub Suppa {
         file_column => 'hg38100salmonfile',
         mapper => 'salmon',
         diff_method => 'classical',
-        paired => 0,
-        jprefix => '90',);
-
+        paired => 0,);
     my $jname = qq"suppa_$options->{species}_$options->{condition_column}";
     my $suppa_dir = qq"outputs/$options->{jprefix}${jname}";
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $gtf_file = $paths->{gtf};
     die("Suppa requires a gtf file: ${gtf_file}, which is missing.") unless (-r $gtf_file);
     if (!-r $options->{input}) {
@@ -670,13 +651,9 @@ ${diffsplice_ioe_string}
 ${cluster_string}
 !;
     my $suppa_job = $class->Submit(
-        comment => $comment,
-        cpus => $options->{jcpu},
         jdepends => $options->{jdepends},
-        jmem => $options->{jmem},
-        jname => $jname,
-        jprefix => $options->{jprefix},
         jstring => $jstring,
+        outputs => $outputs,
         output => qq"${suppa_dir}/suppa_generate.stdout",
         stdout => qq"${suppa_dir}/suppa_generate.stdout",
         stderr => qq"${suppa_dir}/suppa_generate.stderr",);
@@ -715,22 +692,16 @@ ${cluster_string}
 =cut
 sub SLSearch {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input'],
         species => 'lmajor',
         error_rate => 0.1,
-        jmem => 24,
-        jprefix => '50',
         seed => 25,
         allowed_missing => 3,);
-
     ## Set the minimum overlap parameter with the desired seed minus
     ## the allowed missing number of nucleotides.
     my $min_overlap = $options->{seed} - $options->{allowed_missing};
-
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
-
     ## Ideally, I would like to run this function on the mapping
     ## directories and search the aligned/unaligned sequences
     ## separately.
@@ -921,22 +892,16 @@ cutadapt -B ${rev_polya_string} -b ${rev_polya_string} --no-indels -O ${min_over
    2>>${polya_threep_stderr} 1>>${polya_threep_stdout}
 ";
     }
-    my $comment = qq!## This cutadapt invocation seeks to extract SL/polyA reads.!;
-
     my $jstring = qq!mkdir -p $paths->{output_dir}
 ${fwd_cmd}
 ${rev_cmd}
 !;
 
-    my $jname = qq"slsearch_$options->{species}";
     my $sl_extract = $class->Submit(
-        comment => $comment,
         jdepends => $options->{jdepends},
         input => $options->{input},
-        jname => $jname,
-        jmem => $options->{jmem},
-        jprefix => $options->{jprefix},
         jstring => $jstring,
+        outputs => $outputs,
         stderr => $sl_fivep_stderr,
         stdout => $sl_fivep_stdout,
         polya_fivep_stderr =>  $polya_fivep_stderr,
@@ -984,40 +949,33 @@ ${rev_cmd}
 =cut
 sub SL_Recorder {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['species', 'input',],
         gff_type => 'protein_coding_gene',
         gff_tag => 'ID',
         output_type => 'SLSeq_gene',
-        jprefix => '50',
         id_tag => 'ID',);
-    my $paths = $class->Bio::Adventure::Config::Get_Paths();
     my $output_dir = $paths->{output_dir};
     make_path($output_dir) unless (-d $output_dir);
     my $output_gff = qq"${output_dir}/$options->{species}_maximum_utr.gff";
     my $output_tsv = qq"${output_dir}/$options->{species}_recorded_sl.tsv";
-    my $jname = qq"SLSeq_$options->{species}";
     my $jstring = qq!use Bio::Adventure::Splicing;
 my \$result = \$h->Bio::Adventure::Splicing::SLSeq_Recorder_Worker(
   gff_type => '$options->{gff_type}',
   id_tag => '$options->{id_tag}',
   input => '$options->{input}',
-  jname => '${jname}',
   output => '${output_gff}',
   output_tsv => '${output_tsv}',
   output_dir => '${output_dir}',
   output_type => '$options->{output_type}',
   species => '$options->{species}',);
 !;
-    my $comment = qq!## Seek SL positions.!;
     my $slseq = $class->Submit(
-        comment => $comment,
         input => $options->{input},
         jdepends => $options->{jdepends},
-        jname => $jname,
-        jprefix => $options->{jprefix},
         jstring => $jstring,
+        outputs => $outputs,
         output => $output_gff,
         output_dir => $output_dir,
         output_tsv => $output_tsv,
@@ -1027,7 +985,7 @@ my \$result = \$h->Bio::Adventure::Splicing::SLSeq_Recorder_Worker(
 
 sub SLSeq_Recorder_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['species', 'input',],
         input_gff => '',
@@ -1543,14 +1501,11 @@ sub Write_SLData {
 =cut
 sub SL_UTR {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
-        required => ['input', 'species',],
-        jmem => 24,
-        jprefix => '50',);
+        required => ['input', 'species',],);
     my $output_dir =  qq"outputs/$options->{jprefix}SL_UTR_$options->{species}";
     my $output_made = make_path($output_dir);
-    my $comment = '## Search for SL sub-sequences.';
     my $stdout = qq"${output_dir}/sl_utr.stdout";
     my $stderr = qq"${output_dir}/sl_utr.stderr";
     my $jstring = qq?
@@ -1558,20 +1513,16 @@ my \$result = \$h->Bio::Adventure::Splicing::SL_UTR_Worker(
   input => '$options->{input}',
   output => '${output_dir}',
   species => '$options->{species}',
-  jprefix => '$options->{jprefix}',
-  jname => 'slsearch',);
+  jprefix => '$options->{jprefix}',);
 ?;
     my $sl_utr = $class->Submit(
-        comment => $comment,
         input => $options->{input},
         species => $options->{species},
-        jcpu => 1,
         jdepends => $options->{jdepends},
         jmem => $options->{jmem},
-        jname => 'sl_utr',
-        jprefix => $options->{jprefix},
         jstring => $jstring,
         language => 'perl',
+        outputs => $outputs,
         output => $output_dir,
         stderr => $stderr,
         stdout => $stdout,);
@@ -1587,7 +1538,7 @@ my \$result = \$h->Bio::Adventure::Splicing::SL_UTR_Worker(
 =cut
 sub SL_UTR_Worker {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
+    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,
         required => ['input', 'output'],
         species => 'lpanamensis',
