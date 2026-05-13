@@ -1,0 +1,16 @@
+if [[ ! -r "[% stat_output %]" ]]; then
+  echo "name,total_reads,trimmed_reads,passed_filter,low_quality,duplication_rate" > [% stat_output %]
+fi
+
+total_reads_tmp=$( { grep "^Input Read Pairs" [% input %] || test $? = 1; } | awk '{print $4}')
+total_reads=${total_reads_tmp:-0}
+surviving_both_tmp=$( { grep "^Input Read Pairs" [% input %] || test $? = 1; } | awk '{print $7}')
+surviving_both=${surviving_both_tmp:-0}
+surviving_forward_tmp=$( { grep "^Input Read Pairs" [% input %] || test $? = 1; } | awk '{print $12}')
+surviving_forward=${surviving_forward_tmp:-0}
+surviving_reverse_tmp=$( { grep "^Input Read Pairs" [% input %] || test $? = 1; } | awk '{print $17}')
+surviving_reverse=${surviving_reverse_tmp:-0}
+dropped_reads_tmp=$( { grep "^Input Read Pairs" [% input %] || test $? = 1; } | awk '{print $20}')
+dropped_reads=${dropped_reads_tmp:-0}
+stat_string=$(printf "[% input_name %],%s,%s,%s,%s,%s" "${total_reads}" "${surviving_both}" "${surviving_forward}" "${surviving_reverse}" "${dropped_reads}")
+echo "$stat_string" >> [% stat_output %]

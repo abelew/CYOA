@@ -1,0 +1,23 @@
+## Write out the various arguments here to see what happened:
+## exe: [% trimomatic_exe %]
+## quality: [% phred_flags %]
+## adapter_file: [% adapter_file %]
+## file descriptor: [% input_string %]
+## output: [% main %]
+## leader: [% leader_flags %]
+## adapter: [% adapter_flags %]
+## window: [% window_flags %]
+## length [% length_flags %]
+## stdout: [% stdout %]
+## stderr: [% stderr %]
+
+/usr/bin/time -v -o [% time_file %] -a \
+  [% trimomatic_exe %] [%= thread_flags =%] [%= phred_flags =%] \
+  [% input_string %] \
+  [% r1op %] [%= r1ou =%] \
+  [% r2op %] [%= r2ou =%] \
+  [% leader_flags %] [%= window_flags =%] \
+  [% adapter_flags %] [%= length_flags =%] \
+  1>[% stdout %] 2>[% stderr %]
+
+[% compress_string %]

@@ -1,0 +1,29 @@
+[% shebang %]
+[% IF debug_string %][% debug_string %]
+[% END -%]
+set -o errexit
+set -o errtrace
+set -o pipefail
+[% IF bash_source %] [% bash_source %]
+trap get_sigterm SIGTERM
+trap get_sigerr ERR
+[% END -%]
+export JNAME=[% jname %]
+echo "## Started [% script_base %] at $(date) on $(hostname)." >> [% bash_log %]
+
+cd [% abs_basedir %] || exit
+[% IF module_string %][% module_string %]
+[% END -%]
+[% IF conda_string %][% conda_string %]
+[% END -%]
+[% IF spack_string %][% spack_string %]
+[% END -%]
+[% IF prescript %][% prescript %]
+[% END -%]
+
+[% primary_jstring %]
+
+[% IF postscript %][% postscript %]
+[% END -%]
+echo "Job status: $?" >> [% bash_log %]
+echo "$(hostname) finished [% script_base %] at $(date), it took $(( SECONDS / 60 )) minutes." >> [% bash_log %]

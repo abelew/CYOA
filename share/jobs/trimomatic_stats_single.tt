@@ -1,0 +1,13 @@
+if [ ! -r "[% stat_output %]" ]; then
+  echo "name,total_reads,trimmed_reads,passed_filter,low_quality" > [% stat_output %]
+fi
+
+total_reads_tmp=$( { grep "^Input Reads" [% input %] || test $? = 1; } | awk '{print $3}')
+total_reads=${total_reads_tmp:-0}
+surviving_reads_tmp=$( { grep "^Input Reads" [% input %] || test $? = 1; } | awk '{print $5}')
+surviving_reads=${surviving_reads_tmp:-0}
+dropped_reads_tmp=$( { grep "^Input Reads" [% input %] || test $? = 1; } | awk '{print $8}')
+dropped_reads=${dropped_reads_tmp:-0}
+
+stat_string=$(printf "[% input_name %],%s,%s,%s" "${total_reads}" "${surviving_reads}" "${dropped_reads}")
+echo "$stat_string" >> [% stat_output %]

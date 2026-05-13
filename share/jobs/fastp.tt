@@ -1,10 +1,17 @@
+
+## Write out the various arguments here to see what happened:
+## output: [% main %]
+## reporter: [% report_flags %]
+## json_out: [% json_flags %]
+## extra: [% extra_flags %]
+## stdout: [% stdout %]
+## stderr: [% stderr %]
+
+## Invoke fastp on some raw reads
+## FIXME: Make sure the arbitrary flags are ready to be used.
 trimmed=1
-{
-  /usr/bin/time -v -o [% time %] -a \
-    fastp [% umi_flags %] [% input_string %] \
-      [% report_flags %] [% extra_args %] \
-      2>[% stderr %] \
-      1>[% stdout %]
-} || {
-  echo 'fastp failed with $!.' >>[% stderr %]
-}
+/usr/bin/time -v -o [% time_file %] -a \
+  fastp [%= umi_flags =%] [%= input_r1_string =%] [%= input_r2_string =%] \
+    [% output_r1_string %] [%= output_r2_string =%] \
+    [% report_flags %] [%= json_flags =%] [%= extra_args =%] \
+    2>[% stderr %] 1>[%= stdout =%]

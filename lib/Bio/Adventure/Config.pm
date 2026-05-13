@@ -5,12 +5,13 @@ use diagnostics;
 use warnings qw"all";
 use v5.14;
 use Cwd qw"abs_path fastcwd";
-use Data::Dumper;
+use Data::Printer;
 use Exporter;
 use File::Basename qw"basename dirname";
 use FileHandle;
 use File::Path qw"make_path";
 use File::ShareDir qw"dist_file module_dir dist_dir";
+use File::Which qw"which";
 use Getopt::Long qw"GetOptionsFromArray";
 use JSON;
 use POSIX qw"ceil";
@@ -22,6 +23,7 @@ my $template_dir = qq"${template_base}/jobs";
 our @EXPORT = qw"Get_Modules Get_Menus Get_TODOs";
 our @ISA = qw"Exporter";
 
+## 202605 survey: Invoked when reading an ini file
 sub Add_Config_File {
     my %args = @_;
     my $input = $args{input};
@@ -52,13 +54,11 @@ sub Add_Config_File {
             $defaults->{$variable} = $config_value;
         }
     }
-
     my $new = Merge_Current_Ini(current => %current, steps => $steps, defaults => $defaults);
-
-
     return($new);
 }
 
+## 202605 Survey: Invoked at the beginning of BUILD to get command line arguments.
 sub Get_ARGV {
     my $cmdline_args = {};
     if ($#ARGV <= 0) {
@@ -93,8 +93,9 @@ sub Get_ARGV {
 Figure out the calling function so that I may fill in some configuration information.
 
 =cut
+## 202605 Survey: called all over the place.
 sub Get_Caller {
-    my %args = @_;
+    my ($class, %args) = @_;
     my $caller_number = 2;
     $caller_number = $args{caller} if ($args{caller});
     my $attempts = 4;
@@ -111,6 +112,8 @@ sub Get_Caller {
             next COUNTER;
         } elsif ($sub =~ /^Bio::.*Get_Caller$/) {
             next COUNTER;
+        } elsif ($sub =~ /^Bio::.*Update_State$/) {
+            next COUNTER;
         }
         ## All callers which are needing modules have the form Bio::Adventure::Category::Function
         $function = $sub;
@@ -118,8 +121,32 @@ sub Get_Caller {
         last COUNTER if (defined($function));
     }
     if (!defined($function)) {
-        $function = 'unknown';
+        ## warn "The function is undefined in Config::Get_Caller().";
+        $function = 'Default';
     }
+
+    ## Now that we have the current caller, update a few pieces of the parent class.
+    ## I made a decision to simultaneously store the set of all function defaults as well
+    ## as the function defaults for the current caller.  I did this for two reasons:
+    ## 1.  It should make it simpler in the various child functions to pull useful stuff.
+    ## 2.  It should make it possible to check one function from another, I am thinking
+    ##     this will be useful in the case of multi-function paths
+    ## Thus, I will update the function_args slot of the class with the portion of
+    ## function_defaults{} for this caller and also update spec with the portion of that
+    ## which tells the default walltime/mem/etc.  Finally, I will set caller with whatever
+    ## this function happens to be.
+    if (!defined($function)) {
+        return(undef);
+    }
+    ## Update the function args with this caller.
+    my %all_args = %{$class->function_defaults};
+    if (!defined($all_args{$function})) {
+        return(undef);
+    }
+    my $function_defs = $all_args{$function};
+    my %fn_args = %{$all_args{$function}};
+    $class->function_args(\%fn_args);
+    $class->caller($function);
     return($function);
 }
 
@@ -127,6 +154,8 @@ sub Get_Caller {
 ## which may be overridden at a few levels, branching down to the indivdual sample.
 ## I organize my data as /type-of-project/individual-project/preprocessing/sample/
 ## so there are likely 4 levels at which one may most likely want to make changes.
+
+## 202605 Survey: Invoked by BUILD to read ini-style config directives.
 sub Get_Ini {
     my %args = @_;
     my $filename = basename($args{input_file});
@@ -168,6 +197,7 @@ sub Get_Ini {
     return($ini_values);
 }
 
+## 202605 survey: Invoked in BUILD to collect default values.
 sub Get_JSON {
     my %args = @_;
     if (!defined($args{input_file})) {
@@ -216,6 +246,7 @@ Choosing the number associated with the string will therefore lead to the
 invocation of that function.
 
 =cut
+## 202605 Survey: Called in build to set up the menu, I want to move this to a config file.
 sub Get_Menus {
     my $menus = {
         Alignment => {
@@ -533,7 +564,13 @@ cleansing and external expansion.  Go to page: 192210',
     return($menus);
 }
 
-sub Get_Modulecmd {
+## 202605 Survey: Called in BUILD to pull (currently only module) shell functions;
+## The intent is to add conda/spack and whatever other future tools crop up.
+## With that in mind, it kind of only makes sense in the context of module because
+## (with the exception of the various condas) I expect no other tools to have multiple
+## implementations -- but the existence of miniconda/anaconda/etc suggest it is worth while.
+sub Get_Shell_Functions {
+    my (%args) = @_;
     ## Check that the module command is available as a bash function.
     ## I was initially going to do this in BUILD(), but I think that might mess up jobs
     ## which set the jprefix parameter.
@@ -542,206 +579,99 @@ sub Get_Modulecmd {
     ## so, we can use typescript to allocate one post-facto.
     my $module_test = qq!/usr/bin/script -q -c 'bash -i -c "type module"' /dev/null |!;
     my $modulecmd_handle = FileHandle->new($module_test);
-    my $modulecmd_text = q{};
-    MOD: while (my $line = <$modulecmd_handle>) {
-          next MOD if ($line =~ /is a function/);
-          $modulecmd_text .= $line;
-      }
+    my $shell_text = qq!function get_sigterm {
+  echo "A SIGTERM was sent to \$JNAME." >> $args{bash_log}
+  exit 1
+}
+export -f get_sigterm
+trap get_sigterm SIGTERM
+
+function get_sigerr {
+  echo "A ERR was sent to \$JNAME." >> $args{bash_log}
+  exit 1
+}
+export -f get_sigerr
+trap get_sigerr ERR
+
+function module() {
+!;
+
+    my $num_modulecmd_lines = 0;
+  MOD: while (my $line = <$modulecmd_handle>) {
+        chomp $line;
+        next MOD if ($line =~ /is a function/);
+        next MOD if ($line =~ /^module/);
+        if ($line =~ /^\{\s*$/) {
+            next MOD;
+        }
+        ## In case there are weird encodings.
+        $line =~ s/\s*$//g;
+        $num_modulecmd_lines++;
+        $shell_text .= qq"${line}\n";
+    }
+    $shell_text .= q"export -f module
+
+";
     $modulecmd_handle->close();
     if (-f 'typescript') {
         print "The stupid typescript file still got created.\n";
         rm('typescript');
     }
-      return($modulecmd_text);
-}
+    ## If module is not in the current environment, check for the
+    ## modulecmd executable and just use that.
+    if ($num_modulecmd_lines == 0) {
+        my $modulecmd = which('modulecmd');
+        if ($modulecmd) {
+            $shell_text .= qq!${modulecmd} bash "$@"
+export -f module
 
-=head2 C<Estimate_Memory_Single>
-
-Estimate the amount of memory required for a job given a single parameter and a constant.
-Ideally I would like to have a file comprised of a set of functions which define the required
-memory in a fashion like:
-  memory = { input_file_size * constant } or
-  memory = { input_lines * constant } etc
-
-=cut
-sub Estimate_Memory_Single {
-    my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars();
-    ## In order to collect helpful memory usage numbers on a slurm
-    ## cluster, this kind of requires that the slurmdbd maintains the
-    ## state of previous jobs.
-
-    ## I thus ran cyoa --checkjob in an arbitrarily chosen recent
-    ## processing directory
-    ## (rnaseq/mmusculus_iprgc_2024/preprocessing/umd_sequenced/something)
-    ## and looked over the outputs/logs/jobs.csv and discovered that
-    ## for a sample with r1/r2 of 997M/1.2G sizes:
-    ##
-    ## 1. umi_extract took 5 G memory at maximum, 23 minutes (always
-    ## rounding up)
-    ## 2. hisat2 vs. the mm39_112 genome took 37G memory,
-    ## 18 minutes
-    ## 3. samtools took 32G memory, 111 minutes
-    ## 4. htseq took 1G memory, 23 minutes
-    ## 5. hisat2 vs the mouse rRNA database took 24G memory, 14 minutes.
-    ## 6. samtools took 26G and 106 minutes
-    ## 7. htseq took 100Mb and 1 minute
-    ## 8. umi_dedup took more memory than the 20G I allocated and failed.
-
-    ## Nonetheless, I can use these numbers to get started on some memory estimates.
-    my $multipliers = {
-        umi_extract => 1.2,  ## Sum the input fastq and multiply.
-        htseq => 4, ## Take the input gff and multiply
-        samtools => 8, ## Take the input fastq files and multiply (this _should_ be using the sam,
-        ## but I don't know its size)
-    };
-
-    ## I am thinking to pass this function an option 'mem_estimator'
-    ## which will be the path to whatever we choose to examine.
-    my $total_mem = 0.1;  ## Start with 0.1G ram and move up from
-    ## there.  I actually do not know if slurm requires integer memory
-    ## amounts.  If so we will just do a ceil...
-
-    my $job_type = $options->{mem_job};
-    my $job_multiplier = $multipliers->{$job_type};
-    if (!defined($job_multiplier)) {
-        print "No memory multiplier defined for this job type, assuming 10x the input file size.\n";
-        $job_multiplier = 10;
-    }
-
-    my @inputs = split(/[:;,\s+]/, $options->{mem_estimator});
-    for my $input (@inputs) {
-        my $st = stat($input);
-        my ($dev, $ino, $mode, $nlink, $uid, $gid, $rdev, $size,
-            $atime, $mtime, $ctime, $blksize, $blocks) = stat($input);
-        my @pieces = split(/\./, $input);
-        my $ext = $pieces[$#pieces];
-        if (defined($multipliers->{$ext})) {
-            $size = $size * $job_multiplier;
-        }
-        $total_mem = $total_mem + $size;
-    }
-    return($total_mem);
-}
-
-=head2 C<Estimate_Time_Single>
-
-Analagous to Estimate_Memory_Single, but the required time for a given job assuming it may be
-estimated via a single parameter and some constant.  If I am going to actually use this, it
-will require some logic from the cluster informing the submitting job of the slowest machine
-in the cluster; or I will need to just assume that machines will continue getting faster and
-therefore the times I have already recorded are thus the slowest.
-
-=cut
-sub Estimate_Time_Single {
-    my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        process => 'xz',
-        species => q{},
-    );
-
-    ## Approximate compression multipliers, taken from:
-    ## https://community.centminmod.com/threads/round-3-compression-comparison-benchmarks-zstd-vs-brotli-vs-pigz-vs-bzip2-vs-xz-etc.17259/
-    my $multipliers = {
-        xz => 4.4,
-        bz2 => 3.9,
-        gz => 3.1,
-    };
-    my $mb_per_sec = {
-        gz => 12.0 * 211957760 * 10000,
-        bz2 => 12.9 * 211957760 * 10000,
-        xz => 2.3 * 211957760 * 10000,
-    };
-    ## I need to acquire from slurm the relative cpu frequency, but assuming similar speeds
-    ## I should be able to get reasonable time estimates...
-    my @inputs = split(/[:;,\s+]/, $options->{input});
-    my $total_hours = 0;
-    for my $input (@inputs) {
-        my ($dev, $ino, $mode, $nlink, $uid, $gid, $rdev, $size,
-            $atime, $mtime, $ctime, $blksize, $blocks) = stat($input);
-        my @pieces = split(/\./, $input);
-        my $ext = $pieces[$#pieces];
-        if (defined($multipliers->{$ext})) {
-            $size = $size * $multipliers->{$ext};
-        }
-        my $multi_key = $options->{process};
-        if (defined($mb_per_sec->{$multi_key})) {
-            my $needed = $size / $mb_per_sec->{$ext};
-            my $hours = ceil($needed * 60.0 * 60.0);
-            $total_hours = $total_hours + $hours;
-        }
-    }
-    return($total_hours);
-}
-
-=head2 C<Estimate_Time_Composite>
-
-Estimate required job time for occasions when multiple parameters are relevant.  Things like
-htseq are good examples: a combination of input filesize and the complexity of the reference genome
-define how long the job will take.
-
-=cut
-sub Estimate_Time_Composite {
-    my ($class, %args) = @_;
-    my $options = $args{options};
-    my $paths = $args{paths};
-    my $inputs = $args{inputs};
-    my $species_file = qq"$options->{libpath}/$options->{libtype}/fasta/$options->{species}.fasta";
-    my $species_size = 1;
-    if (!-r $species_file) {
-        print "The species file does not exist!\n";
-    } else {
-        my ($dev, $ino, $mode, $nlink, $uid, $gid, $rdev, $size,
-        $atime, $mtime, $ctime, $blksize, $blocks) = stat($species_file);
-        $species_size = $size / 1e7;
-    }
-
-    ## I need to acquire from slurm the relative cpu frequency, but assuming similar speeds
-    ## I should be able to get reasonable time estimates...
-    ## I am going to assume that the less preprocessor will make xz/gz/bz/uncomp
-    ## input file size differences negligible with respect to time to run.
-    my $total_input_size = 0;
-    for my $in (@{$inputs}) {
-        if (!-r $in->{fullpath}) {
-            die("This file does not exist: ${in}.");
+!;
         } else {
-            my ($dev, $ino, $mode, $nlink, $uid, $gid, $rdev, $size,
-                $atime, $mtime, $ctime, $blksize, $blocks) = stat($in->{fullpath});
-            $total_input_size = $total_input_size + $size;
+            $shell_text .= q!echo "The module command does not appear to exist".
+}
+export -f module
+
+!;
         }
     }
 
-    # A genome multiplier should be used when the time estimate for a tool can be described as:
-    ## (input_size * constant) * (genome_size * constant)
-    ## Really it should be the index size, but I assume the fasta is a sufficient proxy.
-    my $genome_mult = {
-        bt1 => 1.0,
-        hisat => 1.0,
-    };
-    ## Approximate compression multipliers, taken from:
-    ## https://community.centminmod.com/threads/round-3-compression-comparison-benchmarks-zstd-vs-brotli-vs-pigz-vs-bzip2-vs-xz-etc.17259/
-    my $multipliers = {
-        bt1 => 1.0,
-        hisat => 4.4,
-    };
+    my $spack_test = qq!/usr/bin/script -q -c 'bash -i -c "type spack"' /dev/null |!;
+    my $spack_handle = FileHandle->new($spack_test);
+    $shell_text .= qq!function spack() {
+!;
+    my $num_spack_lines = 0;
+  SP: while (my $line = <$spack_handle>) {
+        chomp $line;
+        next SP if ($line =~ /is a function/);
+        next SP if ($line =~ /^spack/);
+        next SP if ($line =~ /^\{\s*$/);
+        ## In case there are weird encodings.
+        $line =~ s/\s*$//g;
+        $num_spack_lines++;
+        $shell_text .= qq"${line}\n";
+    }
+    $shell_text .= q"export -f spack
 
-    ## My current thinking is:
-    ## ((inputsize * constant) * (genomesize * constant)) -> seconds to finish job.
-    ## Once I get that nailed down, then I will scale the result by the slurm cpu frequency values.
-    ## For an example, a 300Mb (xz compressed) paired end sample against a 6.4Mb genome took 13 minutes on one of the old cbcb nodes.
-    ## Conversely, a 980Mb (xz) paired end sample against a 12Gb genome took 12 (720 seconds) minutes on one of the new nodes.
-    ## So, this is a case where I think we can assume IO is not limiting but cpu frequency is...
-    ## A more relevant comparison, another smaller sample on the new nodes:
-    ## 250Mb input (xz) paired end vs a 1.8Mb genome took 1 minute (60 seconds)
-    ## (/ 720.9 12000000.0) -> 6.0e-5
-    ## (/ 60 (* 250 18.0)) -> 0.013
-    my $key = $args{process};
-    $total_input_size = $total_input_size / 1e7;
-    my $needed_input_mult = $total_input_size * $multipliers->{$key};
-    my $needed_genome_mult = $species_size * $genome_mult->{$key};
-    my $needed = ($needed_input_mult * $needed_genome_mult);
-    my $total_hours = ceil($needed * 60.0 * 60.0);
-    return($total_hours);
+";
+    $spack_handle->close();
+    if ($num_spack_lines == 0) {
+        $shell_text .= q!echo "The spack command does not appear to exist".
+}
+export -f spack
+
+!;
+    }
+
+    my $conda_test = which('conda');
+    if (!$conda_test) {
+        $shell_text .= q!
+function conda() {
+  echo "The conda command does not appear to exist."
+}
+export -f conda
+!;
+    }
+    return($shell_text);
 }
 
 =head2 C<Get_Input_Info>
@@ -751,9 +681,12 @@ hopefully prove useful for the various functions in CYOA.  I think
 this function is a good candidate for replacing Check_Input() below.
 
 =cut
+## 202605 survey: Called by BUILD to create a single data structure
+## describing the inputs to cyoa.
 sub Get_Input_Info {
     my ($class, @inputs) = @_;
     my %ret = ();
+    my $input_string = q{};
     return(undef) unless($inputs[0]);
     if ($inputs[0] =~ /[:;,\s]+/) {
         @inputs = split(/[:;,\s]+/, $inputs[0]);
@@ -764,8 +697,10 @@ sub Get_Input_Info {
     }
     my @outputs = ();
     for my $in (@inputs) {
+        $input_string .= qq"${in}:";
         my $filename = basename($in);
         my $filebase_compress = basename($in, ('.gz', '.xz', '.bz2'));
+        ## FIXME: Replace this with options->{suffix_array}
         my @exts = ('.fastq', '.fasta', '.fsa', '.faa', 'fna', '.fa', '.ffn',
                     'gff', '.gff3', '.gbk', '.gbf', '.sqn', 'tbl', '.tsv', '.txt');
         my $filebase_extension = basename($filebase_compress, @exts);
@@ -773,7 +708,7 @@ sub Get_Input_Info {
         my $dirname = basename($directory);
         ## Check that doing basename(dirname(input)) leaves us with something interesting
         if ($dirname eq '.') {
-            $dirname = undef;
+            $dirname = q{};
         }
         ## This test/path build is because abs_path only works on stuff which exists.
         if (! -e $directory) {
@@ -790,6 +725,12 @@ sub Get_Input_Info {
         $jbasename =~ s/-trimmed.*//g;
         $jbasename =~ s/_trimmed.*//g;
 
+        my $suffix = $filename;
+        $suffix =~ s/\.[xgb]z$//g;
+        if ($suffix =~ /\..*$/) {
+            $suffix =~ s/^.*\.(.*)$/$1/g;
+        }
+
         my %ret = (
             filename => $filename,
             filebase_compress => $filebase_compress,
@@ -800,744 +741,14 @@ sub Get_Input_Info {
             fullpath => $full_path,
             jbasename => $jbasename,
             basename => $jbasename,
-            input => $local_path,);
+            input => $local_path,
+            suffix => $suffix,);
         push(@outputs, \%ret);
     }
+    ## Ensure the current state has the input string.
+    $input_string =~ s/:$//g;
+    $class->{current_state}->{input} = $input_string;
     return(\@outputs);
-}
-
-=head C<Get_Memory>
-
-In my time estimator, I tried out some heuristics and have found them
-somewhat difficult to rely upon because of the huge variance in cpu speeds.
-I thought I would therefore try some simpler heuristics for memory usage
-especially since memory usage tends to be a bit more consistent
-which of course may be an argument for a multiplier based system.
-
-=cut
-sub Get_Memory {
-    my %args = @_;
-    my $function = Bio::Adventure::Config::Get_Caller();
-    my %memory_data = (
-        'Example' => {
-            genes => {
-                '1000' => 4,
-                '10000' => 12,
-                '20000' => 24,
-                'default' => 30,
-            },
-        },
-        'Example2' => {
-            genome_size => {
-                '1000000' => 4,
-                '10000000' => 8,
-                '100000000' => 12,
-                'default' => 24,
-            },
-        },
-    );
-
-    my @function_array = split(/::/, $function);
-    $function = $function_array[$#function_array];
-    $function =~ s/_Worker$//g;
-    my $datum = $memory_data{$function};
-    my $needed_memory = 6;
-    if ($datum) {
-        my @expected_args = keys(%$datum);
-        my $expected = shift @expected_args;
-        my $actual = $args{$expected};
-        my @cutoff_values = keys %{$datum->{$expected}};
-        my $found_cutoff = 0;
-        my $used_default = 0;
-      CUTOFF: for my $cut (@cutoff_values) {
-            if ($actual <= $cut) {
-                $needed_memory = $datum->{$expected}->{$cut};
-                $found_cutoff = 1;
-                last CUTOFF;
-            }
-            if ($cut eq 'default') {
-                $needed_memory = $datum->{$expected}->{$cut};
-                $found_cutoff = 1;
-                $used_default = 1;
-                last CUTOFF;
-            }
-        }
-        if ($used_default) {
-            print "Used the default value: ${needed_memory}.\n";
-        }
-        unless ($found_cutoff) {
-            print "Did not find the expected cutoff type: ${expected}, using the global default: ${needed_memory}.\n";
-        }
-    } else {
-        print "This function does not have a memory configuration, using the global default: ${needed_memory}.\n";
-    }
-    return($needed_memory);
-}
-
-=head2 C<Get_Modules>
-
-Figure out the appropriate environment module/condat environment for a job.
-
-This is the first place I will move my code into a json/ini/etc file.  Each entry of the hash
-is a function with either a list of modules or environments required for it to work.
-If the exe key is provided, then it will check to see that the program exists and is executable.
-Currently that check is located elsewhere, perhaps move that here?
-
-=cut
-sub Get_Modules {
-    my %args = @_;
-    my $function = $args{function};
-    ## I think that with recent changes, one need no longer add 'cyoa' as a module.
-    my %module_data = (
-        'Example' => {
-            modules => ['abricate'],
-            conda => ['torsten'],
-            exe => 'example' },
-        'Abricate' => { ## Adding cyoa because Path::Tiny isn't in the abricate directory yet.
-            modules => ['cyoa', 'any2fasta', 'abricate', 'blast', 'blastdb',],
-            exe => 'abricate' },
-        'Abyss' => { modules => 'abyss' },
-        'Angsd_Filter' => { modules => 'angsd' },
-        'Any2Any' => { modules => 'cyoa' },
-        'Aragorn' => { modules => 'aragorn', exe => 'aragorn' },
-        'Assembly_Coverage' => {
-            modules => ['cyoa', 'hisat2', 'samtools', 'bbmap',], },
-        'Bacphlip' => { modules => 'bacphlip', exe => 'bacphlip' },
-        'Bam2Coverage' => { modules => ['samtools', 'bbmap',] },
-        'Bam2Bigwig' => {modules => ['deeptools',] },
-        'Bedtools_Coverage' =>  { modules => 'bedtools', exe => 'bedtools' },
-        'Biopieces_Graph' => { modules => ['biopieces'] },
-        'Bowtie' => { modules => 'bowtie1', },
-        'Bowtie2' => { modules => 'bowtie2' },
-        'BT1_Index' => { modules => ['bowtie1'] },
-        'BT2_Index' => { modules => ['bowtie2'] },
-        'BWA' => { modules => 'bwa' },
-        'BWA_Index' => { modules => ['bwa'] },
-        'Caical' => { modules => ['cyoa', 'caical'] },
-        'Casfinder' => { modules => ['casfinder',], exe => 'casfinder.sh' },
-        'Casoff' => { modules => 'casoff', exe => 'cas-offinder' },
-        'CGView' => { modules => ['cyoa', 'cgview'], }, ## cyoa has the prereqs required
-        'Check_Blastdb' => { modules => ['blast'], },
-        'Classify_Phage' => {
-            modules => ['cyoa', 'blast', 'blastdb'], exe => 'tblastx' },
-        'Cogent' => { modules => ['cogent'], exe => 'cogent'},
-        'Collect_Assembly' => { modules => 'cyoa' },
-        'Consolidate_TAs' => { modules => 'cyoa', },
-        'Cutadapt' => { modules => ['cyoa', 'cutadapt'], exe => 'cutadapt'},
-        'Dantools_RNASeq' => { modules => ['dantools'] },
-        'Downsample_Guess_Strand' => { modules => ['salmon'] },
-        'Essentiality_TAs' => { modules => 'cyoa', },
-        'Extend_Kraken_DB' => { modules => ['kraken'], exe => ['kraken2'] },
-        'Fasta2Gff' => { modules => ['cyoa'] },
-        'Fastqc' => { modules => ['fastqc'] },
-        'Fastq_Dump' => { modules => ['cyoa', 'sra'], },
-        'Fastp' => { modules => ['fastp'], exe => 'fastp' },
-        'Feature_Counts' => { modules => ['subread'], exe => 'featureCounts', },
-        'Filter_Host_Kraken' => {
-            modules => ['cyoa', 'kraken', 'hisat2', 'htseq', 'samtools'], },
-        'Fragment_Genome' => {
-            modules => ['cyoa' ], },
-        'Freebayes_SNP_Search' => {
-            modules => ['gatk', 'freebayes', 'samtools', 'bcftools', 'vcftools'],
-            exe => ['gatk', 'freebayes'], },
-        'GATK_Dedup' => { modules => 'gatk' },
-        'Gb2Gff' => { modules => 'cyoa' },
-        'Generate_Samplesheet' => { modules => 'R' },
-        'GFF_Tree' => { modules => ['cyoa'] },
-        'Glimmer' => { modules => ['cyoa', 'glimmer'], exe => 'glimmer3' },
-        'Glimmer_Single' => {
-            modules => ['glimmer', 'cyoa'], exe => 'glimmer3' },
-        'Gubbins' => { modules => 'gubbins' },
-        'Guess_Strand' => { modules => ['cyoa', 'samtools'] },
-        'Hisat2' => { modules => 'hisat2', exe => 'hisat2'},
-        'Hisat2_Index' => { modules => ['hisat2'], exe => ['hisat2'], },
-        'HT_Multi' => { modules => 'htseq' },
-        'HTSeq' => { modules => 'htseq', exe => 'htseq-count' },
-        'Insert_Size' => { modules => ['gatk', 'R'], },
-        'Interpro_Long2Wide' => { modules => 'cyoa' },
-        'Interproscan' => {
-            modules => ['cyoa', 'interproscan'], exe => 'interproscan.sh' },
-        'Jellyfish' => { modules => ['jellyfish'], exe => 'jellyfish' },
-        'Jellyfish_Matrix' => { modules => ['cyoa'] },
-        'Kallisto' => { modules => 'kallisto', exe => 'kallisto' },
-        'Kallisto_Index' => { modules => ['kallisto'], exe => ['kallisto'], },
-        'Kraken' => { modules => 'kraken', exe => 'kraken2', },
-        'Kraken_Best_Hit' => { modules => ['cyoa', 'kraken'] },
-        'Make_Blast_Job' => { modules => ['cyoa', 'blastdb', 'blast'], exe => 'tblastx' },
-        'Make_Fasta_Job' => { modules => ['cyoa', 'fasta'] },
-        'Make_Codon_Table' => { modules => ['cyoa'] },
-        'Mash' => { modules => 'mash', exe => 'mash' },
-        'MauveAligner' => { modules => 'mauve' },
-        'Merge_Annotations' => { modules => ['cyoa', 'ncbi_tools/6.1'], exe => 'tbl2asn' },
-        'Merge_CDS_Predictions' => { modules => ['cyoa', 'ncbi_tools/6.1'], exe => 'tbl2asn' },
-        'Merge_Parse_Blast' => { modules => ['cyoa'], },
-        'Mpileup' => { modules => ['samtools', 'gatk'] },
-        'Mpileup_SNP_Search' => {
-            modules => ['samtools/1.13', 'bcftools', 'gatk', 'vcftools'],
-            exe => ['samtools', 'bcftools'], },
-        'Nextflow_RNASeq' => { modules => ['nextflow'], },
-        'OrthoFinder' => { modules => ['cyoa', 'orthofinder'], exe => ['orthofinder'] },
-        'OrthoMCL_Pipeline' => { modules => ['orthomcl'], exe => ['orthomclPairs'] },
-        'Pairwise_Similarity_Matrix' => { modules => ['blast'], },
-        'Parse_Fasta_Global' => { modules => 'cyoa' },
-        'Phagepromoter' => { modules => 'phagepromoter' },
-        'Phageterm' => { modules => ['cyoa', 'phageterm'], exe => 'PhageTerm.py' },
-        'Phanotate' => { modules => ['trnascan', 'phanotate'], exe => 'phanotate.py' },
-        'Phastaf' => { modules => ['cyoa', 'phastaf'] },
-        'PolyA_Extractor_Worker' => { modules => ['cyoa'] },
-        'PolyA_Recorder' => { modules => ['cyoa', 'samtools'] },
-        'Prodigal' => { modules => ['cyoa', 'prodigal'] },
-        'Progressive_Mauve' => { modules => 'mauve' },
-        'Prokka' => { ## Prokka should not need cyoa; it is getting requisite perl module from it for now
-            modules => ['cyoa', 'prokka', 'blast'], exe => 'prokka'},
-        'ProteinFold' => { modules => ['cyoa', 'alphafold3', 'cuda'] },
-        'ProteinFold_PairIDs' => { modules => ['cyoa', 'alphafold3', 'cuda'] },
-        'Racer' => { modules => ['hitec'], exe => ['RACER'], },
-        'Resfinder' => { modules => 'resfinder', exe => 'run_resfinder.py' },
-        'Restriction_Catalog' => { modules => 'cyoa' },
-        'Rgi' => { modules => ['kma', 'jellyfish', 'bowtie', 'bwa', 'diamond', 'rgi'], },
-        'Rho_Predict' => { modules => 'rhotermpredict' },
-        'RMats' => { modules => ['rmats'] },
-        'RNAFold_Windows' => { modules => ['cyoa', 'vienna'], exe => 'RNAfold' },
-        'Rosalind_Plus' => { modules => ['cyoa', 'prodigal'] },
-        'RSEM' => { modules => 'rsem', exe => 'rsem-prepare-reference' },
-        'RSEM_Index' => { modules => ['rsem', 'bowtie2'], exe => ['bowtie2'] },
-        'Run_Essentiality' => { modules => 'essentiality' },
-        'Run_Parse_Blast' => { modules => ['cyoa', 'blast'], exe => 'blastp' },
-        'Salmon' => { modules => 'salmon', exe => 'salmon', },
-        'Salmon_Index' => { modules => ['salmon'], exe => ['salmon']},
-        'Samtools' => { modules => ['samtools', 'bamtools'], exe => 'samtools' },
-        'Shovill' => { modules => 'shovill', exe => 'shovill' },
-        'SLSearch' => { modules => ['cutadapt'] },
-        ## FIXME: I should only set one of these two (and for the following ones too)
-        'SL_Recorder' => { modules => ['cyoa', 'samtools'] },
-        'SLSeq_Recorder_Worker' => { modules => ['cyoa', 'samtools'] },
-        'SL_UTR' => { modules => 'cyoa' },
-        'Snippy' => { modules => ['snippy', 'gubbins', 'fasttree'],
-                      exe => ['snippy', 'gubbins'], },
-        'SNP_Ratio' => {
-            modules => ['cyoa', 'freebayes', 'gatk',
-                        'samtools', 'bcftools', 'vcftools'],
-            exe => ['samtools', 'cyoa', 'freebayes'] },
-        'SNP_Ratio_Intron' => {
-            modules => ['cyoa', 'freebayes', 'gatk',
-                        'samtools', 'bcftools', 'vcftools'], },
-        'SNP_Ratio_Worker' => {
-            modules => ['cyoa', 'freebayes', 'samtools',
-                        'bcftools', 'vcftools'], },
-        'SNP_Ratio_Intron_Worker' => {
-            modules => ['cyoa', 'freebayes', 'samtools',
-                        'bcftools', 'vcftools'], },
-        'Sort_Indexes' => { modules => 'cyoa' },
-        'Spladder' => { modules => 'spladder' },
-        'Split_Align_Blast' => { modules => ['cyoa', 'blast', 'blastdb'], exe => 'blastn' },
-        'Split_Align_Fasta' => { modules => ['cyoa', 'fasta',], exe => 'fasta36' },
-        'Split_Fasta' => { modules => ['cyoa'] },
-        'Spring' => { modules => ['spring',] },
-        'STAR' => { modules => 'star' },
-        'STAR_Index' => { modules => ['star'] },
-        'Suppa' => { modules => ['suppa'] },
-        'TA_Check' => { modules => 'cyoa' },
-        'Terminase_ORF_Reorder' => { modules => ['cyoa', 'fasta', 'blast', 'blastdb'], },
-        'Test' => { modules => ['bcftools'], exe => 'bcftools', },
-        'Train_Prodigal' => { modules => 'prodigal' },
-        'Tophat' => { modules => 'tophat' },
-        'Transdecoder' => { modules => 'transdecoder' },
-        'Transit_TPP' => { modules => ['bwa', 'transit', 'htseq' ], exe => 'tpp' },
-        'Transposonpsi' => { modules => 'transposonpsi', exe => 'transposonPSI.pl' },
-        ## I can set the exe for single vs pairwise now
-        'Trimomatic_Pairwise' => { modules => ['trimomatic'], },
-        'Trimomatic_Single' => { modules => ['trimomatic'], },
-        'Trinity' => { modules => ['trinity', 'cyoa'], exe => 'Trinity', },
-        'Trinity_Post' => { modules => ['cyoa', 'rsem'], },
-        'Trinotate' => {
-            modules => ['cyoa', 'divsufsort', 'transdecoder', 'blast', 'blastdb', 'signalp/4.1',
-                        'hmmer', 'tmhmm', 'rnammer', 'trinotate',],
-            exe => ['Trinotate'] },
-        'tRNAScan' => { modules => ['infernal', 'trnascan'], exe => 'trnascan' },
-        'Unicycler' => {
-            modules => ['trimomatic', 'bowtie2', 'spades', 'unicycler',
-                        'flash', 'shovill', 'bwa', 'pilon'],
-            exe => 'unicycler', },
-        'Umi_Tools_Dedup' => { modules => ['umi_tools', 'samtools'], },
-        'Umi_Tools_Extract' => { modules => 'umi_tools', },
-        'Unicycler_Filter_Depth' => { modules => 'cyoa', },
-        'Velvet' => { modules => 'velvet', exe => 'velveth' },
-        'Xref_Crispr' => { modules => 'cyoa', },
-    );
-    my $datum = $module_data{$function};
-    if ($datum) {
-        ## Sometimes I don't bother to make the module list
-        ## a list, but just a scalar.
-        my $module_type = ref($datum->{modules});
-        my @mod_lst;
-        my @conda_lst;
-        if (!$module_type) {
-            my $mod_name = $datum->{modules};
-            if ($mod_name) {
-                push(@mod_lst, $mod_name);
-                $datum->{modules} = \@mod_lst;
-            } else {
-                $datum = {};
-            }
-            my $conda_name = $datum->{conda};
-            if ($conda_name) {
-                push(@conda_lst, $conda_name);
-                $datum->{conda} = \@conda_lst;
-            }
-        }
-    } else {
-        print "The function: ${function} has no modules, adding cyoa.\n";
-        $datum = {
-            modules => ['cyoa'],
-        };
-    }
-    return(%{$datum});
-}
-
-=head2 C<Get_Outputs>
-
-Get_Paths seeks out a set of useful paths for each function, this defines output filenames.
-This largely depends on Get_Paths.  One could easily argue that it should be a part of that
-function; but I separated it because I like having a conceptual separation between the various
-locations for stuff and the final outputs.
-
-=cut
-sub Get_Outputs {
-    my (%args) = @_;
-    my $subroutine = $args{subroutine};
-    my $options = $args{options};
-    my $paths = $args{paths};
-    if (!defined($subroutine)) {
-        $subroutine = Bio::Adventure::Config::Get_Caller();
-    }
-
-    my $outputs = {};
-    given ($subroutine) {
-        when ('Any2Any') {
-            $outputs->{main} = qq"$paths->{input_dirname}/$paths->{output_base}.$options->{outformat}";
-        }
-        when ('Bam2Bigwig') {
-            $outputs->{main} = qq"$paths->{output_dir}/$paths->{output_base}.bw";
-        }
-        when ('Bedtools_Coverage') {
-            ## Not currently using anything
-        }
-        when ($_ eq 'Bowtie' || $_ eq 'BT1_Index') {
-            $outputs->{stdout} = qq"$paths->{output_dir}/$paths->{output_base}_$options->{species}_$options->{bt_type}.stdout";
-            $outputs->{stderr} = qq"$paths->{output_dir}/$paths->{output_base}_$options->{species}_$options->{bt_type}.stderr";
-            $outputs->{aligned} = qq"$paths->{output_dir}/$paths->{output_base}_aligned_$options->{species}_$options->{libtype}.fastq";
-            $outputs->{unaligned} = qq"$paths->{output_dir}/$paths->{output_base}_unaligned_$options->{species}_$options->{libtype}.fastq";
-            $outputs->{main} = qq"$paths->{output_dir}/$paths->{output_base}_$options->{species}_$options->{libtype}.sam";
-        }
-        when ('BT1_Stats') {
-            $outputs->{main} = qq"$paths->{output_dir}/bt1_stats.csv";
-        }
-        when($_ eq 'Bowtie2' || $_ eq 'BT2_Index') {
-            $outputs->{stdout} = qq"$paths->{output_dir}/$paths->{output_base}_$options->{species}_$options->{bt_type}.stdout";
-            $outputs->{stderr} = qq"$paths->{output_dir}/$paths->{output_base}_$options->{species}_$options->{bt_type}.stderr";
-        }
-        when ($_ eq 'BWA' || $_ eq 'BWA_Index') {
-            $outputs->{fa} = qq"$paths->{index_dir}/$options->{species}.fa";
-            $outputs->{sa} = qq"$outputs->{fa}.sa";
-            $outputs->{pac} = qq"$outputs->{fa}.pac";
-            $outputs->{bwt} = qq"$outputs->{fa}.bwt";
-            $outputs->{ann} = qq"$outputs->{fa}.ann";
-            $outputs->{amb} = qq"$outputs->{fa}.amb";
-        }
-        when ($_ eq 'Caical_Worker' || $_ eq 'Caical') {
-            ## No output defined yet
-        }
-        when ('Check_Blastdb') {
-            $outputs->{stderr} = 'makeblastdb.stderr';
-            $outputs->{stdout} = 'makeblastdb.stdout';
-        }
-        when ($_ eq 'Classify_Phage' || $_ eq 'Classify_Phage_Worker') {
-            ## No output defined yet
-        }
-        when ($_ eq 'Compress' || $_ eq 'Recompress') {
-            $outputs->{stdout} = qq"$paths->{output_dir}/xz.stdout";
-            $outputs->{stderr} = qq"$paths->{output_dir}/xz.stderr";
-        }
-        when ($_ eq 'Concatenate_Searches' || $_ eq 'Concatenate_Searches_Worker') {
-            ## The _Worker is wrong
-            $outputs->{main} = qq"$paths->{output_dir}/split_search.txt.xz";
-            $outputs->{stderr} = qq"$paths->{output_dir}/concat.stderr";
-            $outputs->{stdout} = qq"$paths->{output_dir}/concat.stdout";
-        }
-        when ('Cutadapt') {
-            $outputs->{main} = qq"$paths->{output_dir}/$paths->{output_base}$paths->{output_suffix}.$paths->{input_suffix}";
-        }
-        when ('Cutadapt_Stats') {
-            $outputs->{main} = qq"$paths->{output_dir}/cutadapt_stats.csv";
-        }
-        when (/^Dantools/) {
-            $outputs->{log} = qq"$paths->{output_dir}/dantools_rnaseq.log";
-        }
-        when ('Download_NCBI_Assembly') {
-            $outputs->{log} = qq"$paths->{output_dir}/download_assembly.log";
-        }
-        when ('Downsample_Guess_Strand') {
-            ## No output defined yet
-        }
-        when ('Duplicate_Remove') {
-            $outputs->{main} = qq"$paths->{input_dirname}/$paths->{output_base}_removed.txt";
-        }
-        when ('Extend_Kraken_DB') {
-            $outputs->{stdout} = qq"$paths->{output_dir}/kraken2-build.stdout";
-            $outputs->{stderr} = qq"$paths->{output_dir}/kraken2-build.stderr";
-            $outputs->{main} = qq"$paths->{output_dir}/kraken2-build.out";
-        }
-        when ('Extract_Subseq') {
-            $outputs->{main} = qq"$paths->{output_dir}/$paths->{output_base}_$options->{start}_$options->{end}.$options->{outformat}";
-        }
-        when ('Fastp') {
-            ## No output defined yet
-        }
-        when ('Fastp_Stats') {
-            $outputs->{main} = qq"$paths->{output_dir}/fastp_stats.csv";
-        }
-        when ('Fastqc') {
-            $outputs->{main} = qq"$paths->{output_subdir}/fastqc_data.txt";
-            $outputs->{summary} = qq"$paths->{output_subdir}/summary.txt";
-        }
-        when ('Fastqc_Stats') {
-            $outputs->{main} = qq"$paths->{output_dir}/fastqc_stats.csv";
-        }
-        when ('Feature_Counts') {
-            ## This if statement is repeated in Count::FeatureCounts
-            ## and happens because htseq uses yes/no/f/r while fc uses
-            ## 0,1,2 and I do not expect the user to remember this.
-            ## but I want the outputs to reflect correctly the choice.
-            if (defined($options->{stranded})) {
-                if ($options->{stranded} eq 'forward') {
-                    $options->{stranded} = 1;
-                } elsif ($options->{stranded} eq 'reverse') {
-                    $options->{stranded} = 2;
-                } else {
-                    $options->{stranded} = 0;
-                }
-            } else {
-                $options->{stranded} = 0;
-            }
-            $outputs->{main} = qq"$paths->{nosuffix}_s$options->{stranded}_$options->{gff_type}_$options->{gff_tag}_fcounts.csv";
-            $outputs->{featurecount} = qq"$paths->{nosuffix}.bam.featureCounts";
-            $outputs->{main_variables} = qq"$paths->{nosuffix}_s\${stranded}_\${gff_type}_\${gff_tag}_fcounts.csv";
-
-            $outputs->{stdout} = qq"$paths->{nosuffix}_featureCounts.stdout";
-            $outputs->{stderr} = qq"$paths->{nosuffix}_featureCounts.stderr";
-        }
-        when ($_ eq 'Filter_Host_Kraken' || $_ eq 'Filter_Kraken_Worker') {
-            $outputs->{stderr} = qq"$paths->{output_dir}/filter_host.stderr";
-            $outputs->{stdout} = qq"$paths->{output_dir}/filter_host.stdout";
-            $outputs->{log} = qq"$paths->{output_dir}/filter_kraken.log";
-        }
-        when ($_ eq 'Freebayes_SNP_Search' || $_ eq 'SNP_Ratio' || $_ eq 'SNP_Ratio_Worker' ||
-              $_ eq 'SNP_Ratio_Intron' || $_ eq 'SNP_Ratio_Intron_Worker') {
-            ## No output defined yet
-        }
-        when ('GATK_Dedup') {
-            $outputs->{marked} = qq"$paths->{output_dir}/deduplication_stats.txt";
-            $outputs->{stdout} = qq"$paths->{output_dir}/deduplication.stdout";
-            $outputs->{stder} = qq"$paths->{output_dir}/deduplication.stderr";
-            $outputs->{main} = qq"$paths->{output_dir}/deduplicated.bam";
-        }
-        when (/^Gb2Gff/) {
-            $outputs->{stdout} = qq"$paths->{output_dir}/$paths->{output_base}.stdout";
-            $outputs->{stderr} = qq"$paths->{output_dir}/$paths->{output_base}.stderr";
-            $outputs->{fasta} = qq"$paths->{output_dir}/$paths->{output_base}.fsa";
-            $outputs->{cds_fasta} = qq"$paths->{output_dir}/$paths->{output_base}.ffn";
-            $outputs->{misc_fasta} = qq"$paths->{output_dir}/$paths->{output_base}_miscRNA.fasta";
-            $outputs->{nc_fasta} = qq"$paths->{output_dir}/$paths->{output_base}_ncRNA.fasta";
-            $outputs->{pep_fasta} = qq"$paths->{output_dir}/$paths->{output_base}.faa";
-            $outputs->{rrna_fasta} = qq"$paths->{output_dir}/$paths->{output_base}_rRNA.fasta";
-            $outputs->{all_gff} = qq"$paths->{output_dir}/$paths->{output_base}_all.gff";
-            $outputs->{gene_gff} = qq"$paths->{output_dir}/$paths->{output_base}.gff";
-            $outputs->{cds_gff} = qq"$paths->{output_dir}/$paths->{output_base}_cds.gff";
-            $outputs->{inter_gff} = qq"$paths->{output_dir}/$paths->{output_base}_inter_cds.gff";
-            $outputs->{misc_gff} = qq"$paths->{output_dir}/$paths->{output_base}_miscRNA.gff";
-            $outputs->{nc_gff} = qq"$paths->{output_dir}/$paths->{output_base}_ncRNA.gff";
-            $outputs->{rrna_gff} = qq"$paths->{output_dir}/$paths->{output_base}_rRNA.gff";
-        }
-        when ('Get_Substitution_Matrix') {
-            $outputs->{matrix_file} = qq"$paths->{output_dir}/$options->{matrix}";
-        }
-        when ('GFF_Tree') {
-            ## No output defined yet
-        }
-        when ('Gff2Fasta') {
-            if (defined($options->{species})) {
-                $outputs->{aa} = qq"$paths->{output_dir}/$paths->{output_base}_$options->{species}_$options->{gff_type}_$options->{gff_tag}.faa";
-                $outputs->{nt} = qq"$paths->{output_dir}/$paths->{output_base}_$options->{species}_$options->{gff_type}_$options->{gff_tag}.ffn";
-                $outputs->{gff} = qq"$paths->{output_dir}/$paths->{output_base}_$options->{species}_$options->{gff_type}_$options->{gff_tag}.gff";
-            } else {
-                $outputs->{aa} = qq"$paths->{output_dir}/$paths->{output_base}_$options->{gff_type}_$options->{gff_tag}.faa";
-                $outputs->{nt} = qq"$paths->{output_dir}/$paths->{output_base}_$options->{gff_type}_$options->{gff_tag}.ffn";
-                $outputs->{gff} = qq"$paths->{output_dir}/$paths->{output_base}_$options->{gff_type}_$options->{gff_tag}.gff";
-            }
-        }
-        when (/^Guess_Strand/) {
-            $outputs->{main} = qq"$paths->{nosufix}.txt";
-        }
-        when ($_ eq 'Hisat2' || $_ eq 'Hisat2_Index') {
-            $outputs->{index_stderr} = qq"$paths->{output_dir}/hisat2_index_$options->{species}.stderr";
-            $outputs->{index_stdout} = qq"$paths->{output_dir}/hisat2_index_$options->{species}.stdout";
-            $outputs->{stderr} = qq"$paths->{output_dir}/hisat_$options->{species}_$options->{libtype}";
-            $outputs->{stdout} = $paths->{stderr};
-            $outputs->{metrics} = $paths->{stderr};
-            if (defined($options->{jbasename})) {
-                $outputs->{stderr} .= qq"_$options->{jbasename}.stderr";
-                $outputs->{stdout} .= qq"_$options->{jbasename}.stdout";
-                $outputs->{metrics} .= qq"_$options->{jbasename}.metrics";
-            } else {
-                $outputs->{stderr} .= '.stderr';
-                $outputs->{stdout} .= '.stdout';
-                $outputs->{metrics} .= '.metrics';
-            }
-            $outputs->{aligned_discordant} = qq"$paths->{output_dir}/aldis_$options->{species}_$options->{libtype}.fastq";
-            if ($options->{unaligned_discordant}) {
-                $outputs->{unaligned_discordant} = $options->{unaligned_discordant};
-            } else {
-                $outputs->{unaligned_discordant} = qq"$paths->{output_dir}/unaldis_$options->{species}_$options->{libtype}.fastq";
-            }
-            $outputs->{aligned_concordant} = qq"$paths->{output_dir}/alcon_$options->{species}_$options->{libtype}.fastq";
-            if (defined($options->{unaligned_output})) {
-                $outputs->{unaligned_concordant} = $options->{unaligned_output};
-            } else {
-                $outputs->{unaligned_concordant} = qq"$paths->{output_dir}/unalcon_$options->{species}_$options->{libtype}.fastq";
-            }
-            $outputs->{main} = qq"$paths->{output_dir}/$options->{species}_$options->{libtype}.sam";
-        }
-        when ('Hisat2_Index') {
-            ## No output defined yet
-        }
-        when ('Hisat2_Stats') {
-            $outputs->{main} = qq"$paths->{output_dir}/hisat_stats.csv";
-        }
-        when ($_ eq 'HT_Multi' || $_ eq 'HTSeq' || $_ eq 'HT_Types') {
-            $outputs->{output_base} = qq"$paths->{output_dir}/$paths->{nosuffix}";
-            $outputs->{main} = qq"$paths->{output_dir}/$paths->{output_base}";
-            $outputs->{stderr} = qq"$paths->{output_dir}/$paths->{output_base}_htseq.stderr";
-            $outputs->{stdout} = qq"$paths->{output_dir}/$paths->{output_base}_htseq.stdout";
-        }
-        when ('Insert_Size') {
-            $outputs->{stderr} = qq"$paths->{output_dir}/$paths->{output_base}_insert_size.stderr";
-            $outputs->{stdout} = qq"$paths->{output_dir}/$paths->{output_base}_insert_size.stdout";
-            $outputs->{main} = qq"$paths->{output_dir}/$paths->{output_base}_insert_size.txt";
-            $outputs->{pdf} = qq"$paths->{output_dir}/$paths->{output_base}_insert_size.pdf";
-        }
-        when ($_ eq 'Jellyfish' || $_ eq 'Jellyfish_Matrix') {
-            $outputs->{count} = qq"$paths->{jelly_base}.count";
-            $outputs->{info} = qq"$paths->{jelly_base}.info";
-            $outputs->{histogram} = qq"$paths->{jelly_base}.hist";
-            $outputs->{count_fasta} = qq"$paths->{jelly_base}_by_count.fasta";
-            $outputs->{matrix} = qq"$paths->{jelly_base}_matrix.csv";
-            $outputs->{stderr} = qq"$paths->{jelly_base}.stderr";
-            $outputs->{stdout} = qq"$paths->{jelly_base}.stdout";
-            $outputs->{main} = $outputs->{histogram};
-        }
-        when ($_ eq 'Kallisto' || $_ eq 'Kallisto_Index') {
-            $outputs->{index_stderr} = qq"$paths->{index_dir}/index.stderr";
-            $outputs->{index_stdout} = qq"$paths->{index_dir}/index.stdout";
-        }
-        when ('Kraken') {
-            $outputs->{stdout} = qq"$paths->{output_dir}/kraken.stdout";
-            $outputs->{stderr} = qq"$paths->{output_dir}/kraken.stderr";
-            $outputs->{report} = qq"$paths->{output_dir}/kraken_report.txt";
-            $outputs->{main} = $outputs->{report};
-            $outputs->{classified} = qq"$paths->{output_dir}/classified#.fastq.gz";
-            $outputs->{unclassified} = qq"$paths->{output_dir}/unclassified#.fastq.gz";
-        }
-        when (/^Kraken_to_Matrix/) {
-            $outputs->{main} = qq"$paths->{nosuffix}_matrix.tsv";
-            $outputs->{stderr} = qq"$paths->{output_dir}/kraken_to_matrix.stderr";
-            $outputs->{stdout} = qq"$paths->{output_dir}/kraken_to_matrix.stdout";
-            $outputs->{log} = qq"$paths->{output_dir}/kraken_to_matrix.log";
-        }
-        when ('Make_Blast_Job') {
-            $outputs->{stderr} = qq"$paths->{output_dir}/$paths->{output_base}_blast_job.stderr";
-            $outputs->{stdout} = qq"$paths->{output_dir}/$paths->{output_base}_blast_job.stdout";
-            $outputs->{main} = qq"$paths->{output_dir}/$options->{blast_tool}.out";
-        }
-        when ('Make_Codon_Table') {
-            $outputs->{codon_table} = qq"$paths->{codon_dir}/$options->{species}.txt";
-        }
-        when ('Mash') {
-            $outputs->{stdout} = qq"$paths->{output_dir}/mash_$paths->{cwd_name}.stdout";
-            $outputs->{stderr} = qq"$paths->{output_dir}/mash_$paths->{cwd_name}.stderr";
-            $outputs->{dist_dir} = qq"$paths->{output_dir}/dist";
-            $outputs->{sketch_dir} = qq"$paths->{output_dir}/sketch";
-        }
-        when ('Mauve_Aligner') {
-            $outputs->{islands} = qq"$paths->{output_dir}/islands.txt";
-            $outputs->{backbone} = qq"$paths->{output_dir}/backbone.txt";
-            $outputs->{id_matrix} = qq"$paths->{output_dir}/id_matrix.txt";
-            $outputs->{guide_tree} = qq"$paths->{output_dir}/guide_tree.txt";
-            $outputs->{main} = qq"$paths->{output_dir}/alignment.txt";
-        }
-        when (/^Merge_Annotations/) {
-            ## No output defined yet
-        }
-        when ($_ eq 'Mi_Map' || $_ eq 'Read_Bam_Mi' || $_ eq 'Final_Print_Mi') {
-            $outputs->{pre_map} = qq"$paths->{nosuffix}_mirnadb.txt";
-            $outputs->{final_map} = qq"$paths->{nosuffix}_mature.count";
-        }
-        when ('Mpileup') {
-            $outputs->{stderr} = qq"$paths->{output_dir}/mpileup.stderr";
-            $outputs->{stdout} = qq"$paths->{output_dir}/mpileup.stdout";
-            $outputs->{bcferr} = qq"$paths->{output_dir}/mpileup_bcf.stdout";
-            $outputs->{bam} = qq"$paths->{output_dir}/sorted.bam";
-            $outputs->{vcf} = qq"$paths->{output_dir}/sorted.vcf";
-            $outputs->{main} = qq"$paths->{output_dir}/sorted.bcf";
-        }
-        when ('Nextflow_RNASeq') {
-            ## No output defined yet
-        }
-        when ($_ eq 'OrthoFinder' || $_ eq 'Orthofinder_Names_Worker' ||
-              $_ eq 'Orthofinder_Names') {
-            $outputs->{all} = qq"$paths->{output_dir}/output/Orthogroups/Orthogroups.tsv";
-            $outputs->{single} = qq"$paths->{output_dir}/output/Orthogroups/Orthogroups_SingleCopyOrthologues.txt";
-            $outputs->{named} = qq"$paths->{output_dir}/orthogroups_all_named.tsv";
-            $outputs->{single_named} = qq"$paths->{output_dir}/orthogroups_single_named.tsv";
-            $outputs->{namer_log} = qq"$paths->{output_dir}/orthonamer.log";
-        }
-        when ('Pairwise_Similarity_Matrix') {
-            $outputs->{evalues} = qq"$paths->{output_dir}/pairwise_evalues.tsv";
-            $outputs->{bit_scores} = qq"$paths->{output_dir}/pairwise_bits.tsv";
-            $outputs->{pair_scores} = qq"$paths->{output_dir}/pairwise_scores.tsv";
-            $outputs->{main} = qq"$paths->{output_dir}/output.txt";
-        }
-        when ('PolyA_Recorder') {
-            ## No output defined yet
-        }
-        when ('Prodigal') {
-            $outputs->{stdout} = qq"$paths->{output_dir}/prodigal.stdout";
-            $outputs->{stderr} = qq"$paths->{output_dir}/prodigal.stderr";
-        }
-        when ('Progressive_Mauve') {
-            $outputs->{main} = qq"$paths->{output_dir}/alignment";
-            $outputs->{guide_tree} = qq"$paths->{output_dir}/guide_tree";
-            $outputs->{backbone} = qq"$paths->{output_dir}/backbone";
-        }
-        when ($_ eq 'ProteinFold' || $_ eq 'ProteinFold_Worker') {
-            $outputs->{main} = qq"$paths->{output_dir}/proteinfold.txt";
-        }
-        when ($_ eq 'ProteinFold_PairIDs' || $_ eq 'ProteinFold_PairIDs_Worker') {
-            $outputs->{main} = qq"$paths->{output_dir}/proteinfold.txt";
-        }
-        when (/^RNAFold_Windows/) {
-            $outputs->{main} = qq"$paths->{output_dir}/$args{output_name}.tsv.xz";
-            $outputs->{stdout} = qq"$paths->{output_dir}/$args{output_name}_rnafold.stdout";
-            $outputs->{stderr} = qq"$paths->{output_dir}/$args{output_name}_rnafold.stderr";
-        }
-        when ($_ eq 'RSEM' || $_ eq 'RSEM_Index') {
-            ## No outputs defined yet
-        }
-        when ('Run_Parse_Blast') {
-            $outputs->{counts} = qq"$paths->{output_dir}/counts.txt";
-            $outputs->{zeros} = qq"$paths->{output_dir}/zeros.fasta";
-            $outputs->{singles} = qq"$paths->{output_dir}/singles.fasta";
-            $outputs->{doubles} = qq"$paths->{output_dir}/doubles.fasta";
-            $outputs->{few} = qq"$paths->{output_dir}/few.fasta";
-            $outputs->{many} = qq"$paths->{output_dir}/many.fasta";
-            $outputs->{main} = qq"$paths->{output_dir}/blast_output.txt";
-        }
-        when ($_ eq 'Salmon' || $_ eq 'Salmon_Index') {
-            $outputs->{main} = qq"$paths->{output_dir}/quant.sf";
-            $outputs->{stdout} = qq"$paths->{output_dir}/salmon_$options->{species}.stdout";
-            $outputs->{stderr} = qq"$paths->{output_dir}/salmon_$options->{species}.stderr";
-        }
-        when ($_ eq 'Sam2Bam' || $_ eq 'Samtools') {
-            $outputs->{main} = qq"$paths->{input_dirname}/$paths->{output_base}.bam";
-            $outputs->{sorted} = qq"$paths->{input_dirname}/$paths->{output_base}-sorted.bam";
-            $outputs->{sorted_nomismatch} = qq"$paths->{input_dirname}/$paths->{output_base}_nomismatch.bam";
-            $outputs->{paired} = qq"$paths->{input_dirname}/$paths->{output_base}-paired.bam";
-            $outputs->{stdout} = qq"$paths->{input_dirname}/$paths->{output_base}_samtools.stdout";
-            $outputs->{stderr} = qq"$paths->{input_dirname}/$paths->{output_base}_samtools.stderr";
-        }
-        when ('SLSearch') {
-            ## No output defined yet
-        }
-        when ('SL_Recorder') {
-            ## No output defined yet
-        }
-        when ('Split_Align_Blast') {
-            $outputs->{main} = qq"$paths->{output_dir}/$paths->{output_base}_vs_$paths->{libname}.txt";
-        }
-        when ($_ eq 'Split_Align_Fasta' || $_ eq 'Split_Align_Fasta_Worker' ||
-              $_ eq 'Parse_Fasta' || $_ eq 'Parse_Fasta_Global' ||
-              $_ eq 'Make_Fasta_Job' || $_ eq 'Parse_Fasta_Worker' ||
-              $_ eq 'Parse_Fasta_Mismatches') {
-            $outputs->{fasta} = qq"$paths->{output_dir}/$paths->{output_filename_base}.txt";
-            $outputs->{fasta_comp} = qq"$outputs->{fasta}.xz";
-            $outputs->{main} = qq"$paths->{output_dir}/$paths->{output_filename_base}.parsed.txt";
-            $outputs->{counts} = qq"$paths->{output_dir}/$paths->{output_filename_base}.count";
-            $outputs->{singles} = qq"$paths->{output_dir}/$paths->{output_filename_base}_singles.txt";
-            $outputs->{doubles} = qq"$paths->{output_dir}/$paths->{output_filename_base}_doubles.txt";
-            $outputs->{few} = qq"$paths->{output_dir}/$paths->{output_filename_base}_few.txt";
-            $outputs->{many} = qq"$paths->{output_dir}/$paths->{output_filename_base}_many.txt";
-            $outputs->{zero} = qq"$paths->{output_dir}/$paths->{output_filename_base}_zero.txt";
-            $outputs->{all} = qq"$paths->{output_dir}/$paths->{output_filename_base}_all.txt";
-            $outputs->{variants} = qq"$paths->{output_dir}/$paths->{output_filename_base}_mismatches.txt";
-            $outputs->{variant_numbers} = qq"$paths->{output_dir}/$paths->{output_filename_base}_mismatch_nums.txt";
-        }
-        when ('Split_Fasta') {
-            ## No output defined yet
-        }
-        when ('Spring') {
-            $outputs->{stdout} = qq"$paths->{output_dir}/$paths->{output_base}_spring.stdout";
-            $outputs->{stderr} = qq"$paths->{output_dir}/$paths->{output_base}_spring.stderr";
-        }
-        when ($_ eq 'STAR' || $_ eq 'STAR_Index') {
-            ## No output defined yet
-        }
-        when (/^Terminase_ORF_Reorder/) {
-            $outputs->{stderr} = qq"$paths->{output_dir}/termreorder.stderr";
-            $outputs->{stdout} = qq"$paths->{output_dir}/termreorder.stdout";
-            $outputs->{main} = qq"$paths->{output_dir}/final_assembly.fasta";
-            $outputs->{prodigal} = qq"$paths->{output_dir}/prodigal_cds.fasta";
-        }
-        when ('Test_Worker') {
-            $outputs->{stderr} = '/tmp';
-            $outputs->{stdout} = '/tmp/funkytown.stdout';
-        }
-        when ('Tophat') {
-            ## No output defined yet
-        }
-        when ('Transit_TPP') {
-            ## No output defined yet
-        }
-        when ('Trimomatic_Pairwise') {
-            $outputs->{main} = join(':', @{$paths->{input_base_array}});
-            $outputs->{stdout} = qq"$paths->{output_dir}/$paths->{output_base}-trimomatic.stdout";
-            $outputs->{stderr} = qq"$paths->{output_dir}/$paths->{output_base}-trimomatic.stderr";
-        }
-        when ('Trimomatic_Single') {
-            $outputs->{main} = qq"$paths->{output_dir}/$paths->{output_base}-trimmed.fastq";
-            $outputs->{stdout} = qq"$paths->{output_dir}/$paths->{output_base}-trimomatic.stdout";
-            $outputs->{stderr} = qq"$paths->{output_dir}/$paths->{output_base}-trimomatic.stderr";
-        }
-        when ('Trimomatic_Stats') {
-            $outputs->{main} = qq"$paths->{output_dir}/trim_stats.csv";
-        }
-        when ('Umi_Tools_Extract') {
-            ## No output defined yet
-        }
-        when ('Umi_Tools_Dedup') {
-            ## No output defined yet
-        }
-        when ('Unicycler') {
-            ## No output defined yet
-        }
-        when ('Velvet') {
-            ## No output defined yet
-        }
-    } ## End the given structure
-    $outputs->{main} = qq"$paths->{output_dir}/default.out" unless (defined($outputs->{main}));
-    $outputs->{stdout} = qq"$paths->{output_dir}/stdout" unless (defined($outputs->{stdout}));
-    $outputs->{stderr} = qq"$paths->{output_dir}/stderr" unless (defined($outputs->{stderr}));
-    $outputs->{log} = qq"$paths->{output_dir}/log.txt" unless (defined($outputs->{log}));
-    return($outputs);
 }
 
 =head2 C<Get_Class_Paths>
@@ -1550,1858 +761,62 @@ and move it to Get_Function_Paths() which will contain stuff
 like output_dir.
 
 =cut
-sub Get_Class_Paths {
+## 202605 Survey: Called by BUILD to set up and/or find all the various database directories
+sub Get_Global_Paths {
     my ($class, %args) = @_;
-    my $spec = $args{spec};
-    my $options = $class->current_state;
+    my $state_ref = $class->current_state;
+    my %current_state = %{$state_ref};
     my $libtype = 'genome';
-    $libtype = $options->{libtype} if (defined($options->{libtype}));
-    my $libpath_prefix = qq"$options->{libpath}/${libtype}";
-    my $libdir_prefix = qq"$options->{libdir}/${libtype}";
-    my $output_prefix = qq"$options->{output_base}/$spec->{jprefix}";
+    $libtype = $current_state{libtype} if (defined($current_state{libtype}));
+    my $libpath_prefix = qq"$current_state{libpath}/${libtype}";
+    my $libdir_prefix = qq"$current_state{libdir}/${libtype}";
     ##my $cwd_name = basename(cwd());
-    my $paths = {};
-    my $outputs = {};
-    my @input_array = ();
-    my @output_array = ();
-    my @output_base_array = ();
-    if (defined($options->{input})) {
-        @input_array = split(/$options->{delimiter}/, $options->{input});
-        $paths->{input_suffix} = $options->{input};
-        $paths->{input_suffix} =~ s/\.[xgb]z$//g;
-        if ($paths->{input_suffix} =~ /\..*$/) {
-            $paths->{input_suffix} =~ s/^.*\.(.*)$/$1/g;
-        }
-        ##$paths->{output_base} = basename($options->{input}, @{$options->{suffix_array}});
-        ##$paths->{output_base} = basename($paths->{output_base}, @{$options->{suffix_array}});
-        $paths->{input_dirname} = dirname($options->{input});
-        if ($paths->{input_dirname} eq '.' || $paths->{input_dirname} eq q{}) {
-            $paths->{input_dirname} = fastcwd();
-        }
-    } else {
-        $paths->{input_dirname} = fastcwd();
-        @input_array = ($options->{input});
-    }
-    local *basebase = sub {
-        my $in = shift;
-        if (!defined($in)) {
-            warn("Expected a file path but received undefined.\n");
-            return('undefined');
-        }
-        my $out = basename($in, @{$options->{suffix_array}});
-        $out = basename($out, @{$options->{suffix_array}});
-        return($out);
-    };
-
-    my @input_base_array = ();
-    if (@input_array) {
-        @input_base_array = map { basebase($_) } @input_array;
-    } else {
-        print "The input array was not defined in Config::Get_Paths.\n";
-        @input_array = ('undefined');
-    }
-
-    $paths->{output_base} = $input_base_array[0];
-    $paths->{input_array} = \@input_array;
-    $paths->{input_base_array} = \@input_base_array;
+    my %class_paths = ();
     ## Ok, something in cwd/basename is causing a problem.
-    $paths->{cwd_name} = basename(fastcwd());
-    $paths->{nosuffix} = qq"$paths->{input_dirname}/$paths->{output_base}";
-    $paths->{blast_dir} = qq"${libpath_prefix}/blast";
-    $paths->{codon_dir} = qq"${libpath_prefix}/codon_tables";
-    $paths->{fasta_dir} = qq"${libpath_prefix}/fasta";
-    $paths->{gbk_dir} = qq"${libpath_prefix}/genbank";
-    $paths->{gff_dir} = qq"${libpath_prefix}/gff";
-    $paths->{gtf_dir} = qq"${libpath_prefix}/gtf";
-    $paths->{hmm_dir} = qq"${libpath_prefix}/hmm";
-    $paths->{index_prefix} = qq"${libpath_prefix}/indexes";
-    $paths->{index_prefix_shell} = qq"${libdir_prefix}/indexes";
-    $paths->{output_prefix} = $output_prefix;
-    $paths->{output_dir} = qq"${output_prefix}_$spec->{jname_prefix}_$paths->{output_base}";
-    $paths->{time} = qq"$paths->{output_dir}/$spec->{jname_prefix}_$paths->{output_base}.time";
-    $paths->{jname} = $paths->{output_base};
-    if (!defined($options->{jprefix})) {
-        $options->{jprefix} = '01';
-    }
-    $options->{jname} = $paths->{jname};
-    $paths->{time} = qq"$paths->{output_dir}/$options->{jname}.time";
-    if ($spec->{jprefix}) {
-        $spec->{jname} = qq"$spec->{jprefix}$spec->{jname_prefix}";
-    }
-    if ($options->{libtype}) {
-        $options->{jname} .= "_$options->{libtype}";
-    }
-    make_path($paths->{output_dir}) unless (-d $paths->{output_dir});
-    make_path($paths->{blast_dir}) unless (-d $paths->{blast_dir});
-    make_path($paths->{codon_dir}) unless (-d $paths->{codon_dir});
-    make_path($paths->{fasta_dir}) unless (-d $paths->{fasta_dir});
-    make_path($paths->{gff_dir}) unless (-d $paths->{gff_dir});
-    make_path($paths->{gtf_dir}) unless (-d $paths->{gtf_dir});
-    make_path($paths->{gbk_dir}) unless (-d $paths->{gbk_dir});
-    make_path($paths->{hmm_dir}) unless (-d $paths->{hmm_dir});
-    make_path($paths->{index_prefix}) unless (-d $paths->{index_prefix});
+    $class_paths{cwd_name} = basename(fastcwd());
+    $class_paths{blast_dir} = qq"${libpath_prefix}/blast";
+    $class_paths{codon_dir} = qq"${libpath_prefix}/codon_tables";
+    $class_paths{fasta_dir} = qq"${libpath_prefix}/fasta";
+    $class_paths{gbk_dir} = qq"${libpath_prefix}/genbank";
+    $class_paths{gff_dir} = qq"${libpath_prefix}/gff";
+    $class_paths{gtf_dir} = qq"${libpath_prefix}/gtf";
+    $class_paths{hmm_dir} = qq"${libpath_prefix}/hmm";
+    $class_paths{index_prefix} = qq"${libpath_prefix}/indexes";
+    $class_paths{index_prefix_shell} = qq"${libdir_prefix}/indexes";
+    make_path($class_paths{blast_dir}) unless (-d $class_paths{blast_dir});
+    make_path($class_paths{codon_dir}) unless (-d $class_paths{codon_dir});
+    make_path($class_paths{fasta_dir}) unless (-d $class_paths{fasta_dir});
+    make_path($class_paths{gff_dir}) unless (-d $class_paths{gff_dir});
+    make_path($class_paths{gtf_dir}) unless (-d $class_paths{gtf_dir});
+    make_path($class_paths{gbk_dir}) unless (-d $class_paths{gbk_dir});
+    make_path($class_paths{hmm_dir}) unless (-d $class_paths{hmm_dir});
+    make_path($class_paths{index_prefix}) unless (-d $class_paths{index_prefix});
     if (defined($ENV{BLAST_DB})) {
         if ($ENV{BLAST_DB} =~ /:/) {
             my @blast = split(/:/, $ENV{BLAST_DB});
-            unless (grep(/$paths->{blast_dir}/, @blast)) {
-                $ENV{BLAST_DB} = qq"$ENV{BLAST_DB}:$paths->{blast_dir}";
+            unless (grep(/$class_paths{blast_dir}/, @blast)) {
+                $ENV{BLAST_DB} = qq"$ENV{BLAST_DB}:$class_paths{blast_dir}";
             }
         } else {
-            unless ($paths->{blast_dir} eq $ENV{BLAST_DB}) {
-                $ENV{BLAST_DB} = qq"$ENV{BLAST_DB}:$paths->{blast_dir}";
+            unless ($class_paths{blast_dir} eq $ENV{BLAST_DB}) {
+                $ENV{BLAST_DB} = qq"$ENV{BLAST_DB}:$class_paths{blast_dir}";
             }
         }
     } else {
-        $ENV{BLAST_DB} = $paths->{blast_dir};
+        $ENV{BLAST_DB} = $class_paths{blast_dir};
     }
-    if (defined($options->{species})) {
-        $paths->{fasta} = qq"$paths->{fasta_dir}/$options->{species}.fasta";
-        $paths->{fasta_shell} = qq"${libdir_prefix}/fasta/$options->{species}.fasta";
-        $paths->{gff} = qq"$paths->{gff_dir}/$options->{species}.gff";
-        $paths->{gff_shell} = qq"${libdir_prefix}/gff/$options->{species}.gff";
-        $paths->{gtf} = qq"$paths->{gtf_dir}/$options->{species}.gtf";
-        $paths->{gtf_shell} = qq"${libdir_prefix}/gtf/$options->{species}.gtf";
-        $paths->{gbk} = qq"$paths->{gbk_dir}/$options->{species}.gbk";
-        $paths->{gbk_shell} = qq"${libdir_prefix}/genbank/$options->{species}.gbk";
+    if (defined($current_state{species})) {
+        $class_paths{fasta} = qq"$class_paths{fasta_dir}/$current_state{species}.fasta";
+        $class_paths{fasta_shell} = qq"${libdir_prefix}/fasta/$current_state{species}.fasta";
+        $class_paths{gff} = qq"$class_paths{gff_dir}/$current_state{species}.gff";
+        $class_paths{gff_shell} = qq"${libdir_prefix}/gff/$current_state{species}.gff";
+        $class_paths{gtf} = qq"$class_paths{gtf_dir}/$current_state{species}.gtf";
+        $class_paths{gtf_shell} = qq"${libdir_prefix}/gtf/$current_state{species}.gtf";
+        $class_paths{gbk} = qq"$class_paths{gbk_dir}/$current_state{species}.gbk";
+        $class_paths{gbk_shell} = qq"${libdir_prefix}/genbank/$current_state{species}.gbk";
     }
-    return($paths);
-}
-
-
-=head2 C<Get_Paths>
-
-Define a set of useful paths for the calling function.  My medium-term goal is to modify
-this and Get_Outputs so that the function-specific paths are supplied by a config or
-json file.  Before I do that, though, I want to clean out all of the miscellaneous places where
-I arbitrarily set paths/filenames.  Thus, for now, these function are serving as a warehouse
-for that information so that I may remove all those bits and pieces of junk before creating the
-final and hopefully better way of storing this information.
-
-=cut
-sub Get_Paths {
-    my ($options, %args) = @_;
-    my $subroutine = $args{subroutine};
-    $subroutine = Bio::Adventure::Config::Get_Caller() unless($subroutine);
-    $subroutine = 'undef' if (!defined($subroutine));
-    my $libtype = 'genome';
-    $libtype = $options->{libtype} if (defined($options->{libtype}));
-    my $libpath_prefix = qq"$options->{libpath}/${libtype}";
-    my $libdir_prefix = qq"$options->{libdir}/${libtype}";
-    my $output_prefix = qq"$options->{output_base}/$options->{jprefix}";
-    my $cwd_name = basename(fastcwd());
-    my $paths = {};
-    my $outputs = {};
-    my @input_array = ();
-    my @output_array = ();
-    my @output_base_array = ();
-    if (defined($options->{input})) {
-        @input_array = split(/$options->{delimiter}/, $options->{input});
-        $paths->{input_suffix} = $options->{input};
-        $paths->{input_suffix} =~ s/\.[xgb]z$//g;
-        if ($paths->{input_suffix} =~ /\..*$/) {
-            $paths->{input_suffix} =~ s/^.*\.(.*)$/$1/g;
-        }
-        ##$paths->{output_base} = basename($options->{input}, @{$options->{suffix_array}});
-        ##$paths->{output_base} = basename($paths->{output_base}, @{$options->{suffix_array}});
-        $paths->{input_dirname} = dirname($options->{input});
-        if ($paths->{input_dirname} eq '.' || $paths->{input_dirname} eq q{}) {
-            $paths->{input_dirname} = fastcwd();
-        }
-    } else {
-        $paths->{input_dirname} = fastcwd();
-        @input_array = ($options->{input});
-    }
-
-    local *basebase = sub {
-        my $in = shift;
-        if (!defined($in)) {
-            warn("Expected a file path but received undefined.\n");
-            return('undefined');
-        }
-        my $out = basename($in, @{$options->{suffix_array}});
-        $out = basename($out, @{$options->{suffix_array}});
-        return($out);
-    };
-
-    my @input_base_array = ();
-    if (@input_array) {
-        @input_base_array = map { basebase($_) } @input_array;
-    } else {
-        print "The input array was not defined in Config::Get_Paths.\n";
-        @input_array = ('undefined');
-    }
-
-    $paths->{output_base} = $input_base_array[0];
-    $paths->{input_array} = \@input_array;
-    $paths->{input_base_array} = \@input_base_array;
-    $paths->{cwd_name} = $cwd_name;
-    $paths->{nosuffix} = qq"$paths->{input_dirname}/$paths->{output_base}";
-    $paths->{time} = qq"$paths->{nosuffix}.time";
-    $paths->{blast_dir} = qq"${libpath_prefix}/blast";
-    $paths->{codon_dir} = qq"${libpath_prefix}/codon_tables";
-    $paths->{fasta_dir} = qq"${libpath_prefix}/fasta";
-    $paths->{gbk_dir} = qq"${libpath_prefix}/genbank";
-    $paths->{gff_dir} = qq"${libpath_prefix}/gff";
-    $paths->{gtf_dir} = qq"${libpath_prefix}/gtf";
-    $paths->{hmm_dir} = qq"${libpath_prefix}/hmm";
-    $paths->{index_prefix} = qq"${libpath_prefix}/indexes";
-    $paths->{index_prefix_shell} = qq"${libdir_prefix}/indexes";
-    $paths->{output_prefix} = $output_prefix;
-    $paths->{output_dir} = qq"${output_prefix}$paths->{output_base}";  ## In case output_dir is not provided.
-    $paths->{jname} = $paths->{output_base};
-    if (!defined($options->{jprefix})) {
-        $options->{jprefix} = '01';
-    }
-    $options->{jname} = $paths->{jname};
-    if ($options->{jprefix}) {
-        $options->{jname} = qq"$options->{jprefix}$options->{jname_prefix}";
-    }
-    if ($options->{libtype}) {
-        $options->{jname} .= "_$options->{libtype}";
-    }
-    make_path($paths->{blast_dir}) unless (-d $paths->{blast_dir});
-    make_path($paths->{codon_dir}) unless (-d $paths->{codon_dir});
-    make_path($paths->{fasta_dir}) unless (-d $paths->{fasta_dir});
-    make_path($paths->{gff_dir}) unless (-d $paths->{gff_dir});
-    make_path($paths->{gtf_dir}) unless (-d $paths->{gtf_dir});
-    make_path($paths->{gbk_dir}) unless (-d $paths->{gbk_dir});
-    make_path($paths->{hmm_dir}) unless (-d $paths->{hmm_dir});
-    make_path($paths->{index_prefix}) unless (-d $paths->{index_prefix});
-    if (defined($ENV{BLAST_DB})) {
-        if ($ENV{BLAST_DB} =~ /:/) {
-            my @blast = split(/:/, $ENV{BLAST_DB});
-            unless (grep(/$paths->{blast_dir}/, @blast)) {
-                $ENV{BLAST_DB} = qq"$ENV{BLAST_DB}:$paths->{blast_dir}";
-            }
-        } else {
-            unless ($paths->{blast_dir} eq $ENV{BLAST_DB}) {
-                $ENV{BLAST_DB} = qq"$ENV{BLAST_DB}:$paths->{blast_dir}";
-            }
-        }
-    } else {
-        $ENV{BLAST_DB} = $paths->{blast_dir};
-    }
-    if (defined($options->{species})) {
-        $paths->{fasta} = qq"$paths->{fasta_dir}/$options->{species}.fasta";
-        $paths->{fasta_shell} = qq"${libdir_prefix}/fasta/$options->{species}.fasta";
-        $paths->{gff} = qq"$paths->{gff_dir}/$options->{species}.gff";
-        $paths->{gff_shell} = qq"${libdir_prefix}/gff/$options->{species}.gff";
-        $paths->{gtf} = qq"$paths->{gtf_dir}/$options->{species}.gtf";
-        $paths->{gtf_shell} = qq"${libdir_prefix}/gtf/$options->{species}.gtf";
-        $paths->{gbk} = qq"$paths->{gbk_dir}/$options->{species}.gbk";
-        $paths->{gbk_shell} = qq"${libdir_prefix}/genbank/$options->{species}.gbk";
-    }
-
-    print "At end of primary Get_Paths\n";
-    ## Adding this so I can write down examples above for the various slots in $paths.
-    print Dumper $paths;
-
-    ## Fill this in instead of this stupid if elsif shenanigans.
-    ##my $subroutine_paths = {
-    ##    'Bowtie' => {
-    ##        index => qq"$paths->{index_prefix}/bt1/$options->{species}",
-    ##        index_shell => qq"$paths->{index_prefix_shell}/bt1/$options->{species}",
-    ##        index_file => qq"$paths->{index}.1.ebwt",
-    ##        index_file_shell =>  qq"$paths->{index_shell}.1.ebwt",
-    ##        output_dir => qq"${output_prefix}bowtie_$options->{species}",
-    ##    },
-    ##    'Bowtie2' => {
-    ##    },
-    ##};
-    given ($subroutine) {
-        when ('Any2Any') {
-            ## Not yet
-        }
-        when ('Bam2Bigwig') {
-            $paths->{output_dir} = $paths->{input_dirname};
-        }
-        when ('Bedtools_Coverage') {
-            ## Not currently using anything
-        }
-        when ($_ eq 'Bowtie' || $_ eq 'BT1_Index') {
-            $paths->{index} = qq"$paths->{index_prefix}/bowtie/$options->{species}";
-            $paths->{index_shell} = qq"$paths->{index_prefix_shell}/bowtie/$options->{species}";
-            $paths->{index_file} = qq"$paths->{index}.1.ebwt";
-            $paths->{index_file_shell} = qq"$paths->{index_shell}.1.ebwt";
-            $paths->{output_dir} = qq"${output_prefix}bowtie_$options->{species}";
-        }
-        when ('BT1_Stats') {
-            $paths->{output_dir} = $paths->{input_dirname};
-        }
-        when ($_ eq 'Bowtie2' || $_ eq 'BT2_Index') {
-            $paths->{index} = qq"$paths->{index_prefix}/bt2/$options->{species}";
-            $paths->{index_dir} = qq"$paths->{index_prefix}/bt2";
-            $paths->{index_file} = qq"$paths->{index}.1.bt2";
-            $paths->{index_file2} = qq"$paths->{index}.1.bt2l";
-            $paths->{index_shell} = qq"$paths->{index_prefix_shell}/bt2/$options->{species}";
-            $paths->{index_file_shell} = qq"$paths->{index_shell}.1.bt2";
-            $paths->{index_file2_shell} = qq"$paths->{index_shell}.1.bt2l";
-            $paths->{output_dir} = qq"${output_prefix}bowtie2_$options->{species}";
-        }
-        when ($_ eq 'BWA' || $_ eq 'BWA_Index') {
-            $paths->{index} = qq"$paths->{index_prefix}/bwa/$options->{species}";
-            $paths->{index_dir} = qq"$paths->{index_prefix}/bwa";
-            $paths->{index_shell} = qq"$paths->{index_prefix_shell}/bwa/$options->{species}";
-            $paths->{index_file} = qq"$paths->{index}.sa";
-            $paths->{index_file_shell} = qq"$paths->{index_shell}.sa";
-            $paths->{output_dir} = qq"${output_prefix}bwa_$options->{species}";
-        }
-        when (/^Caical/) {
-            $paths->{output_dir} = qq"${output_prefix}caical";
-        }
-        when ('Check_Blastdb') {
-            ## Not yet
-        }
-        when (/Classify_Phage/) {
-            $paths->{output_dir} = qq"${output_prefix}classify_phage";
-            $paths->{log} = qq"$paths->{output_dir}/classify_phage.log";
-        }
-        when ($_ eq 'Compress' || $_ eq 'Recompress') {
-            $paths->{output_dir} = qq"${output_prefix}xz";
-        }
-        ## The _Worker is wrong
-        when (/^Concatenate_Searches/) {
-            $paths->{output_dir} = $paths->{input_dirname};
-        }
-        when (/^Dantools/) {
-            $paths->{output_dir} = qq"${output_prefix}dantools_rna";
-            $paths->{log} = qq"$paths->{output_dir}/dantools_rnaseq.log";
-        }
-        when ('Download_NCBI_Assembly') {
-            $paths->{output_dir} = qq"${output_prefix}download_assembly";
-            $paths->{log} = qq"$paths->{output_dir}/download_assembly.log";
-        }
-        when ('Downsample_Guess_Strand') {
-            $paths->{index} = qq"$paths->{index_prefix}/salmon/$options->{species}";
-            $paths->{index_dir} = qq"$paths->{index_prefix}/salmon";
-            $paths->{index_shell} = qq"$paths->{index_prefix_shell}/salmon/$options->{species}";
-            $paths->{output_dir} = qq"${output_prefix}salmon_downsample_$options->{species}";
-        }
-        when ('Duplicate_Remove') {
-            ## Not yet
-        }
-        when ('Extend_Kraken_DB') {
-            $paths->{output_dir} = qq"${output_prefix}extend_kraken";
-        }
-        when ('Extract_Subseq') {
-            $paths->{output_dir} = qq"${output_prefix}subseq";
-        }
-        when ('Fastqc') {
-            $paths->{output_dir} = qq"${output_prefix}fastqc";
-            $paths->{output_subdir} = qq"$paths->{output_dir}/$paths->{output_base}_fastqc";
-        }
-        when ('Fastqc_Stats') {
-            $paths->{output_dir} = $paths->{input_dirname};
-        }
-        when ('Feature_Counts') {
-            $paths->{output_dir} = qq"${output_prefix}featureCounts";
-        }
-        when (/^Filter_Host_Kraken/) {
-            $paths->{output_dir} = qq"${output_prefix}filter_kraken";
-            $paths->{index_dir} = qq"$paths->{index_prefix}/hisat";
-        }
-        when ($_ eq 'Freebayes_SNP_Search' || $_ eq 'SNP_Ratio' || $_ eq 'SNP_Ratio_Worker' ||
-              $_ eq 'SNP_Ratio_Intron' || $_ eq 'SNP_Ratio_Intron_Worker') {
-            $paths->{output_dir} = qq"${output_prefix}freebayes_$options->{species}";
-        }
-        when ('GATK_Dedup') {
-            $paths->{output_dir} = qq"${output_prefix}gatk_dedup";
-        }
-        when (/^Gb2Gff/) {
-            $paths->{output_dir} = qq"${output_prefix}gb2gff";
-        }
-        when ('Get_Substitution_Matrix') {
-            $paths->{output_dir} = qq"${output_prefix}matrices";
-        }
-        when ('GFF_Tree') {
-            $paths->{output_dir} = qq"${output_prefix}gff_tree";
-        }
-        when ('Gff2Fasta') {
-            $paths->{output_dir} = qq"${output_prefix}gff2fasta";
-        }
-        when (/^Guess_Strand/) {
-            ## Not yet
-        }
-        when ($_ eq 'Hisat2' || $_ eq 'Hisat2_Stats') {
-            $paths->{index_dir} = qq"$paths->{index_prefix}/hisat";
-            $paths->{index} = qq"$paths->{index_dir}/$options->{species}";
-            $paths->{index_shell} = qq"$paths->{index_prefix_shell}/hisat/$options->{species}";
-            $paths->{index_file} = qq"$paths->{index}.1.ht2";
-            $paths->{index_file_shell} = qq"$paths->{index_shell}.1.ht2";
-            $paths->{index_file2} = qq"$paths->{index}.1.ht2l";
-            $paths->{index_file2_shell} = qq"$paths->{index_shell}.1.ht2l";
-            $paths->{output_dir} = qq"${output_prefix}hisat_$options->{species}";
-            $paths->{index_stderr} = qq"${output_prefix}/hisat2_index_$options->{species}.stderr";
-            $paths->{index_stdout} = qq"${output_prefix}/hisat2_index_$options->{species}.stdout";
-        }
-        when ('Hisat2_Index') {
-            if (!defined($options->{species})) {
-                $options->{species} = basename($options->{input}, ('.fsa', '.fasta', '.fa'));
-                $paths->{fasta} = qq"$paths->{fasta_dir}/$options->{species}.fasta";
-                $paths->{fasta_shell} = qq"${libdir_prefix}/fasta/$options->{species}.fasta";
-                $paths->{gff} = qq"$paths->{gff_dir}/$options->{species}.gff";
-                $paths->{gff_shell} = qq"${libdir_prefix}/gff/$options->{species}.gff";
-            }
-            $paths->{index_dir} = qq"$paths->{index_prefix}/hisat";
-            $paths->{index} = qq"$paths->{index_dir}/$options->{species}";
-            $paths->{index_shell} = qq"$paths->{index_prefix_shell}/hisat/$options->{species}";
-            $paths->{index_file} = qq"$paths->{index}.1.ht2";
-            $paths->{index_file_shell} = qq"$paths->{index_shell}.1.ht2";
-            $paths->{index_file2} = qq"$paths->{index}.1.ht2l";
-            $paths->{index_file2_shell} = qq"$paths->{index_shell}.1.ht2l";
-            $paths->{output_dir} = qq"${output_prefix}index_hisat2_$options->{species}";
-            make_path($paths->{output_dir}, {verbose => 0}) unless (-r $paths->{output_dir});
-        }
-        when ('Hisat2_Stats') {
-            $paths->{output_dir} = $paths->{input_dirname};
-        }
-        when ($_ eq 'HT_Multi' || $_ eq 'HTSeq' || $_ eq 'HT_Types') {
-            ## Not yet
-        }
-        when ('Insert_Size') {
-            $paths->{output_dir} = dirname($options->{input});
-        }
-        when ($_ eq 'Jellyfish' || $_ eq 'Jellyfish_Matrix') {
-            $paths->{output_dir} = qq"${output_prefix}jellyfish_${cwd_name}";
-            $paths->{jelly_base} = qq"$paths->{output_dir}/$ {cwd_name}_$options->{length}";
-        }
-        when ($_ eq 'Kallisto' || $_ eq 'Kallisto_Index') {
-            $paths->{index_dir} = qq"$paths->{index_prefix}/kallisto";
-            $paths->{index_file} = qq"$paths->{index_prefix}/kallisto/$options->{species}.idx";
-            $paths->{index_file_shell} = qq"$paths->{index_prefix_shell}/kallisto/$options->{species}.idx";
-            $paths->{output_dir} = qq"${output_prefix}kallisto_$options->{species}";
-            $paths->{index_dir} = qq"${output_prefix}kallisto_index_$options->{species}";
-        }
-        when (/^Kraken/) {
-            $paths->{output_dir} = qq"${output_prefix}kraken_$options->{library}";
-        }
-        when ('Make_Blast_Job') {
-            ## Not yet
-        }
-        when ('Make_Codon_Table') {
-            ## Not yet
-        }
-        when ('Mash') {
-            ## Not yet
-        }
-        when ('Mauve_Aligner') {
-            $paths->{output_dir} = qq"${output_prefix}/mauve";
-        }
-        when (/^Merge_Annotations/) {
-            $paths->{output_dir} = qq"${output_prefix}mergeannot";
-        }
-        when ($_ eq 'Mi_Map' || $_ eq 'Read_Bam_Mi' || %_ eq 'Final_Print_Mi') {
-            ## Not yet
-        }
-        when ('Mpileup') {
-            $paths->{output_dir} = qq"${output_prefix}mpileup_$options->{species}";
-        }
-        when ('Nextflow_RNASeq') {
-            $paths->{output_dir} = qq"${output_prefix}nf_rna_$options->{species}";
-        }
-        when (/^OrthoFinder/) {
-            $paths->{output_dir} = qq"${output_prefix}orthofinder";
-            $paths->{fasta_dir} = qq"$paths->{output_dir}/input";
-        }
-        when ('Pairwise_Similarity_Matrix') {
-            $paths->{output_dir} = qq"${output_prefix}pairwise_blast";
-        }
-        when ('PolyA_Recorder') {
-            $paths->{output_dir} = qq"${output_prefix}polya_recorder_$options->{species}";
-        }
-        when ('Prodigal') {
-            my $input_name = basename($options->{input}, ('.fasta', '.fsa', '.ffn'));
-            $paths->{output_dir} = qq"${output_prefix}prodigal_${input_name}";
-        }
-        when ('Progressive_Mauve') {
-            $paths->{output_dir} = qq"${output_prefix}/pmauve";
-        }
-        when (%_ eq 'ProteinFold' || $_ eq 'ProteinFold_Worker') {
-            my $output_suffix = basename($options->{input}, ('.fsa', '.faa', '.fasta', '.fa', '.ffn'));
-            $paths->{output_dir} = qq"${output_prefix}proteinfold_${output_suffix}";
-        }
-        when ($_ eq 'ProteinFold_PairIDs' || $_ eq 'ProteinFold_PairIDs_Worker') {
-            my ($in1, $in2) = split(/$options->{delimiter}/, $options->{input});
-            my $output_suffix_first = basename($in1, ('.txt', '.fsa', '.faa', '.fasta', '.fa', '.ffn'));
-            my $output_suffix_second = basename($in2, ('.txt', '.fsa', '.faa', '.fasta', '.fa', '.ffn'));
-            $paths->{output_dir} = qq"${output_prefix}${output_suffix_first}";
-            $paths->{cif_output_dir} = qq"${output_prefix}${output_suffix_first}/${output_suffix_second}";
-            $paths->{suffix_first} = $output_suffix_first;
-            $paths->{suffix_second} = $output_suffix_second;
-        }
-        when (/^RNAFold_Windows/) {
-            $paths->{output_dir} = qq"${output_prefix}rnafold";
-        }
-        when (/^RSEM/) {
-            $paths->{index} = qq"$paths->{index_prefix}/rsem/$options->{species}";
-            $paths->{index_dir} = qq"$paths->{index_prefix}/rsem";
-            $paths->{index_shell} = qq"$paths->{index_prefix_shell}/rsem/$options->{species}";
-            $paths->{index_file} = qq"$paths->{index}.transcripts.fa";
-            $paths->{index_file_shell} = qq"$paths->{index_shell}.transcripts.fa";
-            $paths->{output_dir} = qq"${output_prefix}rsem_$options->{species}";
-        }
-        when ('Run_Parse_Blast') {
-            my $libname = basename($options->{library}, $options->{suffix_array});
-            $paths->{output_dir} = qq"${output_prefix}blast_$options->{input}_vs_${libname}";
-        }
-        when ($_ eq 'Salmon' || $_ eq 'Salmon_Index') {
-            $paths->{index} = qq"$paths->{index_prefix}/salmon/$options->{species}";
-            $paths->{index_dir} = qq"$paths->{index_prefix}/salmon/$options->{species}";
-            $paths->{index_shell} = qq"$paths->{index_prefix_shell}/salmon/$options->{species}";
-            $paths->{output_dir} = qq"${output_prefix}salmon_$options->{species}_$options->{libtype}";
-        }
-        when ($_ eq 'Sam2Bam' || $_ eq 'Samtools') {
-            $paths->{output_dir} = qq"$paths->{input_dirname}";
-            $paths->{output_dir} = qq"$paths->{input_dirname}";
-        }
-        when ('SLSearch') {
-            $paths->{output_dir} = qq"${output_prefix}slsearch_$options->{species}";
-        }
-        when ('SL_Recorder') {
-            $paths->{output_dir} = qq"${output_prefix}sl_recorder_$options->{species}";
-        }
-        when ('Split_Align_Blast') {
-            my $libname = basename($options->{library}, $options->{suffix_array});
-            $paths->{output_dir} = qq"${output_prefix}blastsplit_$paths->{output_base}_vs_${libname}";
-        }
-        when ($_ eq 'Split_Align_Fasta' || $_ eq 'Split_Align_Fasta_Worker' ||
-              $_ eq 'Parse_Fasta' || $_ eq 'Parse_Fasta_Global' ||
-              $_ eq 'Make_Fasta_Job' || $_ eq 'Parse_Fasta_Worker' ||
-              $_ eq 'Parse_Fasta_Mismatches') {
-            my $libname = basename($options->{library}, @{$options->{suffix_array}});
-            $libname = basename($libname, @{$options->{suffix_array}});
-            my $query = basename($options->{input}, @{$options->{suffix_array}});
-            $query = basename($query, @{$options->{suffix_array}});
-            if ($subroutine =~ /Parse/) {
-                ## The input for this is already x_vs_y
-                $query =~ s/^(.*)_vs_.*$/$1/g;
-            }
-            $options->{output_base} = qq"outputs";
-            $output_prefix = qq"$options->{output_base}/$options->{jprefix}";
-            $paths->{output_dir} = qq"${output_prefix}fasta_${query}_${libname}";
-            ## Note, basing the output filename on a variable is dangerous
-            $paths->{output_filename_base} = qq"${query}_vs_${libname}";
-        }
-        when ('Split_Fasta') {
-            $paths->{output_dir} = qq"${output_prefix}split";
-        }
-        when ('Spring') {
-            my $input_name = basename($options->{input}, ('.gz', '.bz2', '.xz'));
-            $input_name = basename($input_name, ('.fastq'));
-            $paths->{output_dir} = qq"${output_prefix}spring";
-        }
-        when (/^STAR/) {
-            $paths->{index} = qq"$paths->{index_prefix}/star/$options->{species}";
-            $paths->{index_dir} = qq"$paths->{index_prefix}";
-            $paths->{index_file} = qq"$paths->{index}/SAindex";
-            $paths->{index_file_shell} = qq"$paths->{index_shell}/SAindex";
-            $paths->{index_shell} = qq"$paths->{index_prefix_shell}/star/$options->{species}";
-            $paths->{output_dir} = qq"${output_prefix}star_$options->{species}";
-        }
-        when (/^Terminase_ORF_Reorder/) {
-            $paths->{output_dir} = qq"${output_prefix}terminase_reorder";
-        }
-        when ('Test_Worker') {
-            $paths->{funkytown} = qq"$paths->{index_prefix}/funkytown";
-        }
-        when ('Tophat') {
-            $paths->{index} = qq"$paths->{index_prefix}/tophat/$options->{species}";
-            $paths->{index_dir} = qq"$paths->{index_prefix}/tophat";
-            $paths->{index_file} = qq"$paths->{index}.1.bt2";
-            $paths->{index_file_shell} = qq"$paths->{index_shell}.1.bt2";
-            $paths->{index_shell} = qq"$paths->{index_prefix_shell}/tophat/$options->{species}";
-            $paths->{output_dir} = qq"${output_prefix}tophat_$options->{species}";
-        }
-        when ('Transit_TPP') {
-            $paths->{output_dir} = qq"${output_prefix}transit_$options->{species}";
-        }
-        when ('Trimomatic_Pairwise') {
-            $paths->{output_dir} = qq"${output_prefix}trimomatic";
-        }
-        when ('Trimomatic_Single') {
-            $paths->{output_dir} = qq"${output_prefix}trimomatic";
-        }
-        when ('Trimomatic_Stats') {
-            $paths->{output_dir} = $paths->{input_dirname};
-        }
-        when ('Umi_Tools_Extract') {
-            $paths->{output_dir} = qq"${output_prefix}umi_tools";
-        }
-        when ('Umi_Tools_Dedup') {
-            $paths->{output_dir} = qq"${output_prefix}umi_dedup";
-        }
-        when ('Unicycler') {
-            $paths->{output_dir} = qq"${output_prefix}unicycler";
-        }
-        when ('Velvet') {
-            $paths->{output_dir} = qq"${output_prefix}velvet";
-        }
-        default {
-            $paths->{output_dir} = $paths->{input_dirname};
-        }
-    }  ## End the given
-    if ($paths->{index_file}) {
-        my $index_directory = dirname($paths->{index_file});
-        make_path($index_directory) unless (-d $index_directory);
-    }
-    if (!defined($paths->{log})) {
-        $paths->{log} = qq"$paths->{output_dir}/log.txt";
-    }
-    ## Create the output directory and set a default stdout/stderr file.
-    make_path($paths->{output_dir}) unless (-d $paths->{output_dir});
-    return($paths);
-}
-
-=head2 C<Get_Spec>
-
-Define the parameters on a computing cluster required to submit a job and expect it to succeed.
-This is where I would really like to start using the heuristics for memory/time consumption.
-
-=cut
-sub Get_Spec {
-    my ($class, %args) = @_;
-    my $function = Bio::Adventure::Config::Get_Caller();
-    ## I think that with recent changes, one need no longer add 'cyoa' as a module.
-    my %spec_data = (
-        'Default' => {
-            jcomment => 'Default placeholder comment.',
-            jcpu => 1,
-            jgpu => 0,
-            jmem => 4,
-            jname_prefix => 'default',
-            jprefix => '99',
-            jwalltime => '2:00:00',
-        },
-        'Test' => {
-            jcomment => 'Comment for a test job.',
-            jcpu => 1,
-            jgpu => 0,
-            jmem => 12,
-            jname_prefix => 'test',
-            jprefix => '99',
-            jwalltime => '2:00:00',
-        },
-        'Abyss' => {
-            jcomment => 'Assemble a genome via makefile shenanigans.',
-            jcpu => 6,
-            jmem => 12,
-            jname_prefix => 'abyss',
-            jprefix => '15',
-            jwalltime => '4:00:00',
-        },
-        'Align_SNP_Search' => {
-            jcomment => 'Extract variants from short reads.',
-            jcpu => 4,
-            jmem => 8,
-            jname_prefix => 'snpsearch',
-            jprefix => '80',
-            jwalltime => '8:00:00',
-        },
-        'Aragorn' => {
-            jcomment => 'Seek (m)tRNA genes with Aragorn.',
-            jcpu => 1,
-            jmem => 4,
-            jname_prefix => 'aragorn',
-            jprefix => '21',
-            jwalltime => '1:00:00',
-        },
-        'Assembly_Coverage' => {
-            jcomment => 'Use hisat2 and bbmap to create a coverage map.',
-            jcpu => 6,
-            jmem => 18,
-            jname_prefix => 'assemblecov',
-            jprefix => '18',
-            jwalltime => '8:00:00',
-        },
-        'Bacphlip' => {
-            jcomment => 'ML method to seek lytic/lysogenic phage sequences.',
-            jcpu => 2,
-            jmem => 12,
-            jname_prefix => 'bacphlip',
-            jprefix => '80',
-            jwalltime => '1:00:00',
-        },
-        'Bam2Bigwig' => {
-            jcomment => 'Convert an alignment to bigwig with deeptools.',
-            jcpu => 1,
-            jmem => 8,
-            jname_prefix => 'bam2bw',
-            jprefix => '60',
-            jwalltime => '01:00:00',
-        },
-        'Bedtools_Coverage' => {
-            jcomment => 'Use bedtools to create a coverage map.',
-            jcpu => 1,
-            jmem => 8,
-            jname_prefix => 'bedtools',
-            jprefix => '60',
-            jwalltime => '2:00:00',
-        },
-        'Bowtie' => {
-            jcomment => 'Fast short-read aligner.',
-            jcpu => 4,
-            jmem => 12,
-            jname_prefix => 'bowtie',
-            jprefix => '10',
-            jwalltime => '4:00:00',
-        },
-        'Bowtie_RRNA' => {
-            jcomment => 'Quantify rRNA reads in a short-read dataset.',
-            jcpu => 2,
-            jmem => 8,
-            jname_prefix => 'bt_rrna',
-            jprefix => '11',
-            jwalltime => '3:00:00',
-        },
-        'Bowtie2' => {
-            jcomment => 'Fast short-read aligner, version 2.',
-            jcpu => 4,
-            jmem => 12,
-            jname_prefix => 'bowtie2',
-            jprefix => '20',
-            jwalltime => '8:00:00',
-        },
-        'BT1_Index' => {
-            jcomment => 'Index a genome using bowtie1.',
-            jcpu => 2,
-            jmem => 20,
-            jname_prefix => 'bt1_index',
-            jprefix => '10',
-            jwalltime => '2:00:00',
-        },
-        'BT1_Stats' => {
-            jcomment => 'Collect mapping stats for bowtie1.',
-            jcpu => 1,
-            jmem => 1,
-            jname_prefix => 'bt1_stats',
-            jprefix => '90',
-            jwalltime => '00:01:00',
-        },
-        'BT2_Index' => {
-            jcomment => 'Index a genome using bowtie2.',
-            jcpu => 2,
-            jmem => 20,
-            jname_prefix => 'bt2_index',
-            jprefix => '10',
-            jwalltime => '2:00:00',
-        },
-        'BT2_Stats' => {
-            jcomment => 'Collect mapping stats for bowtie2.',
-            jcpu => 1,
-            jmem => 1,
-            jname_prefix => 'bt2_stats',
-            jprefix => '90',
-            jwalltime => '00:01:00',
-        },
-        'BWA' => {
-            jcomment => 'Use the Burroughs-Wheeler aligner to quickly align short reads.',
-            jcpu => 4,
-            jmem => 40,
-            jname_prefix => 'bwa',
-            jprefix => '30',
-            jwalltime => '72:00:00',
-        },
-        'BWA_Index' => {
-            jcomment => 'Index a genome using bwa.',
-            jcpu => 2,
-            jmem => '12',
-            jname_prefix => 'bwa_index',
-            jprefix => '10',
-            jwalltime => '2:00:00',
-        },
-        'BWA_Stats' => {
-            jcomment => 'Collect mapping stats for bwa.',
-            jcpu => 1,
-            jmem => 1,
-            jname_prefix => 'bwa_stats',
-            jprefix => '90',
-            jwalltime => '00:01:00',
-        },
-        'Caical' => {
-            jcomment => 'Calculate the codon adaptation index of a set of sequences.',
-            jcpu => 1,
-            jmem => 4,
-            jname_prefix => 'caical',
-            jprefix => '80',
-            jwalltime => '2:00:00',
-        },
-        'Caical_CDS' => {
-            jcomment => 'Calculate the codon adaptation index of a set of sequences.',
-            jcpu => 1,
-            jmem => 4,
-            jname_prefix => 'caical',
-            jprefix => '80',
-            jwalltime => '2:00:00',
-        },
-        'Casfinder' => {
-            jcomment => 'Seek Cas-like genes in bacterial genomes.',
-            jcpu => 4,
-            jmem => 8,
-            jname_prefix => 'casfinder',
-            jprefix => '22',
-            jwalltime => '1:00:00',
-        },
-        'Casoff' => {
-            jcomment => 'An incomplete, separate Cas-search.',
-            jcpu => 4,
-            jmem => 8,
-            jname_prefix => 'casoff',
-            jprefix => '22',
-            jwalltime => '2:00:00',
-        },
-        'CGView' => {
-            jcomment => 'Run cgview on an assembly.',
-            jcpu => 1,
-            jmem => 8,
-            jname_prefix => 'cgview',
-            jwalltime => '2:00:00',
-        },
-        'Classify_Phage' => {
-            jcomment => 'Viral classification via tblastx.',
-            jcpu => 4,
-            jmem => 12,
-            jname_prefix => 'phageclass',
-            jprefix => '18',
-            jwalltime => '2:00:00',
-        },
-        'Cogent' => {
-            jcomment => 'Use the cogent pipeline to handle umi data.',
-            jcpu => 4,
-            jmem => 24,
-            jname_prefix => 'cogent',
-            jprefix => '01',
-            jwalltime => '36:00:00',
-        },
-        'Collect_Assembly' => {
-            jcomment => 'Collect all the outputs of an assembly pipeline into 1 place.',
-            jcpu => 1,
-            jmem => 1,
-            jname_prefix => 'collect',
-            jprefix => '81',
-            jwalltime => '0:10:00',
-        },
-        'Compress' => {
-            jcomment => 'Compress an input using xz.',
-            jcpu => 1,
-            jmem => 4,
-            jname_prefix => 'xz',
-            jprefix => $args{jprefix},
-            jwalltime => '12:00:00',
-        },
-        'Concatenate_Searches' => {
-            jcomment => 'Concatenate BLAST output files.',
-            jcpu => 1,
-            jmem => 4,
-            jname_prefix => 'concat',
-            jprefix => $args{jprefix},
-            jwalltime => '1:00:00',
-        },
-        'Consolidate_TAs' => {
-            jcomment => 'Consolidate mariner sequences from a TNSeq data set.',
-            jcpu => 1,
-            jmem => 8,
-            jname_prefix => 'consolidateta',
-            jprefix => '59',
-            jwalltime => '4:00:00',
-        },
-        'Contig_Reoder' => {
-            jcomment => 'Use mauve to rearrange contigs',
-            jcpu => 2,
-            jmem => 24,
-            jname_prefix => 'contigreorder',
-            jprefix => '19',
-            jwalltime => '1:00:00',
-        },
-        'Cutadapt' => {
-            jcomment => 'Trim sequence with cutadapt.',
-            jcpu => 4,
-            jmem => 12,
-            jname_prefix => 'cutadapt',
-            jprefix => '01',
-            jwalltime => '30:00:00',
-        },
-        'Cutadapt_Stats' => {
-            jcomment => 'Collect mapping stats from cutadapt.',
-            jcpu => 1,
-            jmem => 1,
-            jname_prefix => 'cutadapt_stats',
-            jprefix => '90',
-            jwalltime => '00:01:00',
-        },
-        'Dantools_RNASeq' => {
-            jcomment => 'Invoke dantools on rnaseq data.',
-            jcpu => 8,
-            jmem => 24,
-            jname_prefix => 'dantools',
-            jprefix => '22',
-            jwalltime => '64:00:00',
-        },
-        'Downsample_Guess_Strand' => {
-            jcomment => 'Use salmon on the first few reads to guess the library type.',
-            jcpu => 4,
-            jmem => 24,
-            jname_prefix => 'salmonguess',
-            jprefix => '45',
-            jwalltime => '0:20:00',
-        },
-        'Essentiality_TAs' => {
-            jcomment => 'Extract TA sequences from a TNSeq dataset.',
-            jcpu => 2,
-            jmem => 8,
-            jname_prefix => 'essentiality_ta',
-            jprefix => '40',
-            jwalltime => '12:00:00',
-        },
-        'Extend_Kraken_DB' => {
-            jcomment => 'Update an existing kraken2 database.',
-            jcpu => 6,
-            jmem => 64,
-            jname_prefix => 'kraken_extend',
-            jprefix => '09',
-            jwalltime => '36:00:00',
-        },
-        'Fastqc' => {
-            jcomment => 'Estimate sequence quality with fastqc.',
-            jcpu => 4,
-            jmem => 6,
-            jname_prefix => 'fastqc',
-            jprefix => '02',
-            jwalltime => '03:00:00',
-        },
-        'Fastqc_Stats' => {
-            jcomment => 'Collect results from fastqc.',
-            jcpu => 1,
-            jmem => 1,
-            jname_prefix => 'fastqc_stats',
-            jprefix => '90',
-            jwalltime => '00:01:00',
-        },
-        'Fastp' => {
-        },
-        'Fastp_Stats' => {
-            jcomment => 'Collect mapping stats from fastp.',
-            jcpu => 1,
-            jmem => 1,
-            jname_prefix => 'fastp_stats',
-            jprefix => '90',
-            jwalltime => '00:01:00',
-        },
-        'Feature_Counts' => {
-            jcomment => 'Quantify reads from an alignment with featureCounts.',
-            jcpu => 4,
-            jmem => 12,
-            jname_prefix => 'fcounts',
-            jprefix => '44',
-            jwalltime => '4:00:00',
-        },
-        'Filter_Host_Kraken' => {
-            jcomment => 'Use kraken to find the likely host of a viral sequence and remove them.',
-            jcpu => 1,
-            jmem => 8,
-            jname_prefix => 'filter_host',
-            jprefix => '06',
-            jwalltime => '2:00:00',
-        },
-        'Freebayes_SNP_Search' => {
-            jcomment => 'Seek variants with freebayes and write out the results.',
-            jcpu => 4,
-            jmem => 36,
-            jname_prefix => 'freebayes',
-            jprefix => '60',
-            jwalltime => '24:00:00',
-        },
-        'GATK_Dedup' => {
-            jcomment => 'Deduplicate reads via alignment positions of R1/R2.',
-            jcpu => 4,
-            jmem => 36,
-            jname_prefix => 'gatk_dedup',
-            jprefix => '55',
-            jwalltime => '40:00:00',
-        },
-        'Gb2Gff' => {
-            jcomment => 'Extract the various datatypes from a genbank file.',
-            jcpu => 1,
-            jmem => 6,
-            jname_prefix => 'gb2gff',
-            jprefix => '78',
-            jwalltime => '01:00:00',
-        },
-        'Generate_Samplesheet' => {
-            jcomment => 'Create a samplesheet from the logs produced by all these tools',
-            jcpu => 1,
-            jmem => 8,
-            jname_prefix => 'generate_metadata',
-            jprefix => '99',
-            jwalltime => '2:00:00',
-        },
-        'Get_Split' => {
-            jcomment => 'Split a fasta into pieces for searching.',
-            jcpu => 1,
-            jmem => 1,
-            jname_prefix => 'get_split',
-            jprefix => $args{jprefix},
-            jwalltime => '00:10:00',
-        },
-        'Gff2Fasta' => {  ## FIXME: Dispatch this to a worker!
-            jcomment => 'Extract sequences of arbitrary types from a genome and gff file.',
-            jcpu => 1,
-            jmem => 8,
-            jname_prefix => 'gff2fasta',
-            jprefix => '78',
-            jwalltime => '01:00:00',
-        },
-        'Glimmer' => {
-            jcomment => 'Seek prokaryotic genes with the OG ORF search method.',
-            jcpu => 1,
-            jmem => 8,
-            jname_prefix => 'glimmer',
-            jprefix => '16',
-            jwalltime => '1:00:00',
-        },
-        'Glimmer_Single' => {
-            jcomment => 'Seek prokaryotic genes with the OG ORF search method, without training.',
-            jcpu => 1,
-            jmem => 8,
-            jname_prefix => 'glimmer',
-            jprefix => '16',
-            jwalltime => '1:00:00',
-        },
-        'Gubbins' => {
-            jcomment => 'Given a fasta and outgroup, estimate their tree.',
-            jcpu => 8,
-            jmem => 24,
-            jname_prefix => 'gubbins',
-            jprefix => '65',
-            jwalltime => '24:00:00',
-        },
-        'Guess_Strand' => {
-            jcomment => 'Examine a bamfile to gather strandedness information.',
-            jcpu => 1,
-            jmem => 12,
-            jname_prefix => 'guess_strand',
-            jprefix => '46',
-            jwalltime => '8:00:00',
-        },
-        'Hisat2' => {
-            jcomment => 'Another iteration of bowtie, now with a new name!',
-            jcpu => 8,
-            jmem => 48,
-            jname_prefix => 'hisat',
-            jprefix => '40',
-            jwalltime => '36:00:00',
-        },
-        'Hisat2_Index' => {
-            jcomment => 'Index a genome using hisat2.',
-            jcpu => 4,
-            jmem => 20,
-            jname_prefix => 'index_hisat',
-            jprefix => '09',
-            jwalltime => '4:00:00',
-        },
-        'Hisat2_Stats' => {
-            jcomment => 'Collect mapping stats from hisat.',
-            jcpu => 1,
-            jmem => 1,
-            jname_prefix => 'hisat_stats',
-            jprefix => '90',
-            jwalltime => '00:01:00',
-        },
-        'HTSeq' => {
-            jcomment => 'Quantify observed reads/feature with htseq.',
-            jcpu => 1,
-            jmem => 30,
-            jname_prefix => 'htseq',
-            jprefix => '42',
-            jwalltime => '12:00:00',
-        },
-        'HT_Types' => {
-            ## This does not currently dispatch to a worker.
-            jcomment => 'Check the first lines of a gff file to find the most common tags/types.',
-            jcpu => 1,
-            jmem => 3,
-            jname_prefix => 'ht_types',
-            jprefix => '89',
-            jwalltime => '00:02:00',
-        },
-        'Insert_Size' => {
-            jcomment => 'Estimate the insert size of a library by looking at aligned paired reads.',
-            jcpu => 4,
-            jmem => 12,
-            jname_prefix => 'insert_size',
-            jprefix => '44',
-            jwalltime => '04:00:00',
-        },
-        'Interproscan' => {
-            jcomment => 'Use the a large suite of search tools to seek similarities to known elements.',
-            jcpu => 6,
-            jmem => 24,
-            jname_prefix => 'interpro',
-            jprefix => '21',
-            jwalltime => '36:00:00',
-        },
-        'Interpro_Long2Wide' => {
-            jcomment => 'Rewrite interproscan outputs to a tabular format.',
-            jcpu => 1,
-            jmem => 4,
-            jname_prefix => 'interl2w',
-            jprefix => '21',
-            jwalltime => '1:00:00',
-        },
-        'Jellyfish' => {
-            jcomment => 'Count kmers with jellyfish.',
-            jcpu => 4,
-            jmem => 12,
-            jname_prefix => 'jellyfish',
-            jprefix => '17',
-            jwalltime => '02:00:00',
-        },
-        'Jellyfish_Matrix' => {
-            jcomment => 'Create a matrix with rows as kmers and elements as number of occurrences.',
-            jcpu => 1,
-            jmem => 8,
-            jname_prefix => 'jelly_mtrx',
-            jprefix => '18',
-            jwalltime => '01:00:00',
-        },
-        'Kallisto' => {
-            jcomment => 'Fast quantitation method with the power of deBruijn.',
-            jcpu => 8,
-            jmem => 24,
-            jname_pref => 'kallisto',
-            jprefix => '46',
-            jwalltime => '8:00:00',
-        },
-        'Kallisto_Index' => {
-            jcomment => 'Index a genome using kallisto.',
-            jcpu => 4,
-            jmem => 24,
-            jname_prefix => 'kallisto_index',
-            jprefix => '09',
-            jwalltime => '4:00:00',
-        },
-        'Kraken' => {
-            jcomment => 'Use a kmer index to estimate reads/species.',
-            jcpu => 8,
-            jmem => 64,
-            jname_prefix => 'kraken',
-            jprefix => '11',
-            jwalltime => '04:00:00',
-        },
-        'Kraken_Best_Hit' => {
-            jcomment => 'Extract the best genus/phylum/etc from a kraken result.',
-            jcpu => 8,
-            jmem => 64,
-            jname_prefix => 'kraken_best',
-            jprefix => '11',
-            jwalltime => '4:00:00',
-        },
-        'Kraken_to_Matrix' =>  {
-            jcomment => 'Convert kraken output to a tabular format.',
-            jcpu => 1,
-            jmem => 6,
-            jname_prefix => 'kraken_mtrx',
-            jprefix => '12',
-            jwalltime => '00:30:00',
-        },
-        'Last_Stat' => {
-            ## Currently there is no scenario in which this job will run on a cluster.
-            cluster => 0,
-            jcomment => 'Get the last line of the stats file for a job.',
-            jcpu => 1,
-            jmem => 1,
-            jname_prefix => 'last_stat',
-            jprefix => '99',
-            jwalltime => '0:01:00',
-        },
-        'Make_Blast_Job' => {
-            jcomment => 'Run multiple BLAST jobs',
-            jcpu => 8,
-            jmem => 24,
-            jname_prefix => 'blast',
-            jprefix => '89',
-            jwalltime => '8:00:00',
-        },
-        'Make_Codon_Table' => {  ## Note to self, this needs to be dispatched.
-            jcomment => 'Create a table of relative codon abundances given a set of CDS.',
-            jcpu => 1,
-            jmem => 4,
-            jname_prefix => 'make_codon_table',
-            jprefix => '08',
-            jwalltime => '1:00:00',
-        },
-        'Make_Directories' => {
-            jcomment => 'Create directories for splitting a fasta file.',
-            jcpu => 1,
-            jmem => 1,
-            jname_prefix => 'align_mkdir',
-            jprefix => $args{jprefix},
-            jwalltime => '00:10:00',
-        },
-        'Make_Fasta_Job' => {
-            jcomment => 'Run multiple fasta36 jobs',
-            jcpu => 8,
-            jmem => 22224,
-            jname_prefix => 'fasta36',
-            jprefix => $args{jprefix},
-            jwalltime => '8:00:00',
-        },
-        'Mash' => {
-            jcomment => 'Compute distances between large sets of sequences.',
-            jcpu => 4,
-            jmem => 12,
-            jname_prefix => 'mash',
-            jprefix => '21',
-            jwalltime => '02:00:00',
-        },
-        'Mauve_Aligner' => {
-            jcomment => 'Attempt to run mauveAligner using a directory of genbank/fasta files.',
-            jcpu => 4,
-            jmem => 24,
-            jname_prefix => 'mauve',
-            jprefix => '20',
-            jwalltime => '4:00:00',
-        },
-        'Merge_Annotations' => {
-            jcomment => 'Gather annotation data from multiple sources.',
-            jcpu => 1,
-            jmem => 6,
-            jname_prefix => 'merge_annot',
-            jprefix => '15',
-            jwalltime => '00:30:00',
-        },
-        'Merge_CDS_Predictions' => {
-            jcomment => 'Merge CDS predictions from prodigal/glimmer/phanotate/etc.',
-            jcpu => 1,
-            jmem => 4,
-            jname_prefix => 'merge_cds',
-            jprefix => '19',
-            jwalltime => '0:30:00',
-        },
-        'Mpileup' => {
-            jcomment => 'Seek counts/variants per position with samtools.',
-            jcpu => 1,
-            jmem => 8,
-            jname_prefix => 'mpileup',
-            jprefix => '55',
-            jwalltime => '06:00:00',
-        },
-        'Mpileup_SNP_Search' => {
-            jcomment => 'Use samtools mpileup to seek variants.',
-            jcpu => 2,
-            jmem => 12,
-            jname_prefix => 'mpileup',
-            jprefix => '70',
-            jwalltime => '36:00:00',
-        },
-        'Merge_Parse_Blast' => {
-            jcomment => 'Merge BLAST outputs and parse the result into a simpler table.',
-            jcpu => 1,
-            jmem => 8,
-            jname_prefix => 'mergeblast',
-            jprefix => 44,
-            jwalltime => '1:00:00',
-        },
-        'OrthoFinder' => {
-            jcomment => 'Attempt to run orthofinder using a faa directory.',
-            jcpu => 4,
-            jmem => 24,
-            jname_prefix => 'orthofinder',
-            jprefix => '50',
-            jwalltime => '8:00:00',
-        },
-        'OrthoMCL_Pipeline' => {
-            jcomment => 'Use github.com/apetkau/orthomcl-pipeline to run orthomcl.',
-            jmem => 8,
-            jcpu => 8,
-            jname_prefix => 'orthomcl',
-            jprefix => '60',
-            jwalltime => '36:00:00',
-        },
-        'Parse_Fasta' => {
-            jcomment => 'Parse the output from fasta36.',
-            jcpu => 1,
-            jmem => 4,
-            jname_prefix => 'parsefasta',
-            jprefix => $args{jprefix},
-            jwalltime => '01:00:00',
-        },
-        'Phagepromoter' => {
-            jcomment => 'Seek phage promoter sequences in sequences.',
-            jcpu => 1,
-            jmem => 6,
-            jname_prefix => 'phagepromoter',
-            jprefix => '30',
-            jwalltime => '2:00:00',
-        },
-        'Phageterm' => {
-            jcomment => 'Seek phager terminii in short read sequence.',
-            jcpu => 8,
-            jmem => 12,
-            jname_prefix => 'phageterm',
-            jprefix => '14',
-            jwalltime => '1:00:00',
-        },
-        'Phanotate' => {
-            jcomment => 'A very aggressive CDS search tuned for phage genes.',
-            jcpu => 1,
-            jmem => 6,
-            jname_prefix => 'phagepromoter',
-            jprefix => '17',
-            jwalltime => '2:00:00',
-        },
-        'Phastaf' => {
-            jcomment => 'Seek phage-derived sequences in bacterial assemblies.',
-            jcpu => 4,
-            jmem => 8,
-            jname_prefix => 'phastaf',
-            jprefix => '15',
-            jwalltime => '2:00:00',
-        },
-        'PolyA_Extractor' => {
-            jcomment => 'Extract polyA reads from a dataset.',
-            jcpu => 1,
-            jmem => 12,
-            jname_prefix => 'polyaextract',
-            jprefix => '10',
-            jwalltime => '36:00:00',
-        },
-        'PolyA_Recorder' => {
-            jcomment => 'Extract and record polyA locations from short reads.',
-            jcpu => 1,
-            jmem => 5,
-            jname_prefix => 'polya_recorder',
-            jprefix => '50',
-            jwalltime => '4:00:00',
-        },
-        'Prodigal' => {
-            jcomment => 'An easily trained CDS search for bacterial sequences.',
-            jcpu => 1,
-            jmem => 8,
-            jname_prefix => 'prodigal',
-            jprefix => '17',
-            jwalltime => '3:00:00',
-        },
-        'Progressive_Mauve' => {
-            jcomment => 'Attempt to run progressive mauve using a directory of genbank/fasta files.',
-            jcpu => 4,
-            jmem => 24,
-            jname_prefix => 'pmauve',
-            jprefix => '20',
-            jwalltime => '4:00:00',
-        },
-        'Prokka' => {
-            jcomment => 'Quick bacterial assembly annotation pipeline.',
-            jcpu => 8,
-            jmem => 12,
-            jname_prefix => 'prokka',
-            jprefix => '19',
-            jwalltime => '3:00:00',
-        },
-        'ProteinFold' => {
-            jcomment => 'Use alphafold3 to fold some sequences.',
-            jcpu => 8,
-            jgpu => 1,
-            jmem => 24,
-            jname_prefix => 'alphafold',
-            jprefix => '79',
-            jwalltime => '8:00:00',
-        },
-        'ProteinFold_JSON_Pairwise_OneInput' => {
-            jcomment => 'Use alphafold3 to fold paired sequences.',
-            jcpu => 8,
-            jgpu => 1,
-            jmem => 24,
-            jname_prefix => 'alphafold',
-            jprefix => '79',
-            jwalltime => '8:00:00',
-        },
-        'ProteinFold_JSON_Pairwise_TwoSeq' => {
-            jcomment => 'Use alphafold3 to fold two sequences.',
-            jcpu => 8,
-            jgpu => 1,
-            jmem => 24,
-            jname_prefix => 'alphafold',
-            jprefix => '79',
-            jwalltime => '8:00:00',
-        },
-        'ProteinFold_JSON_Pairwise_TwoInput' => {
-            jcomment => 'Use alphafold3 to fold two sequences from two sequence databases.',
-            jcpu => 8,
-            jgpu => 1,
-            jmem => 24,
-            jname_prefix => 'alphafold',
-            jprefix => '79',
-            jwalltime => '8:00:00',
-        },
-        'ProteinFold_JSON_Separate' => {
-            jcomment => 'Use alphafold3 to fold separate sequences.',
-            jcpu => 8,
-            jgpu => 1,
-            jmem => 24,
-            jname_prefix => 'alphafold',
-            jprefix => '79',
-            jwalltime => '8:00:00',
-        },
-        'ProteinFold_JSON_Together' => {
-            jcomment => 'Use alphafold3 to fold paired sequences.',
-            jcpu => 8,
-            jgpu => 1,
-            jmem => 24,
-            jname_prefix => 'alphafold',
-            jprefix => '79',
-            jwalltime => '8:00:00',
-        },
-        'ProteinFold_PairIDs' => {
-            jcomment => 'Use alphafold3 to fold pairs of sequences.',
-            jcpu => 8,
-            jgpu => 1,
-            jmem => 36,
-            jname_prefix => 'alphafold',
-            jprefix => '79',
-            jwalltime => '12:00:00',
-        },
-        'Racer' => {
-            jcomment => 'correct reads for sequencing errors with kmers.',
-            jcpu => 4,
-            jmem => 12,
-            jname_prefix => 'racer',
-            jprefix => '10',
-            jwalltime => '8:00:00',
-        },
-        'Read_Genome_Fasta' => {
-            ## Currently there is no scenario in which this job will run on a cluster.
-            cluster => 0,
-        },
-        'Recompress' => {
-            jcomment => 'Compress some files.',
-            jcpu => 1,
-            jmem => 4,
-            jname_prefix => 'recomp',
-            jprefix => '80',
-            jwalltime => '08:00:00',
-        },
-        'Restriction_Catalog' => {
-            jcomment => 'Catalog the set of restriction enzymes in a sequence.',
-            jcpu => 1,
-            jmem => 4,
-            jname_prefix => 'recatalog',
-            jprefix => '18',
-            jwalltime => '1:00:00',
-        },
-        'Rho_Terminase_Predict' => {
-            jcomment => 'Search for rho terminases.',
-            jcpu => 2,
-            jmem => 12,
-            jname_prefix => 'rhoterm',
-            jprefix => '51',
-            jwalltime => '4:00:00',
-        },
-        'RMats' => {
-            jcomment => 'Seek splicing changes from aligned reads with rmats.',
-            jcpu => 16,
-            jmem => 24,
-            jname_prefix => 'rmats',
-            jprefix => '90',
-            jwalltime => '24:00:00',
-
-        },
-        'RNAFold_Windows' => {
-            jcomment => 'Invoke rnafold on a rolling sequence window.',
-            jcpu => 1,
-            jmem => 4,
-            jname_prefix => 'rnafold',
-            jprefix => '81',
-            jwalltime => '8:00:00',
-        },
-        'Rosalind_Plus' => {
-            jcomment => 'Make the strand with the most ORFs the plus strand.',
-            jcpu => 2,
-            jmem => 3,
-            jname_prefix => 'rplus',
-            jprefix => '44',
-            jwalltime => '1:00:00',
-        },
-        'RSEM' => {
-            jcomment => 'Gene/tx level quantification from counts.',
-            jcpu => 8,
-            jmem => 24,
-            jname_prefix => 'rsem',
-            jprefix => '28',
-            jwalltime => '20:00:00',
-        },
-        'RSEM_Index' => {
-            jcomment => 'Index a genome for use with RSEM.',
-            jcpu => 4,
-            jmem => 24,
-            jname_prefix => 'rsem_index',
-            jprefix => '09',
-            jwalltime => '10:00:00',
-        },
-        'Run_Essentiality' => {
-            jcomment => 'Invoke the DeJesus essentiality tool',
-            jcpu => 4,
-            jmem => 12,
-            jname_prefix => 'essentiality',
-            jprefix => '44',
-            jwalltime => '24:00:00'
-        },
-        'Salmon' => {
-            jcomment => 'Exceedingly fast quantitation method.',
-            jcpu => 8,
-            jmem => 24,
-            jname_prefix => 'salmon',
-            jprefix => '45',
-            jwalltime => '4:00:00',
-        },
-        'Salmon_Index' => {
-            jcomment => 'Index a transcriptome for use with salmon.',
-            jcpu => 4,
-            jmem => 24,
-            jname_prefix => 'salmon_index',
-            jprefix => '09',
-            jwalltime => '1:00:00',
-        },
-        'Salmon_Stats' => {
-            jcomment => 'Collect mapping stats from salmon.',
-            jcpu => 1,
-            jmem => 1,
-            jname_prefix => 'salmon_stats',
-            jprefix => '90',
-            jwalltime => '00:01:00',
-        },
-        'Salmon_Strand' => {
-            jcomment => 'Estimate library strandedness from the first few reads from a dataset.',
-            jcpu => 1,
-            jmem => 1,
-            jname_prefix => 'salmon_strand',
-            jprefix => '12',
-            jwalltime => '00:05:00',
-        },
-        'Samtools' => {
-            jcomment => 'Convert a sam alignment to bam with/out filtering.',
-            jcpu => 1,
-            jmem => 20,
-            jname_prefix => 'samtools',
-            jprefix => '21',
-            jwalltime => '06:00:00',
-        },
-        'Shovill' => {
-            jcomment => 'Iterative Spades settings by Torsten Seeman.',
-            jcpu => 8,
-            jmem => 12,
-            jname_prefix => 'shovil',
-            jprefix => '13',
-            jwalltime => '12:00:00',
-        },
-        'SL_Recorder' => {
-            jcomment => 'Extract Spliced Leader reads via pattern matching.',
-            jcpu => 1,
-            jmem => 8,
-            jname_prefix => 'sl_record',
-            jprefix => '50',
-            jwalltime => '12:00:00',
-        },
-        'SLSearch' => {
-            jcomment => 'Extract Spliced Leader reads with cutadapt.',
-            jcpu => 4,
-            jmem => 12,
-            jname => 'slsearch',
-            jprefix => '50',
-            jwalltime => '08:00:00',
-        },
-        'SL_UTR' => {
-            jcomment => 'Get SL addition positions from split reads.',
-            jcpu => 1,
-            jmem => 24,
-            jname => 'slutr',
-            jprefix => '50',
-            jwalltime => '08:00:00',
-        },
-        'Snippy' => {
-            jcomment => 'Use snippy to search for variants.',
-            jcpu => 4,
-            jmem => 12,
-            jname_prefix => 'snippy',
-            jprefix => '44',
-            jwalltime => '4:00:00',
-        },
-        'SNP_Ratio' => {
-            jcomment => 'Find variants in CDSs without introns from freebayes/mpileup',
-            jcpu => 1,
-            jmem => 16,
-            jname_prefix => 'snpratio',
-            jwalltime => '8:00:00'
-        },
-        'SNP_Ratio_Intron' => {
-            jcomment => 'Find variants in CDSs with introns from freebayes/mpileup',
-            jcpu => 1,
-            jmem => 24,
-            jname_prefix => 'snpratiointron',
-            jwalltime => '12:00:00'
-        },
-        'Sort_Indexes' => {
-            jcomment => 'Sort input tnseq data into separate samples.',
-            jcpu => 1,
-            jmem => 8,
-            jname_prefix => 'sortindexes',
-            jprefix => '10',
-            jwalltime => '24:00:00',
-        },
-        'Spladder' => {
-            jcomment => 'Quantify differential splicing via spladder.',
-            jcpu => 8,
-            jmem => 24,
-            jname_prefix => 'spladder',
-            jprefix => '90',
-            jwalltime => '24:00:00',
-        },
-        'Split_Align_Blast' => {
-            jcomment => 'Split a large set of BLAST searches into smaller pieces',
-            jcpu => 4,
-            jmem => 8,
-            jname_prefix => 'splitblast',
-            jprefix => '60',
-            jwalltime => '12:00:00',
-        },
-        'Split_Align_Fasta' => {
-            jcomment => 'Split a large set of fasta36 searches into smaller pieces',
-            jcpu => 8,
-            jmem => 12,
-            jname_prefix => 'splitfasta',
-            jprefix => '60',
-            jwalltime => '12:00:00',
-        },
-        'STAR' => {
-            jcomment => 'Transcript abundance estimator.',
-            jcpu => 8,
-            jmem => 48,
-            jname_prefix => 'star',
-            jprefix => '48',
-            jwalltime => '12:00:00',
-        },
-        'STAR_Index' => {
-            jcomment => 'Index a genome for use with STAR',
-            jcpu => 4,
-            jmem => 96,
-            jname_prefix => 'start_index',
-            jprefix => '09',
-            jwalltime => '12:00:00',
-        },
-        'Suppa' => {
-            jcomment => 'Quantify differential splicing via suppa.',
-            jcpu => 4,
-            jmem => 24,
-            jname_prefix => 'suppa',
-            jprefix => '90',
-            jwalltime => '12:00:00',
-        },
-        'TA_Check' => {
-            jcomment => 'Ensure each read of a TNSeq set starts with TA.',
-            jcpu => 1,
-            jmem => 8,
-            jname_prefix => 'tacheck',
-            jprefix => '30',
-            jwalltime => '12:00:00',
-        },
-        'Terminase_ORF_Reorder' => {
-            jcomment => 'Reorder an assembly to put the putative terminase first.',
-            jcpu => 4,
-            jmem => 8,
-            jname_prefix => 'term_reorder',
-            jprefix => '30',
-            jwalltime => '1:00:00',
-        },
-        'Tophat' => {
-            jcomment => 'Early splicing aware mapper/aligner.',
-            jcpu => 4,
-            jmem => 20,
-            jname_prefix => 'tophat',
-            jprefix => '35',
-            jwalltime => '36:00:00',
-        },
-        'Tophat_Stats' => {
-            jcomment => 'Collect mapping stats from tophat.',
-            jcpu => 1,
-            jmem => 1,
-            jname_prefix => 'tophat_stats',
-            jprefix => '90',
-            jwalltime => '00:01:00',
-        },
-        'Train_Prodigal' => {
-            jcomment => 'Train prodigal on a specific sequence dataset.',
-            jcpu => 4,
-            jmem => 8,
-            jname_prefix => 'trainprodigal',
-            jprefix => '13',
-            jwalltime => '2:00:00',
-        },
-        'Transdecoder' => {
-            jcomment => 'Seek viable CDS in the 6 reading frames of a set of sequences.',
-            jcpu => 1,
-            jmem => 4,
-            jname_prefix => 'trandecode',
-            jprefix => '21',
-            jwalltime => '2:00:00',
-        },
-        'Transit_TPP' => {
-            jcomment => 'Invoke the Transit preprocessing pipeline.',
-            jcpu => 4,
-            jmem => 8,
-            jname_prefix => 'tpp',
-            jprefix => '09',
-            jwalltime => '8:00:00',
-        },
-        'Transposonpsi' => {
-            jcomment => 'Seek transposable elements.',
-            jcpu => 2,
-            jmem => 4,
-            jname_prefix => 'tpsi',
-            jprefix => '21',
-            jwalltime => '2:00:00',
-        },
-        'Trimomatic_Pairwise' => {
-            jcomment => 'Trim reads with the OG trimmer.',
-            jcpu => 4,
-            jmem => 24,
-            jname_prefix => 'trimomaticp',
-            jprefix => '01',
-            jwalltime => '4:00:00',
-        },
-        'Trimomatic_Single' => {
-            jcomment => 'Trim reads with the OG trimmer.',
-            jcpu => 2,
-            jmem => 12,
-            jname_prefix => 'trimomatics',
-            jprefix => '01',
-            jwalltime => '4:00:00',
-        },
-        'Trimomatic_Stats' => {
-            jcomment => 'Collect read stats from trimomatic.',
-            jcpu => 1,
-            jmem => 1,
-            jname_prefix => 'trimomatic_stats',
-            jprefix => '90',
-            jwalltime => '00:01:00',
-        },
-        'Trinity' => {
-            jcomment => 'Automated transcriptome assembly from RNASeq data.',
-            jcpu => 8,
-            jmem => 80,
-            jname_prefix => 'trinity',
-            jprefix => '60',
-            jwalltime => '36:00:00',
-        },
-        'Trinity_Post' =>{
-            jcomment => 'Post processing of trinity results with RSEM etc.',
-            jcpu => 8,
-            jmem => 24,
-            jname_prefix => 'trinpost',
-            jprefix => '61',
-            jwalltime => '8:00:00',
-        },
-        'Trinotate' => {
-            jcomment => 'Automated annotation of sequences primarily via blast.',
-            jcpu => 8,
-            jmem => 36,
-            jname_prefix => 'trinotate',
-            jprefix => '62',
-            jwalltime => '36:00:00',
-        },
-        'tRNAScan' => {
-            jcomment => 'Search (m)tRNA genes.',
-            jcpu => 1,
-            jmem => 6,
-            jname_prefix => 'trnascan',
-            jprefix => '28',
-            jwalltime => '4:00:00',
-        },
-        'Umi_Tools_Dedup' => {
-            jcomment => 'Remove umis after mapping.',
-            jcpu => 4,
-            jmem => 48,
-            jname_prefix => 'umi_dedup',
-            jprefix => '04',
-            jwalltime => '24:00:00'
-        },
-        'Umi_Tools_Extract' => {
-            jcomment => 'Use a regex to pull umi reads.',
-            jcpu => 1,
-            jmem => 20,
-            jname_prefix => 'umi_extract',
-            jprefix => '05',
-            jwalltime => '08:00:00',
-        },
-        'Unicycler' => {
-            jcomment => 'Heuristics to improve spades assemblies.',
-            jcpu => 8,
-            jmem => 24,
-            jname_prefix => 'unicycler',
-            jprefix => '13',
-            jwalltime => '72:00:00',
-        },
-        'Unicycler_Filter_Depth' => {
-            jcomment => 'Filter an assembly based on relative depth of contigs.',
-            jcpu => 1,
-            jmem => 4,
-            jname_prefix => 'depthfilter',
-            jprefix => '13',
-            jwalltime => '1:00:00',
-        },
-        'Velvet' => {
-            jcomment => 'yet another kmer assembler',
-            jcpu => 4,
-            jmem => 24,
-            jname_prefix => 'velvet',
-            jprefix => '20',
-            jwalltime => '8:00:00',
-        },
-        'Xref_Crispr' => {
-            jcomment => 'Seek crispr sequences',
-            jcpu => 1,
-            jmem => 8,
-            jname_prefix => 'xref_crispr',
-            jprefix => '80',
-            jwalltime => '1:00:00',
-        },
-    );
-    my $datum = {};
-    ## This function is fed the returned_values within Get_Vars()
-    ## so we can use them to see if the user asked for a specifc prefix/walltime/etc
-    ## Changed this to remove the prefix 'j' so that one may override the
-    ## spec by specifying the mem/gpu/etc.
-    $datum->{jcomment} = $args{comment} if ($args{comment});
-    $datum->{jcpu} = $args{cpu} if ($args{cpu});
-    $datum->{jprefix} = $args{prefix} if ($args{prefix});
-    $datum->{jgpu} = $args{gpu} if ($args{gpu});
-    $datum->{jmem} = $args{mem} if ($args{mem});
-    $datum->{jname_prefix} = $args{name_prefix} if ($args{name_prefix});
-    $datum->{jwalltime} = $args{walltime} if ($args{walltime});
-    ## If the user does not provide spec information, use the above hash of hashes
-    if (defined($function)) {
-        my @function_array = split(/::/, $function);
-        my $function = $function_array[$#function_array];
-        $function =~ s/_Worker$//g;
-        my %spec_info = %{$spec_data{Default}};
-        if (defined($spec_data{$function})) {
-            %spec_info = %{$spec_data{$function}};
-        } else {
-            print "The function: $function does not have a spec, using the defaults.\n";
-        }
-        ## Fill in the cpu/gpu/etc if it was not specified by the job itself.
-        for my $k (keys %spec_info) {
-            $datum->{$k} = $spec_info{$k} unless ($datum->{$k});
-        }
-    }
-
-    ## If things are still missing from the spec, fill in the defaults here.
-    $datum->{jcomment} = $spec_data{Default}->{jcomment} unless ($datum->{jcomment});
-    $datum->{jcpu} = $spec_data{Default}->{jcpu} unless ($datum->{jcpu});
-    $datum->{jgpu} = $spec_data{Default}->{jgpu} unless ($datum->{jgpu});
-    $datum->{jmem} = $spec_data{Default}->{jmem} unless ($datum->{jmem});
-    $datum->{jname_prefix} = $spec_data{Default}->{jprefix} unless ($datum->{jname_prefix});
-    $datum->{jprefix} = $spec_data{Default}->{jprefix} unless ($datum->{jprefix});
-    $datum->{jwalltime} = $spec_data{Default}->{jwalltime} unless ($datum->{jwalltime});
-    return($datum);
+    my $set = $class->_set_global_paths(\%class_paths);
+    return(\%class_paths);
 }
 
 =head2 C<Get_TODOs>
@@ -3416,6 +831,7 @@ The cyoa script will then iterate over the todo hash and look for
 anything with a positive value and run its associated function.
 
 =cut
+## 202605 Survey: Called in BUILD, I want this also to move to a config file.
 sub Get_TODOs {
     my %args = @_;
     my $todo_list = ();
@@ -3625,7 +1041,6 @@ sub Get_TODOs {
     };
 
     if (defined($args{method})) {
-        print "TESTME: Found args{method}: $args{method}\n";
         my $m = '--' . $args{method};
         my @method = ($m,);
         my $array_result = GetOptionsFromArray(\@method, %{$possible_todos});
@@ -3648,95 +1063,174 @@ sub Get_TODOs {
     return(\@methods_to_run);
 }
 
+## 202605 Survey: Responsible for providing all the local variables to arbitrary functions.
 sub Get_Function_Vars {
     my ($class, $funcall_args) = @_;
-    my $current_state = $class->current_state;
+    my $caller = $class->Bio::Adventure::Config::Get_Caller();
+    my $state_ref = $class->current_state;
+    ## To an annoying degree this is effectively redoing the
+    ## BUILD function from Adventure.pm
+    ## I should think about how I can clean this up so that
+    ## I am not doing and undoing these declarations.
+    ## The caveat though is that I want to have a clean slate for
+    ## every downstream function call invoked by Adventure.pm
+    ## Until I think that through, keep in mind that my
+    ## order of precedence is:
+    ## global_defaults < instance_args < function_defaults < function_args
+    my %state = %{$state_ref};
+    my $global_defaults = $class->global_defaults;
+    for my $k (keys %{$global_defaults}) {
+        $state{$k} = $global_defaults->{$k};
+    }
+    my %instance_args = %{$class->instance_args};
+    for my $j (keys %instance_args) {
+        $state{$j} = $instance_args{$j};
+    }
+    my $function_state = $class->function_defaults;
+    my %gl_paths = %{$class->global_paths};
     my $last_input;
     if ($funcall_args->{input}) {
-        $last_input = $class->Bio::Adventure::Config::Get_Input_Info($funcall_args->{input});
-        use Data::Dumper;
-        print Dumper $last_input;
+        $class->{current_state}->{input} = $funcall_args->{input};
+        $last_input = $class->Bio::Adventure::Config::Get_Input_Info(
+            $funcall_args->{input});
         my $number_inputs = $class->Append_Inputs($last_input);
     } else {
         $last_input = $class->Get_Last_Input();
+        $class->{current_state}->{input} = $last_input;
     }
-    print "TESTME: Get_Function_Vars after if()\n";
-    print Dumper $last_input;
+    $class->current_inputs($last_input);
+    ## Ensure that current_state->input matches this.
+
     my %all_function_args = %{$class->function_defaults};
-    my $function = Bio::Adventure::Config::Get_Caller();
-    my $function_args = $all_function_args{$function};
-    my $job_spec = $function_args->{spec};
-    print "TESTME: In Config::Get_Vars, about to invoke Get_Class_Paths\n";
-    my $class_paths = $class->Bio::Adventure::Config::Get_Class_Paths(spec => $job_spec);
-    print "TESTME: After Get_Class_Paths: output_dir: $class_paths->{output_dir}\n";
-    ## Define the set of accessible interpolation variables here.
-    my %available = %{$class->current_state};
-    $available{output_dir} = q{};
-    ## Add the results from Get_Class_Spec() to tthe set of availble
-    ## interpolators, in addition add them to the function_args{paths} slot.
-    print "After get_current_state: $class_paths->{output_dir}\n";
-    for my $k (keys %{$class_paths}) {
-        $available{$k} = $class_paths->{$k};
-        $function_args->{paths}->{$k} = $class_paths->{$k};
+    ## Note, I think one must make a copy of function_args here so that future invocations
+    ## will not already have the variables interpolated.
+    my %function_args = %{$all_function_args{$caller}};
+    for my $k (keys %function_args) {
+        $state{$k} = $function_args{$k};
     }
-    print "TESTME: Adding Functioncall arguments to available:\n";
-    for my $k (keys %{$funcall_args}) {
-        print "Adding $k: $funcall_args->{$k} to available.\n";
-        $available{$k} = $funcall_args->{$k};
+    for my $j (keys %{$funcall_args}) {
+        $state{$j} = $funcall_args->{$j};
+    }
+    ## Define the set of accessible interpolation variables here.
+    my @info_array = @{$last_input};
+    my %first_file_info = %{$info_array[0]};
+    my $first_input_filename = $first_file_info{filename};
+    my @input_array = ();
+    my @output_array = ();
+    my @input_base_array = ();
+    my @output_base_array = ();
+    for my $input (@info_array) {
+        push(@input_array, $first_file_info{filename});
+        push(@input_base_array, $first_file_info{basename});
     }
 
-    my $fb = $last_input->[0]->{filebase_extension};
-    $available{r1_base} = qq"$available{output_dir}/$last_input->[0]->{filebase_extension}";
-    if ($last_input->[1]) {
-        print "SETTING R2_BASE\n";
-        $available{r2_base} = qq"$available{output_dir}/$last_input->[1]->{filebase_extension}";
+    $state{output_prefix} = qq"$state{output_basedir}/$state{jprefix}";
+    ## The suffix of the input file(s) excluding any compression information.
+    $state{input_suffix} = $first_file_info{suffix};
+    ## The directory name of the input file(s)
+    $state{input_dirname} = $first_file_info{dirname};
+    ## The basename of the input file(s) excluding erroneous stuff like compress/suffix/r1/etc
+    $state{output_base} = $first_file_info{basename};
+    ## Array of input filenames
+    $state{input_array} = \@input_array;
+    ## Array of the input basenames.
+    $state{input_base_array} = \@input_base_array;
+    ## The first input file excluding compression/suffixes
+    $state{nosuffix} = qq"$first_file_info{dirname}/$first_file_info{basename}";
+    ## The full output directory path, this may need some flexibility and/or to be interpolated.
+    ## E.g. I want to potentially have the flexibility to add parameters/genome etc to this.
+    $state{output_dir} = qq"$state{output_prefix}_$state{jname}";
+
+    ## I want to run most/all jobs through time, so record that filename now.
+    $state{time_file} = qq"$state{output_dir}/$state{jname}.time";
+
+    ## The primary inputs/outputs are defined,
+    ## now add anything from the functions.json for this function
+
+    ## Add the input information to %available
+    ## Note that the input information is a list of hash references
+    ## and we are going to usually/always use the first input for stuff like basename/filename/etc.
+    for my $k (keys %first_file_info) {
+        $state{$k} = $first_file_info{$k};
     }
-    $function_args->{caller} = $function;
+    ## output_dir is provided by fn_paths
+    ## Add any arguments added via a function call.
+    for my $k (keys %{$funcall_args}) {
+        $state{$k} = $funcall_args->{$k};
+    }
+    for my $e (keys %ENV) {
+        if ($e eq 'HOME' || $e eq 'PATH') {
+            $state{$e} = $ENV{$e};
+        }
+    }
+    ## Add environment variables to available
+
+    my $first_file_base = $last_input->[0]->{filebase_extension};
+    ## This depends on fn_paths
+    $state{r1_base} = qq"$state{output_dir}/${first_file_base}";
+    if ($last_input->[1]) {
+        my $second_file_base = $last_input->[1]->{filebase_extension};
+        $state{r2_base} = qq"$state{output_dir}/${second_file_base}";
+    }
 
     ## Some specifications may provide 2 outputs but only use 1
     ## E.g. fastp can have a r1+r2 output or just r1
     ## We can check for this case by checking r2_base.
-    while (my ($key) = each(%{$function_args->{paths}})) {
+    while (my ($key) = each(%state)) {
         if ($key =~ /_r1$/) {
-            if ($available{r1_base}) {
-                print "keeping $available{r1_base}\n";
+            if ($state{r1_base}) {
+                ## print "keeping $current_state{r1_base}\n";
             } else {
-                delete $function_args->{paths}->{$key};
+                delete $state{$key};
             }
         } elsif ($key =~ /_r2$/) {
-            if ($available{r2_base}) {
-                print "Keeping $available{r2_base}\n";
+            if ($state{r2_base}) {
+                ## print "Keeping $current_state{r2_base}\n";
             } else {
-                print "DELETING $key\n";
-                delete $function_args->{paths}->{$key};
+                ## print "DELETING $key\n";
+                delete $state{$key};
             }
         }
     }
 
     ## Now we can create the outputs interpolation variable
     my $outputs = q{};
-    for my $k (sort keys %{$function_args->{paths}}) {
-        if ($k =~ /^output/) {
-            $outputs .= qq"$function_args->{paths}->{$k}:";
-        }
+    STATE: for my $k (sort keys %state) {
+          next STATE if ($k =~ /_comment$/);
+          if ($k =~ /^output/) {
+              $outputs .= qq"$state{$k}:";
+          }
+      }
+
+    my $sw_added = 0;
+    if ($state{modules}) {
+        $sw_added++;
+        $state{module_string} = qq"module add $state{modules}";
     }
+    if ($state{conda}) {
+        $sw_added++;
+        $state{conda_string} = qq"conda load $state{conda}";
+    }
+    if ($state{spack}) {
+        $sw_added++;
+        $state{spack_string} = qq"spack load $state{spack}";
+    }
+    if ($sw_added == 0) {
+        warn("This expects at least one software package to be added to the environment.");
+    }
+
     $outputs =~ s/:$//g;
-    print "AFTER OUTPUTS_LOOP: ${outputs}\n";
-    $available{outputs} = $outputs;
-
-    for (values %{$function_args->{paths}}) {
-        if ($_ =~ /[\$\@]/) {
-            $_ = interpolate(interpolate($_, \%available), \%available);
-        }
-    }
-
-    $function_args->{inputs} = $last_input;
+    $state{outputs} = $outputs;
+    $function_args{inputs} = $last_input;
+    my $interp_state_ref = $class->self_interp(hashref => \%state);
+    $interp_state_ref = $class->self_interp(hashref => $interp_state_ref);
     ## Add this set of options to the option list in the cyoa object.
     ## Thus, we can trivially pull all of those options in future jobs.
     my @option_array = @{$class->options};
-    push(@option_array, $function_args);
+    push(@option_array, $interp_state_ref);
     $class->options(\@option_array);
-    return($function_args);
+    $class->current_state($interp_state_ref);
+    return($interp_state_ref);
 }
 
 ## For now, just overwrite keys from global->function->ini->json->cmdline
@@ -3746,12 +1240,17 @@ sub Get_Function_Vars {
 ## into something which sets the parameters of each step of a process.
 ## But while I am just experimenting with how I want to work with this, a simpler
 ## approach makes sense.
+
+## 202605 survey: Called in BUILD to bring together ini/json/etc
 sub Merge_Args {
     my %args = @_;
+    ## This is the reverse order of precedence when overwriting parameters
+    ## e.g. globals are overwritten by the ini by json by cmdline by instance
     my $global = $args{global};
-    my $cmdline = $args{cmdline};
     my $ini = $args{ini};
     my $json = $args{json};
+    my $cmdline = $args{cmdline};
+    my $instance = $args{instance};
     my %current;
     for my $k (keys %{$global}) {
         $current{$k} = $global->{$k};
@@ -3764,6 +1263,9 @@ sub Merge_Args {
     }
     for my $k (keys %{$cmdline}) {
         $current{$k} = $cmdline->{$k};
+    }
+    for my $k (keys %{$instance}) {
+        $current{$k} = $instance->{$k};
     }
     return(\%current);
 }
@@ -3792,38 +1294,75 @@ sub Merge_Current_Ini {
     return(\%current);
 }
 
-sub Update_Spec {
+## 202605 survey: Called in arbitrary functions to set the state before submitting a job.
+sub Update_State {
     my ($class, %args) = @_;
-    my $function_info = $args{function_info};
-    my $caller = $function_info->{caller};
-    my %current_spec = %{$function_info->{spec}};
-    if ($function_info->{template}) {
+    my %options;
+    if (defined($args{options})) {
+        %options = %{$args{options}};
+    } else {
+        my $function_info = Bio::Adventure::Config::Get_Function_Vars($class, \%args);
+        %options = %{$function_info};
+    }
+    my %current_state = %{$class->current_state};
+
+    ## FIXME:
+    ## There are a couple of pieces of state set in Get_Function_Vars()
+    ## in a way which means they will not get new interpolated variables
+    ## freshly set variables, most notably output_prefix
+    ## I think I should have output_prefix set in defaults.json
+    ## and then changes to jprefix etc should carry over.
+    ## Until I do that, set output_prefix here:
+    $options{output_prefix} = qq"$current_state{output_basedir}/$options{jprefix}";
+    $options{output_dir} = qq"$options{output_prefix}_$options{jname}";
+    $options{time_file} = qq"$options{output_dir}/$options{jname}.time";
+    if (-d $options{output_dir}) {
+        ## print $state{output_dir} already exists.
+    } else {
+        make_path($options{output_dir});
+    }
+    ## Unfortunately, this cannot fix the problem, because the arbitrary output
+    ## variables which are created all over the place have already interpolated
+    ## the original jprefix containing string.
+    ## I think therefore I need to have a single function responsible for
+    ## performing the interpolations and making sure that it is run
+    ## only in the update_state() or submit() function.
+    ## In addition, any make_path() or similar secondary effect statements
+    ## must but run at the same time.
+
+    ## END FIXME:
+
+    my $options_ref = $class->self_interp(hashref => \%options);
+    if ($options{template}) {
         my $jstring = q{};
-        my $tt = Template->new({
+        my $templater = Template->new({
             INCLUDE_PATH => $template_dir,
             TRIM => 0,
+            PRE_CHOMP => 0,
+            POST_CHOMP => 0,
             INTERPOLATE => 0,});
-        print "About to process $function_info->{template} from $template_dir\n";
-        use Data::Dumper;
-        print Dumper $args{template_args};
-        my $processed = $tt->process($function_info->{template}, $args{template_args}, \$jstring) || die $tt->error();
-        $current_spec{jstring} = $jstring;
-        use Data::Dumper;
-        print Dumper %current_spec;
+        print "About to process $options{template} from $template_dir\n";
+        ##my $processed = $tt->process($function_info->{template}, $args{template_args}, \$jstring) || die $tt->error();
+        my $processed = $templater->process($options_ref->{template}, $options_ref, \$jstring);
+        $current_state{jstring} = $jstring;
     } elsif ($args{jstring}) {
         print "Adding jstring.\n";
-        $current_spec{jstring} = $args{jstring};
+        $current_state{jstring} = $args{jstring};
     } else {
         print "Neither a template nor a jstring.\n";
     }
-    $current_spec{modules} = $function_info->{modules};
-    if (!defined($current_spec{language})) {
-        $current_spec{language} = 'bash';
+
+    if (!defined($current_state{language})) {
+        $current_state{language} = 'bash';
     }
-    if (!defined($current_spec{jname})) {
-        $current_spec{jname} = $class->options->{jname};
-    }
-    $class->spec(\%current_spec);
+    ## I would much prefer to not need the following because
+    ## if I do this, I cannot reuse the cyoa instance because this modifies
+    ## the pre-interpolated variables.
+    my @all_options = @{$class->options};
+    push(@all_options, $options_ref);
+    my $options_set = $class->options(\@all_options);
+    my $set = $class->current_state(\%current_state);
+    return($set);
 }
 
 1;

@@ -1,0 +1,18 @@
+## This shell fragment is intended to extract information from the cutadapt log for paired-end data.
+if [ ! -r "[% stat_output %]" ]; then
+  echo "name,total_pairs,pairs_processed,bp_processed,low_quality" > [% stat_output %]
+fi
+total_reads_tmp=$( { head -n 10 [% input %] | grep "^Total read pairs" || test $? = 1; } |\
+  awk '{print $5}' | sed 's/\,//g')
+total_reads=${total_reads_tmp:-0}
+trimmed_tmp=$( { head -n 15 [% input %] | grep "^Pairs written" || test $? = 1; } | tail -n 1 |\
+  awk '{print $5}' | sed 's/\,//g')
+trimmed=${trimmed_tmp:-0}
+bp_tmp=$( { head -n 30 [% input %] | grep "^Total basepairs processed:" || test $? = 1; } | tail -n 1 |\
+  awk '{print $4}' | sed 's/\,//g')
+bp=${bp_tmp:-0}
+bp_written_tmp=$( { head -n 30 [% input %] |\
+  grep "^Total written" || test $? = 1; } | tail -n 1 | awk '{print $4}' | sed 's/\,//g')
+bp_written=${bp_written_tmp:-0}
+stat_string=$(printf "[% input_name %],%s,%s,%s,%s" "${total_reads}" "${trimmed}" "${bp}" "${bp_written}")
+echo "$stat_string" >> [% stat_output %]

@@ -1,4 +1,4 @@
-package Bio::Adventure::Local;
+package Bio::Adventure::Bash;
 use Modern::Perl;
 use autodie qw":all";
 use diagnostics;
@@ -16,7 +16,7 @@ use File::Which qw"which";
 use IO::Handle;
 use Template;
 my $template_base = dist_dir('Bio-Adventure');
-my $template_dir = qq"${template_base}/templates";
+my $template_dir = qq"${template_base}/jobs";
 
 =head1 NAME
 
@@ -39,121 +39,67 @@ This is responsible for the final writeup and submission of a local script.
 =cut
 sub Submit {
     my ($runner, $class, %args) = @_;
-    my $spec = $class->spec;
-    my $state = $class->current_state;
+    my $state_ref = $class->current_state;
+    my %state = %{$state_ref};
     my $caller = $class->caller;
-    my $all_options = $class->options;
-    my $job_options = $all_options->[$#$all_options];
     my $primary_jstring = $class->Bio::Adventure::Languages::Make_Sub_Job();
 
+    ##########################
+    ## TODO TODO TODO
+    ##########################
+    ## Replace this foolishness with a template ASAP.
+
     my $comment_string = Bio::Adventure::Languages::Make_Comment(
-        language => $spec->{language}, jcomment => $spec->{jcomment});
+        language => $state{language}, jcomment => $state{jcomment});
     ## For arguments to bash, start with the defaults in the constructor in $class
     ## then overwrite with any application specific requests from %args
-    my $bash_log = qq"$state->{basedir}/outputs/log.txt";
-    if (!defined($spec->{jname})) {
-        print "In Local::Submit, jname was not defined, this should not happen.\n";
-        $spec->{jname} = 'undefined';
+    $state{bash_log} = qq"$state{basedir}/outputs/log.txt";
+    if (!defined($state{jname})) {
+        $state{jname} = 'undefined';
     }
-    my $finished_file = qq"$state->{basedir}/outputs/logs/$spec->{jname}.finished";
+    my $finished_file = qq"$state{basedir}/outputs/logs/$state{jname}.finished";
     my $job = {};
     for my $k (keys %args) {
         next if ($k eq 'jstring');
         next if ($k eq 'comment');
         $job->{$k} = $args{$k};
     }
-
-    if ($spec->{restart} && -e $finished_file) {
-        print "The restart option is on, and this job appears to have finished.\n";
-        return($job);
-    }
-    my $script_file = qq"$state->{basedir}/$state->{script_dir}/$spec->{jname}.sh";
+    my $script_file = $class->Get_Script_Filename();
     my $mycwd = getcwd();
-    make_path("$state->{logdir}", {verbose => 0}) unless (-r qq"$state->{logdir}");
-    unless (-r qq"$state->{basedir}/$state->{script_dir}/json") {
-        make_path("$state->{basedir}/$state->{script_dir}/json", {verbose => 0});
+    make_path("$state{logdir}", {verbose => 0}) unless (-r qq"$state{logdir}");
+    unless (-r qq"$state{basedir}/$state{script_dir}/json") {
+        make_path("$state{basedir}/$state{script_dir}/json", {verbose => 0});
     }
+    $state{debug_string} = q{};
+    if ($state{debug}) {
+        $state{debug_string} = 'set -x';
+    }
+    $state{prescript} = q{};
+    if (defined($state{prescript})) {
+        $state{prescript} = $state{prescript};
+    }
+    $state{postscript} = q{};
+    if (defined($state{postscript})) {
+        $state{postscript} = $state{postscript};
+    }
+    $state{primary_jstring} = $primary_jstring;
+    $state{script_base} = basename($script_file);
+    my $templater = Template->new({
+        INCLUDE_PATH => $template_dir,
+        TRIM => 0,
+        INTERPOLATE => 0,});
+    my $processed = $templater->process('local.tt', \%state, $script_file);
     print "Writing job script to $script_file\n";
-    my $script_base = basename($script_file);
-    ## Remove the need for two functions that do the same thing except one for perl and one for bash
-    if ($spec->{jtemplate}) {
-        print "In local, processing with dir: ${template_dir}\n";
-        print "Template is outputting to: ${script_file}\n";
-        my $tt = Template->new({
-            INCLUDE_PATH => $template_dir,
-            OUTPUT => $script_file,
-            TRIM => 1,
-            INTERPOLATE => 1,});
-        $tt->process($spec->{jtemplate}, $state) || die $tt->error();
-    } else {
-        my $script_start = qq?$state->{shebang}
-?;
-        $script_start .= qq"set -x\n" if ($state->{debug});
-        $script_start .= qq?cd $state->{basedir} || exit
-set -o errexit
-set -o errtrace
-set -o pipefail
-echo "## Started ${script_base} at \$(date) on \$(hostname)." >> ${bash_log}
-function get_sigterm {
-  echo "A SIGTERM was sent to $spec->{jname}." >> ${bash_log}
-  exit 1
-}
-trap get_sigterm SIGTERM
-function get_sigerr {
-  echo "A ERR was sent to $spec->{jname}." >> ${bash_log}
-  exit 1
-}
-trap get_sigerr ERR
-?;
-        $script_start .= $state->{module_string} if ($state->{module_string});
-        $script_start .= $state->{conda_string} if ($state->{conda_string});
-        my $script_end = qq!
-## The following lines give status codes and some logging
-echo "Job status:\$?" >> ${bash_log}
-echo " \$(hostname) Finished ${script_base} at \$(date), it took \$(( SECONDS / 60 )) minutes." >> ${bash_log}
-!;
-        if (!defined($comment_string)) {
-            print "The comment string for ${caller} is undefined.\n";
-            $comment_string = '## currently undefined';
-        }
-        ## This and the following check on postscript should not be needed.
-        if (!defined($spec->{prescript})) {
-            ##print "The prescript for ${caller} is undefined.\n";
-            $spec->{prescript} = '';
-        }
-        if (!defined($spec->{postscript})) {
-            ##print "The postscript for ${caller} is undefined.\n";
-            $spec->{postscript} = '';
-        }
-        my $total_script_string = qq?${script_start}
-${comment_string}
-$spec->{prescript}
-${primary_jstring}
-$spec->{postscript}
-${script_end}
-?;
-        my $script_fh = FileHandle->new(">${script_file}");
-        if (!defined($script_fh)) {
-            die("Could not write the script: ${script_file}, check its permissions.")
-        }
-        print $script_fh $total_script_string;
-        $script_fh->flush();
-        $script_fh->close();
-    }
     chmod(0755, $script_file);
     my $job_text = '';
     my $handle;
     my $bash_pid = open($handle, '-|', ${script_file}) or
         die("The script: ${script_file}
 failed with error: $!.\n");
-    print "Starting a bash job: ${bash_pid} $spec->{jname}";
-    if ($spec->{jdepends}) {
-        print ", depending on $spec->{jdepends}.";
-    }
-    print "\n";
+    print "Starting a bash job: ${bash_pid} $state{jname}.\n";
     while (my $line = <$handle>) {
         $job_text = $job_text . $line;
-        print $line if ($state->{debug});
+        print $line if ($state{debug});
     }
     my $closed;
     try {
@@ -165,19 +111,18 @@ failed with error: $!.\n");
         print "It should be impossible for bash_pid to be undefined, yet here we are.\n";
         $bash_pid = 'undefined';
     }
-
-    $job->{log} = $bash_log;
+    $job->{log} = $state{bash_log};
     $job->{job_id} = $bash_pid;
     $job->{script_file} = $script_file;
-    $class->{language} = 'bash';
-    my $logging_dir = qq"$state->{basedir}/outputs/logs";
+    for my $k (keys %state) {
+        $job->{$k} = $state{$k};
+    }
+    my $logging_dir = qq"$state{basedir}/outputs/logs";
     make_path($logging_dir);
     my $logging_file = qq"${logging_dir}/jobs.txt";
     my $job_logger = FileHandle->new(">>${logging_file}");
-    print $job_logger "$spec->{jname}\tbash\t${bash_pid}\n";
+    print $job_logger "$state{jname}\tbash\t${bash_pid}\n";
     $job_logger->close();
-    ## Reset the environment in case we left any cruft behind
-    ## my $reset = Bio::Adventure::Reset_Vars($class);
     return($job);
 }
 

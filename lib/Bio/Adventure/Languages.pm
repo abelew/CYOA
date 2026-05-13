@@ -48,18 +48,18 @@ sub Make_Comment {
 
 sub Make_Sub_Job {
     my ($class, %args) = @_;
-    my $options = $class->options;
-    my $spec = $class->spec;
+    my $state_ref = $class->current_state;
+    my %state = %{$state_ref};
 
-    my $primary_job = $spec->{jstring};
-    if (defined($spec->{subjob})) {
-        if ($spec->{subjob} eq 'perl') {
-            my $perl_file = qq"$options->{basedir}/$options->{script_dir}/$options->{jname}.pl";
-            my $perl_stderr = qq"$options->{output_dir}/$options->{jname}.stderr";
-            my $perl_stdout = qq"$options->{output_dir}/$options->{jname}.stdout";
-            my $bash_log = qq"$options->{basedir}/outputs/log.txt";
-            $options->{prescript} = '' unless (defined($options->{prescript}));
-            $options->{postscript} = '' unless (defined($options->{postscript}));
+    my $primary_job = $state{jstring};
+    if (defined($state{subjob})) {
+        if ($state{subjob} eq 'perl') {
+            my $perl_file = qq"$state{basedir}/$state{script_dir}/$state{jname}.pl";
+            my $perl_stderr = qq"$state{output_dir}/$state{jname}.stderr";
+            my $perl_stdout = qq"$state{output_dir}/$state{jname}.stdout";
+            my $bash_log = qq"$state{basedir}/outputs/log.txt";
+            $state{prescript} = '' unless (defined($state{prescript}));
+            $state{postscript} = '' unless (defined($state{postscript}));
             my $subjob = qq?#!/usr/bin/env perl
 use strict;
 use Modern::Perl;
@@ -67,19 +67,19 @@ use FileHandle;
 use Bio::Adventure;
 my \$out = FileHandle->new(">>${bash_log}");
 my \$d = qx'date';
-print \$out "###Started $options->{jname} at \${d}";
-chdir("$options->{basedir}");
+print \$out "###Started $state{jname} at \${d}";
+chdir("$state{basedir}");
 my \$h = Bio::Adventure->new();
 my \$information = \$h->Bio::Adventure::Languages::Get_JSON('$class->{option_file}');
-## $options->{jcomment}
-$options->{prescript}
-$options->{jstring}
-$options->{postscript}
+## $state{jcomment}
+$state{prescript}
+$state{jstring}
+$state{postscript}
 ## The following lines give status codes and some logging
 my \$jobid = "";
 \$jobid = \$ENV{SLURM_JOBID} if (\$ENV{SLURM_JOBID});
 my \$end_d = qx'date';
-print \$out "####Finished \${jobid} $options->{jname} at \${end_d}.";
+print \$out "####Finished \${jobid} $state{jname} at \${end_d}.";
 close(\$out);
 ?;
             my $perl_script = FileHandle->new(">${perl_file}");

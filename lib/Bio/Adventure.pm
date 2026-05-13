@@ -20,7 +20,7 @@ use Bio::Tools::GFF;
 use Capture::Tiny qw":all";
 use Carp qw"croak carp confess cluck longmess";
 use Cwd qw"abs_path getcwd cwd";
-use Data::Dumper;
+use Data::Printer;
 use Env qw"COMPRESSION XZ_OPTS XZ_DEFAULTS HOME";
 use Env::Modulecmd;
 use File::Basename;
@@ -33,18 +33,20 @@ use FileHandle;
 use Getopt::Long qw"GetOptionsFromArray";
 use IO::String;
 use List::MoreUtils qw"uniq";
+use List::Util qw"any";
 use Log::Log4perl;
 use PerlIO;
 use Pod::Usage;
 use Signal::StackTrace qw"TTIN";
 use Storable qw"lock_store lock_retrieve";
+use String::Interpolate qw"interpolate";
 use Term::ReadLine;
 use Term::UI;
 
 use Bio::Adventure::Config;
 use Bio::Adventure::Languages;
 use Bio::Adventure::Slurm;
-use Bio::Adventure::Local;
+use Bio::Adventure::Bash;
 
 use Bio::Adventure::Align;
 use Bio::Adventure::Align_Blast;
@@ -81,21 +83,27 @@ use Bio::Adventure::Pipeline;
 ## The current function.
 has caller => (is => 'rw', default => undef);
 ## Arguments provided by the commandline.
-has cmdline_args => (is => 'rw', default => sub { {} });
+has cmdline_args => (is => 'ro', writer => '_set_cmdline_args', default => sub { {} });
+## Keep a reference to the input information for the current function here.
+has current_inputs => (is => 'rw', default => sub{ {} });
 ## The current merged state of the various arguments.
 has current_state => (is => 'rw', default => sub{ {} });
+## Args passed from function to function.
+has function_args => (is => 'rw', default => sub { {} });
 ## Default file from which to acquire function-specfic defaults
-has function_file => (is => 'rw', default => 'functions.json');
-## Arguments provided in the function declaration.
-has function_defaults => (is => 'rw', default => sub { {} });
+has function_file => (is => 'ro', writer => '_set_function_file', default => 'functions.json');
+## Arguments provided in the functions.json.
+has function_defaults => (is => 'ro', writer => '_set_function_defaults', default => sub { {} });
 ## Default file from which to acquire global defaults.
 ## If the file is not found, check in the dist-share directory.
-has global_file => (is => 'rw', default => 'defaults.json');
+has function_paths => (is => 'rw', default => sub{ {} });
+has global_file => (is => 'ro', writer => '_set_global_file', default => 'defaults.json');
 ## Global default arguments.
-has global_defaults => (is => 'rw', default => sub { {} });
+has global_defaults => (is => 'ro', writer => '_set_global_defaults', default => sub { {} });
 ## Arguments provided by an ini file.
-has ini_file => (is => 'rw', default => 'cyoa.conf');
-has ini_args => (is => 'rw', default => sub{ {} });
+has global_paths => (is => 'ro', writer => '_set_global_paths', default => sub{ {} });
+has ini_file => (is => 'ro', writer => '_set_ini_file', default => 'cyoa.conf');
+has ini_args => (is => 'ro', writer => '_set_ini_args', default => sub{ {} });
 has instance_args => (is => 'rw', default => sub{ {} });
 ## Information about the inputs used over time by cyoa.  I am changing
 ## this to an array ref for which every element is the result
@@ -104,12 +112,14 @@ has instance_args => (is => 'rw', default => sub{ {} });
 has inputs => (is => 'rw', default => sub{ [] });
 ## Information about each submitted job.
 has jobs => (is => 'rw', default => sub{ [] });
+## Array of job IDs
+has job_ids => (is => 'rw', default => sub{ [] });
 ## Arbitrary json file containing arguments
-has json_file => (is => 'rw', default => undef);
+has json_file => (is => 'ro', writer => '_set_json_file', default => undef);
 ## Arguments provided by a json file.
-has json_args => (is => 'rw', default => sub{ {} });
+has json_args => (is => 'rw', writer => '_set_json_args', default => sub{ {} });
 ## A menu of possible adventures.
-has menu => (is => 'rw', default => sub{ {} });
+has menu => (is => 'ro', writer => '_set_menu', default => sub{ {} });
 ## The set of currently loaded modules.
 has modules => (is => 'rw', default => sub{ [] });
 ## Similar to inputs, have options be a list of the option state
@@ -121,11 +131,8 @@ has outputs => (is => 'rw', default => sub{ {} });
 has path_file => (is => 'rw', default => 'paths.json');
 ## Useful paths for the current job.
 has paths => (is => 'rw', default => sub{ {} });
-## A specification defining expected cpu/memory/time/etc usage for a
-## single job.
-has spec => (is => 'rw', default => sub{ {} });
 ## Set of things to do.
-has todos => (is => 'rw', default => sub{ []} );
+has todos => (is => 'ro', writer => '_set_todos', default => sub{ []} );
 
 =head1 NAME
 
@@ -189,11 +196,8 @@ if (!defined($ENV{PERL_INLINE_DIRECTORY})) {
 
 sub Append_Inputs {
     my ($class, $input) = @_;
-    use Data::Dumper;
     my @current = @{$class->inputs};
-    print Dumper @current;
     push(@current, $input);
-    print Dumper @current;
     my $current_num = scalar(@current);
     $class->inputs(\@current);
     return($current_num);
@@ -201,11 +205,9 @@ sub Append_Inputs {
 
 sub Get_Last_Input {
     my ($class, %args) = @_;
-
-    use Data::Dumper;
-    print Dumper $class->inputs;
     my @in = @{$class->inputs};
     my $last = $in[$#in];
+    $class->{current_state}->{input} = $last;
     return($last);
 }
 
@@ -260,29 +262,18 @@ sub BUILD {
     ## I would like to acquire the global defaults.  I will then
     ## gather function-specific parameters from functions.json, etc.
 
-    ## In theory, this should give a hash of arguments passed to new()
-    ## It needs testing.
-    my $set = $class->instance_args($args);
-
     ## Read the global defaults json filend extract variables from it.
     if (!%{$class->global_defaults}) {
         my $defaults = Bio::Adventure::Config::Get_JSON(
             input_file => $class->global_file,);
-        my $set = $class->global_defaults($defaults);
+        my $set = $class->_set_global_defaults($defaults);
     }
-    ##if ($class->global_defaults) {
-    ##    say "The global defaults exist.";
-    ##}
 
     ## Pull anything from ARGV into the cmdline_args slot.
     if (!%{$class->cmdline_args}) {
         my $cmdline_args = Bio::Adventure::Config::Get_ARGV();
-        my $set = $class->cmdline_args($cmdline_args);
+        my $set = $class->_set_cmdline_args($cmdline_args);
     }
-    ##if ($class->cmdline_args) {
-    ##    say "The commandline args exist.";
-    ##    print Dumper $class->cmdline_args;
-    ##}
 
     ## Read the json file of function-specific default values.
     ## Ideally I should be pulling quite a lot out of the global
@@ -291,12 +282,8 @@ sub BUILD {
         ## print "The function-specific defaults are undefined.\n";
         my $defaults = Bio::Adventure::Config::Get_JSON(
             input_file => $class->function_file);
-        my $set = $class->function_defaults($defaults);
+        my $set = $class->_set_function_defaults($defaults);
     }
-    ##if ($class->function_defaults) {
-    ##    say "The function defaults exist.";
-    ##    print Dumper $class->function_defaults;
-    ##}
 
     ## If there is an ini file in the current-working-tree
     ## Use variables from it.
@@ -304,31 +291,28 @@ sub BUILD {
         ## print "Arguments from an ini file are undefined.\n";
         my $ini = Bio::Adventure::Config::Get_Ini(
             input_file => $class->ini_file);
-        my $set = $class->ini_args($ini);
+        my $set = $class->_set_ini_args($ini);
     }
-    ##if ($class->ini_args) {
-    ##    say "The ini file options exist.";
-    ##    print Dumper $class->ini_args;
-    ##}
 
     ## Similarly to the ini file, pull json options.
     if (!%{$class->json_args}) {
         my $json = Bio::Adventure::Config::Get_JSON(
             input_file => $class->json_file);
-        my $set = $class->json_args($json);
+        my $set = $class->_set_json_args($json);
     }
-    ##if ($class->json_args) {
-    ##    say "The local json file options exist.";
-    ##    print Dumper $class->json_args;
-    ##}
 
+    ## In theory, this should give a hash of arguments passed to new()
+    ## It needs testing.
+    my $set = $class->instance_args($args);
     ## Create the current state of cyoa from the various
     ## arguments/ini/etc above.
     my $current_state = Bio::Adventure::Config::Merge_Args(
+        instance => $class->instance_args,
         global => $class->global_defaults,
         cmdline => $class->cmdline_args,
         ini => $class->ini_args,
         json => $class->json_args);
+
     ## Coerce a few values from strings here
     my @suffixes = ('.gz', '.xz', '.bz2');
     if (defined($current_state->{suffixes})) {
@@ -339,12 +323,29 @@ sub BUILD {
                                     libpath => $current_state->{libpath});
     $current_state->{libpath} = $path_agrees->{libpath};
     $current_state->{libdir} = $path_agrees->{libdir};
-    if (!defined($current_state->{modulecmd}) ||
-        $current_state->{modulecmd} eq 'guess') {
-        my $modulecmd = Bio::Adventure::Config::Get_Modulecmd();
-        $current_state->{modulecmd} = $modulecmd;
+    ## Write out a few functions to assist the shell: error traps and module particularly.
+    my $shell_function = Bio::Adventure::Config::Get_Shell_Functions(
+        bash_log => $current_state->{bash_log});
+    my $exists = make_path(dirname($current_state->{bash_functions}));
+    if (!-f $current_state->{bash_functions}) {
+        my $source_fh = FileHandle->new(">$current_state->{bash_functions}");
+        print $source_fh $shell_function;
+        $source_fh->close();
     }
+    $current_state->{bash_functions} = abs_path($current_state->{bash_functions});
+    ## FIXME: There is a better place to set the absolute path of the basedir
+    $current_state->{abs_basedir} = abs_path($current_state->{basedir});
+    $current_state->{bash_source} = qq"source $current_state->{bash_functions}";
+    if ($current_state->{modules}) {
+        $current_state->{module_string} = qq"module add $current_state->{modules}";
+    }
+    $class->current_state($current_state);
+    ## Get the relatively small number of paths which should prove universal.
+    my $global_paths = $class->Bio::Adventure::Config::Get_Global_Paths();
 
+    my @available_clusters = Get_Clusters();
+    $current_state->{available_clusters} = \@available_clusters;
+    ## Now that we have collected all the various potential options, set the state with them.
     $class->current_state($current_state);
     ## Add the first element to inputs
     my @inputs = @{$class->inputs};
@@ -357,16 +358,17 @@ sub BUILD {
         push(@inputs, []);
     }
     $class->inputs(\@inputs);
+
+    ## If it turns out we want a tui menu, get them here.
     my $menus = {};
     if ($current_state->{interactive}) {
         $menus = Bio::Adventure::Config::Get_Menus();
     }
-    $class->menu($menus);
+    $class->_set_menu($menus);
 
-    my $todos = Bio::Adventure::Config::Get_TODOs(
-        %{$class->cmdline_args});
-    $class->todos($todos);
-
+    ## Finally, use the command line options to figure out what tasks should be performed
+    my $todos = Bio::Adventure::Config::Get_TODOs(%{$class->cmdline_args});
+    $class->_set_todos($todos);
     return($args);
 }
 
@@ -375,7 +377,8 @@ sub Add_Config_File {
     my $defaults = $args{defaults};
     my $steps = $args{steps};
     my $input = $args{input};
-    my $config = AppConfig->new({ CREATE => '.*' , GLOBAL => { ARGCOUNT => AppConfig::ARGCOUNT_ONE } });
+    my $config = AppConfig->new({ CREATE => '.*' ,
+                                  GLOBAL => { ARGCOUNT => AppConfig::ARGCOUNT_ONE } });
     my $info = $config->file($input);
     my $variable = q{};
     my $step = '0';
@@ -418,15 +421,12 @@ sub Check_Input {
             $args{files} =~ s/[:,;]$//g;
             my @tmp = split(/[:,;]/, $args{files});
             $file_list = \@tmp;
-        }
-        else {
+        } else {
             $file_list->[0] = $args{files};
         }
-    }
-    elsif (ref($args{files}) eq 'ARRAY') {
+    } elsif (ref($args{files}) eq 'ARRAY') {
         $file_list = $args{files};
-    }
-    else {
+    } else {
         my $unknown_class = ref($args{files});
         warn("I do not know type: ${unknown_class}.");
     }
@@ -455,8 +455,7 @@ sub Check_Job {
     my $result;
     if ($options->{cluster} eq 'slurm') {
         $result = $class->Bio::Adventure::Slurm::Check_Job(%args);
-    }
-    else {
+    } else {
         print "This runner doesn't yet have a Check_Job.\n";
     }
     return($result);
@@ -488,9 +487,17 @@ sub Check_Libpath {
     if ($args{libdir} =~ /\$/) {
         if ($interpolated_libdir =~ /^(.*)?\$\{*([A-Z]+)\}*(.*)$/) {
             my $prefix = $1;
+            if (!defined($prefix)) {
+                $prefix = q{};
+            }
             my $varname = $2;
+            if (!defined($varname)) {
+                $varname = q{};
+            }
             my $suffix = $3;
-            print "TESTME: Libpath: prefix: $prefix varname: $varname suffix $suffix .\n";
+            if (!defined($suffix)) {
+                $suffix = q{};
+            }
             $interpolated_libdir = qq"${prefix}$ENV{$varname}${suffix}";
         } else {
             $interpolated_libdir = $args{libdir};
@@ -535,6 +542,31 @@ sub Fa_to_Hash {
     return($output);
 }
 
+sub Get_Clusters {
+    my %checks = (
+        bash => ['bash'],
+        slurm => ['sacctmgr', 'srun', 'sbatch'],
+        torque => ['qsub'],
+        perl => ['perl'],
+    );
+    my @available = ();
+    TYPE: for my $check (keys %checks) {
+        my @tests = @{$checks{$check}};
+        my $avail = 1;
+        EXE: for my $exe (@tests) {
+            my $check = which($exe);
+            if (!defined($check)) {
+                $avail = 0;
+                last EXE;
+            }
+        }
+        if ($avail) {
+            push(@available, $check);
+        }
+    }
+    return(@available);
+}
+
 =head2 C<Get_FC>
 
   Returns an arbitrary command used to send a file to STDOUT.  Note that if a program requires
@@ -552,13 +584,15 @@ sub Get_FC {
         my $opener = $class->Get_FC_Seekable(%args);
         return($opener);
     }
+    my $ignored = q{};
+    $ignored = $args{ignored} if ($args{ignored});
     my $opener = $args{input};
     my $input_dir = dirname($args{input});
-    if ($args{input} =~ /\.xz$/) {
+    if ($args{input} =~ /\.xz$/ && $ignored !~ /xz/) {
         $opener = qq"xz -dc $args{input}";
-    } elsif ($args{input} =~ /\.bz2$/) {
+    } elsif ($args{input} =~ /\.bz2$/ && $ignored !~ /bz2/) {
         $opener = qq"bunzip2 -c $args{input}";
-    } elsif ($args{input} =~ /\.gz$/) {
+    } elsif ($args{input} =~ /\.gz$/ && $ignored !~ /gz/) {
         $opener = qq"gunzip -c $args{input}";
     } else {
         $opener = qq"less $args{input}";
@@ -619,18 +653,17 @@ sub Get_FD {
     my ($class, %args);
     if ((scalar(@_) % 2) == 1) {
         ($class, %args) = @_;
-    }
-    else {
+    } else {
         %args = @_;
     }
+    my $ignored = q{};
+    $ignored = $args{ignored} if ($args{ignored});
     my $opener = $args{input};
-    if ($args{input} =~ /\.xz$/) {
+    if ($args{input} =~ /\.xz$/ && $ignored !~ /xz/) {
         $opener = qq"<(xz -dc $args{input})";
-    }
-    elsif ($args{input} =~ /\.bz2$/) {
+    } elsif ($args{input} =~ /\.bz2$/ && $ignored !~ /bz2/) {
         $opener = qq"<(bunzip2 -c $args{input})";
-    }
-    elsif ($args{input} =~ /\.gz$/) {
+    } elsif ($args{input} =~ /\.gz$/ && $ignored !~ /gz/) {
         $opener = qq"<(gunzip -c $args{input})";
     }
     return($opener);
@@ -640,18 +673,15 @@ sub Get_FH {
     my ($class, %args);
     if ((scalar(@_) % 2) == 1) {
         ($class, %args) = @_;
-    }
-    else {
+    } else {
         %args = @_;
     }
     my $opener = undef;
     if ($args{input} =~ /\.xz$/) {
         $opener = 'xz -dc';
-    }
-    elsif ($args{input} =~ /\.bz2$/) {
+    } elsif ($args{input} =~ /\.bz2$/) {
         $opener = 'bunzip2 -c';
-    }
-    elsif ($args{input} =~ /\.gz$/) {
+    } elsif ($args{input} =~ /\.gz$/) {
         $opener = 'gunzip -c';
     }
     my $fh;
@@ -660,22 +690,40 @@ sub Get_FH {
         $cmd = $opener;
         if ($args{suffix}) {
             $cmd .= qq" $args{input} $args{suffix} |";
-        }
-        else {
+        } else {
             $cmd .= qq" $args{input} |";
         }
-    }
-    else {
+    } else {
         if ($args{suffix}) {
             $cmd = qq"cat $args{input} $args{suffix} |";
-        }
-        else {
+        } else {
             $cmd = qq"<$args{input}";
         }
         $fh = FileHandle->new($cmd);
     }
     $fh = FileHandle->new($cmd);
     return($fh);
+}
+
+sub Get_Script_Filename {
+    my ($class, %args) = @_;
+    my $state_ref = $class->current_state;
+    my %state = %{$state_ref};
+    my $script_file = qq"$state{basedir}/$state{script_dir}/$state{jprefix}$state{jname}.sh";
+    my $exists_test = 0;
+    $exists_test = 1 if (-r $script_file);
+    my $exists_count = 0;
+    while ($exists_test) {
+        $exists_count++;
+        my $suffix_base = basename($state{basedir});
+        my $suffix = qq"_${suffix_base}_${exists_count}_";
+        $script_file = qq"$state{basedir}/$state{script_dir}/$state{jprefix}${suffix}$state{jname}.sh";
+        unless (-r $script_file) {
+            $exists_test = 0;
+            print "Writing script to: ${script_file}\n";
+        }
+    } ## Add a counter to the suffix until we have a free filename.
+    return($script_file);
 }
 
 =head2 C<Get_Term>
@@ -747,8 +795,7 @@ sub Get_Input {
     my @input_list = undef;
     if ($input =~ /:/) {
         @input_list = split(/:/, $input);
-    }
-    else {
+    } else {
         push(@input_list, $input);
     }
 
@@ -791,14 +838,14 @@ sub Juggle {
         $runner = Bio::Adventure::Torque->new();
     } elsif ($options->{cluster} eq 'bash') {
         ## I should probably have something to handle gracefully bash jobs.
-        $runner = Bio::Adventure::Local->new();
+        $runner = Bio::Adventure::Bash->new();
     } elsif ($options->{cluster} eq '0') {
         ## On occasion I set cluster to 0 which is bash.
-        $runner = Bio::Adventure::Local->new();
+        $runner = Bio::Adventure::Bash->new();
     } else {
         carp("Could not find sbatch, qsub, nor bash.");
         print "Assuming this is running on a local shell.\n";
-        $runner = Bio::Adventure::Local->new();
+        $runner = Bio::Adventure::Bash->new();
     }
     my $result = $runner->Juggle($class, %args);
 }
@@ -814,8 +861,7 @@ sub Load_Vars {
                 $num_changed ++;
                 $class->{$opt} = $input_options->{$opt};
             }
-        }
-        else {
+        } else {
             $num_changed++;
             $class->{$varname} = $args{$varname};
         }
@@ -856,14 +902,11 @@ sub Reset_Vars {
 
 sub Last_Stat {
     my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        args => \%args,
-        required => ['input']);
-    if (!defined($options->{input})) {
+    if (!defined($args{input})) {
         print "Input for Last_Stat was undefined.\n";
         return(undef);
     }
-    my $input = FileHandle->new("<$options->{input}");
+    my $input = FileHandle->new("<$args{input}");
     if (!defined($input)) {
         print "The input file for Last_Stat appears to be empty.\n";
         return(undef);
@@ -911,7 +954,9 @@ sub Module_Loader {
         $action = $args{action};
     }
 
-    ## Start with the current ENV and an empty set of things to load and test.
+    ## Start with the current ENV and an empty set of things to load
+    ## and test.
+    my $module_string = q"";
     my %old_env = %ENV;
     my @mod_lst = ();
     my $mod_class = ref($args{modules});
@@ -953,6 +998,7 @@ sub Module_Loader {
     }
     my @messages = ();
     my @loads = ();
+    my $loaded = 0;
   LOADER: for $mod (@mod_lst) {
         ## Skip one's self.
         my ($stdout, $stderr, @result) = capture {
@@ -961,6 +1007,11 @@ sub Module_Loader {
                 push(@loads, $mod);
                 if ($action eq 'load') {
                     $test = Env::Modulecmd::load($mod);
+                    $loaded++;
+                    if ($loaded == 1) {
+                        $module_string = q'module add ';
+                    }
+                    $module_string .= qq"$mod ";
                 } else {
                     $test = Env::Modulecmd::unload($mod);
                 }
@@ -983,7 +1034,13 @@ sub Module_Loader {
             die(qq"Could not find ${exe} in the PATH.") unless ($check);
         }
     }
-    $class->{modules} = \@mod_lst;
+    my $set = $class->modules(\@mod_lst);
+    ## Note, this module_string does not appear to be getting added to the function-local state.
+    my $state_ref = $class->current_state;
+    $state_ref->{module_string} = $module_string;
+    $state_ref->{spack_string} = q{};
+    $state_ref->{conda_string} = q{};
+    my $state_set = $class->current_state($state_ref);
     return(\%old_env);
 }
 
@@ -1203,7 +1260,7 @@ sub Record_Options {
     my ($class, %args) = @_;
     my $runner = $args{runner};
     my $result = $args{result};
-    my $arg_fh = FileHandle->new(qq">>$class->{output_base}/args.tsv");
+    my $arg_fh = FileHandle->new(qq">>$class->{output_basedir}/args.tsv");
     my $method = Bio::Adventure::Config::Get_Caller();
     my @written = ();
     if ($result->{stdout}) {
@@ -1255,6 +1312,25 @@ sub scalar_which {
     return($path);
 }
 
+sub self_interp {
+    my ($class, %args) = @_;
+    my %hash = %{$args{hashref}};
+    for my $k (keys %hash) {
+        my $value = $hash{$k};
+        next unless (defined($value));
+        if ($value =~ /\$/) {
+            my $matched = $value =~ m/^(.*)?\$\{*(?<varname>[a-zA-Z_]+)\}*(.*)$/;
+            my $varname = $+{varname};
+            next unless (defined($varname));
+            if ($hash{$varname}) {
+                my $new = interpolate($hash{$k}, \%hash);
+                $hash{$k} = $new;
+            }
+        }
+    }
+    return(\%hash);
+}
+
 =head2 C<Submit>
 
  Pass a job to slurm or torque after doing a little sanity checking.  I
@@ -1264,16 +1340,36 @@ sub scalar_which {
 =cut
 sub Submit {
     my ($class, %args) = @_;
-    my $runner;
-    my $current_spec = $class->spec;
-    my $modules = $current_spec->{modules};
+    my $state = $class->current_state;
+    my $modules = $state->{modules};
+    my $avail_clusters = $state->{available_clusters};
     ## Before creating the runner, add the required modules.
-    print "Adventure::Submit, loading modules\n";
-    use Data::Dumper;
-    print Dumper $modules;
     my $orig_env = $class->Module_Loader(action => 'load',
                                          modules => $modules);
-    $runner = Bio::Adventure::Local->new();
+    my $runner;
+    if ($state->{cluster} eq 'slurm') {
+        if (any {$_ eq 'slurm'} @{$avail_clusters}) {
+            $runner = Bio::Adventure::Slurm->new();
+        } else {
+            $runner = Bio::Adventure::Bash->new();
+        }
+    } elsif ($state->{cluster} eq 'torque') {
+        if (any {$_ eq 'torque'} @${avail_clusters}) {
+            $runner = Bio::Adventure::Torque->new();
+        } else {
+            $runner = Bio::Adventure::Bash->new();
+        }
+    } elsif ($state->{cluster} eq 'bash') {
+        ## I should probably have something to handle gracefully bash jobs.
+        $runner = Bio::Adventure::Bash->new();
+    } elsif ($state->{cluster} eq '0') {
+        ## On occasion I set cluster to 0 which is bash.
+        $runner = Bio::Adventure::Bash->new();
+    } else {
+        carp("Could not find sbatch, qsub, nor bash.");
+        print "Assuming this is running on a local shell.\n";
+        $runner = Bio::Adventure::Bash->new();
+    }
     ## Add the current options to the runner:
     my $result = $runner->Submit($class, %args);
     ## After the runner is finished, unload the modules.
@@ -1281,6 +1377,9 @@ sub Submit {
     my @jobs = @{$class->jobs};
     push(@jobs, $result);
     $class->jobs(\@jobs);
+    my @job_ids = @{$class->job_ids};
+    push(@job_ids, $result->{job_id});
+    $class->job_ids(\@job_ids);
     return($result);
 }
 
@@ -1296,23 +1395,21 @@ sub Test_Job {
 =cut
 sub Wait {
     my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args);
+    my %options = %{$class->current_state};
+    my $all_inputs = $class->inputs;
+    my $inputs = $all_inputs->[$#$all_inputs];
     my $status = undef;
-    if ($options->{cluster} eq 'slurm') {
+    if ($options{cluster} eq 'slurm') {
         $status = $class->Bio::Adventure::Slurm::Wait(%args);
-    }
-    elsif ($options->{cluster} eq 'torque') {
+    } elsif ($options{cluster} eq 'torque') {
         $status = $class->Bio::Adventure::Torque::Wait(%args);
-    }
-    elsif ($options->{cluster} eq 'bash') {
+    } elsif ($options{cluster} eq 'bash') {
         ## I should probably have something to handle gracefully bash jobs.
-        $status = $class->Bio::Adventure::Local::Wait(%args);
-    }
-    elsif ($options->{cluster} eq '0') {
+        $status = $class->Bio::Adventure::Bash::Wait(%args);
+    } elsif ($options{cluster} eq '0') {
         ## On occasion I set cluster to 0 which is bash.
-        $status = $class->Bio::Adventure::Local::Wait(%args);
-    }
-    else {
+        $status = $class->Bio::Adventure::Bash::Wait(%args);
+    } else {
         carp("Could not find sbatch, qsub, nor bash.");
         print "Assuming this is running on a local shell.\n";
         return(undef);
@@ -1330,8 +1427,7 @@ The following comprises the set of strings you may feed it as 'methods':\n";
         my $sep = '\t';
         if (($c % 3) == 0) {
             $sep = '\n';
-        }
-        else {
+        } else {
             $sep = '\t';
         }
         $c++;
@@ -1357,12 +1453,11 @@ Email abelew@gmail.com
 
 =head1 SEE ALSO
 
-    L<Bio::Seq> L<autodie> L<local::lib> L<Bio::Adventure::Aligners>
-    L<Bio::Adventure::Assembly> L<Bio::Adventure::Count> L<Bio::Adventure::Aligners> L<Bio::Adventure::QA>
-    L<Bio::Adventure::Trim> L<Bio::Adventure::Align_Blast> L<Bio::Adventure::Align_Fasta> L<Bio::Adventure::Align>
-    L<Bio::Adventure::Cleanup> L<Bio::Adventure::Compress> L<Bio::Adventure::Convert> L<Bio::Adventure::PBS>
-    L<Bio::Adventure::Prepare> L<Bio::Adventure::Riboseq> L<Bio::Adventure::SeqMisc> L<Bio::Adventure::SNP>
-    L<Bio::Adventure::TNSeq>
+    L<Bio::Seq> L<autodie> L<local::lib> L<Bio::Adventure::Assembly> L<Bio::Adventure::Count>
+    L<Bio::Adventure::QA> L<Bio::Adventure::Trim> L<Bio::Adventure::Align_Blast>
+    L<Bio::Adventure::Align_Fasta> L<Bio::Adventure::Align> L<Bio::Adventure::Compress>
+    L<Bio::Adventure::Convert> L<Bio::Adventure::Prepare> L<Bio::Adventure::Riboseq>
+    L<Bio::Adventure::SeqMisc> L<Bio::Adventure::SNP> L<Bio::Adventure::TNSeq>
 
 =cut
 

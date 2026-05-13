@@ -1,0 +1,22 @@
+## This shell fragment is intended to extract information from the cutadapt log for single-end data.
+if [ ! -r "[% stat_output %]" ]; then
+  echo "name,total_reads,adapter_reads,too_short,discarded_untrimmed,passed" > [% stat_output %]
+fi
+total_reads_tmp=$( { head -n 15 [% input %] | grep "^Total reads processed" || test $? = 1; } |\
+  awk '{print $4}' | sed "s/\,//g")
+total_reads=${total_reads_tmp:-0}
+adapter_tmp=$( { head -n 15 [% input %] | grep "^Reads with adapters" || test $? = 1; } |\
+  awk '{print $4}' | sed "s/\,//g")
+adapter=${adapter_tmp:-0}
+too_short_tmp=$( { head -n 15 [% input %] | grep "^Reads that were too short" || test $? = 1; } |\
+  awk '{print $6}' | sed "s/\,//g")
+too_short=${too_short_tmp:-0}
+discarded_untrimmed_tmp=$( { head -n 15 [% input %] | grep "^Reads discarded as untrimmed" || test $? = 1; } |\
+  awk '{print $5}' | sed "s/\,//g")
+discarded_untrimmed=${discarded_untrimmed_tmp:-0}
+passed_tmp=$( { head -n 15 [% input %] | grep "^Reads written" || test $? = 1; } |\
+  awk '{print $5}' | sed "s/\,//g")
+passed=${passed_tmp:-0}
+stat_string=$(printf "[% input_name %],%s,%s,%s,%s,%s" "${total_reads}" "${adapter}" \
+  "${too_short}" "${discarded_untrimmed}" "${passed}")
+echo "$stat_string" >> [% stat_output %]

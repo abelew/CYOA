@@ -212,7 +212,6 @@ sub Get_Aragorn {
       if ($line =~ /^\d+ genes found/) {
           $current_contig = $last_line;
           $current_contig =~ s/^>//g;
-          ## print "genes found line: $current_contig\n";
           $counter = 0;
       }
       ## if ($counter == 1) {
@@ -231,21 +230,17 @@ sub Get_Aragorn {
           $end =~ s/\]//g;
           $anticodon =~ s/\(//g;
           $anticodon =~ s/\)//g;
-          ## print "counter1: n:$number t:$type c:$coords u:$unknown a:$anticodon f:$start t:$end\n";
           $formatted_number = sprintf("%04d", $number);
       }
       if ($counter == 2) {
           my ($annot, $start_end) = split(/\s+c*\[/, $line);
           $annotation = $annot;
           $annotation =~ s/^>//g;
-          ## print "counter2: $annotation\n";
       }
       if ($counter >= 3) {
-          ## print "counter3+ $trna_seq\n";
           $seq_portion .= $line;
           $seq_portion =~ s/\s+//g;
           if ($seq_portion =~ /^\w{50}$/) {
-              ## print "This is the max length sequence line.\n";
               $trna_seq = $seq_portion;
           } elsif ($seq_portion =~ /^\w+/) {
               $trna_seq .= $seq_portion;
@@ -1577,68 +1572,23 @@ echo "\${stat_string}" >> ${stat_output}!;
 =cut
 sub Cutadapt_Stats {
     my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        args => \%args,
-        required => ['input'],);
-    my $jname = $options->{jname};
-    my $stat_output = qq"$paths->{output_dir}/cutadapt_stats.csv";
-    my $jstring = '';
-    if ($options->{paired}) {
-        $jstring = qq!
-if [ \! -r "${stat_output}" ]; then
-  echo "name,total_reads,adapter_reads,too_short,discarded_untrimmed,passed" > $stat_output
-fi
-total_reads_tmp=\$( { head -n 15 $options->{input} | grep "^Total read pairs processed" || test \$? = 1; } |\\
-  awk '{print \$4}' | sed "s/\,//g")
-total_reads=\${total_reads_tmp:-0}
-too_short_tmp=\$( { head -n 15 $options->{input} | grep "^Pairs that were too short" || test \$? = 1; } |\\
-  awk '{print \$6}' | sed "s/\,//g")
-too_short=\${too_short_tmp:-0}
-discarded_untrimmed_tmp=\$( { head -n 15 $options->{input} | grep "^Pairs discarded as untrimmed" || test \$? = 1; } |\\
-  awk '{print \$5}' | sed "s/\,//g")
-discarded_untrimmed=\${discarded_untrimmed_tmp:-0}
-passed_tmp=\$( { head -n 15 $options->{input} | grep "^Pairs written" || test \$? = 1; } |\\
-  awk '{print \$5}' | sed "s/\,//g")
-passed=\${passed_tmp:-0}
-stat_string=\$(printf "$options->{input_name},%s,%s,%s,%s" "\${total_reads}" \\
-  "\${too_short}" "\${discarded_untrimmed}" "\${passed}")
-echo "\$stat_string" >> ${stat_output}
-!;
-    } else {
-        $jstring = qq!
-if [ \! -r "${stat_output}" ]; then
-  echo "name,total_reads,adapter_reads,too_short,discarded_untrimmed,passed" > $stat_output
-fi
-total_reads_tmp=\$( { head -n 15 $options->{input} | grep "^Total reads processed" || test \$? = 1; } |\\
-  awk '{print \$4}' | sed "s/\,//g")
-total_reads=\${total_reads_tmp:-0}
-adapter_tmp=\$( { head -n 15 $options->{input} | grep "^Reads with adapters" || test \$? = 1; } |\\
-  awk '{print \$4}' | sed "s/\,//g")
-adapter=\${adapter_tmp:-0}
-too_short_tmp=\$( { head -n 15 $options->{input} | grep "^Reads that were too short" || test \$? = 1; } |\\
-  awk '{print \$6}' | sed "s/\,//g")
-too_short=\${too_short_tmp:-0}
-discarded_untrimmed_tmp=\$( { head -n 15 $options->{input} | grep "^Reads discarded as untrimmed" || test \$? = 1; } |\\
-  awk '{print \$5}' | sed "s/\,//g")
-discarded_untrimmed=\${discarded_untrimmed_tmp:-0}
-passed_tmp=\$( { head -n 15 $options->{input} | grep "^Reads written" || test \$? = 1; } |\\
-  awk '{print \$5}' | sed "s/\,//g")
-passed=\${passed_tmp:-0}
-stat_string=\$(printf "$options->{input_name},%s,%s,%s,%s,%s" "\${total_reads}" "\${adapter}" \\
-  "\${too_short}" "\${discarded_untrimmed}" "\${passed}")
-echo "\$stat_string" >> ${stat_output}
-!;
+    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars(\%args);
+    my $all_inputref = $class->inputs;
+    my $inputs = $all_inputref->[$#$all_inputref];
+    my %options = %{$function_info};
+    $options{template} = $options{template_single};
+    if ($options{paired}) {
+        $options{template} = $options{template_pair};
     }
-    my $stats = $class->Submit(
-        jdepends => $options->{jdepends},
-        jstring => $jstring,
-        output => ${stat_output},
-        outputs => $outputs,);
-    ## Added to return the state of the system to what it was
-    ## before we messed with the options.
+    $options{stat_output} = $options{main};
+    $options{input_name} = $args{input_name};
+    $options{input} = $inputs->[0]->{input};
+    my $updated = $class->Bio::Adventure::Config::Update_State(
+        jdepends => $options{jdepends},
+        options => \%options);
+    my $stats = $class->Submit();
     return($stats);
 }
-
 
 =head2 C<Fastp_Stats>
 
@@ -1651,25 +1601,20 @@ echo "\$stat_string" >> ${stat_output}
 sub Fastp_Stats {
     my ($class, %args) = @_;
     my $function_info = Bio::Adventure::Config::Get_Function_Vars($class, \%args);
-    my $paths = $function_info->{paths};
-    my $inputs = $function_info->{inputs};
-    my $options = $class->current_state;
-    $function_info->{template} = $function_info->{single_template};
-    if ($options->{paired}) {
-        $function_info->{template} = $function_info->{paired_template};
+    my $all_inputref = $class->inputs;
+    my $inputs = $all_inputref->[$#$all_inputref];
+    my %options = %{$function_info};
+    $options{template} = $options{template_single};
+    if ($options{paired}) {
+        $options{template} = $options{template_pair};
     }
-    my $template_args = {
-        stat_output => $paths->{main},
-        input => $inputs->[0]->{input},
-
-    };
-    my $updated = $class->Bio::Adventure::Config::Update_Spec(
-        jdepends => $options->{jdepends},
-        function_info => $function_info,
-        template_args => $template_args,);
+    $options{stat_output} = $options{main};
+    $options{input_name} = $args{input_name};
+    $options{input} = $inputs->[0]->{input};
+    my $updated = $class->Bio::Adventure::Config::Update_State(
+        jdepends => $options{jdepends},
+        options => \%options);
     my $stats = $class->Submit();
-    ## Added to return the state of the system to what it was
-    ## before we messed with the options.
     return($stats);
 }
 
@@ -1898,53 +1843,25 @@ echo "\$stat_string" >> "${output}"!;
 =cut
 sub Trimomatic_Stats {
     my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        args => \%args,
-        required => ['input'],);
-    ## Dereferencing the options to keep a safe copy.
-    my $basename = $options->{basename};
-    my $jname = 'trimst';
-    $jname = $options->{jname} if ($options->{jname});
-    my $jstring = qq!
-if [ \! -r $outputs->{main} ]; then
-  echo "total_reads,surviving_reads,dropped_reads" > $outputs->{main}
-fi
-total_reads_tmp=\$( { grep "^Input Reads" $options->{input} || test \$? = 1; } | awk '{print \$3}')
-total_reads=\${total_reads_tmp:-0}
-surviving_reads_tmp=\$( { grep "^Input Reads" $options->{input} || test \$? = 1; } | awk '{print \$5}')
-surviving_reads=\${surviving_reads_tmp:-0}
-dropped_reads_tmp=\$( { grep "^Input Reads" $options->{input} || test \$? = 1; } | awk '{print \$8}')
-dropped_reads=\${dropped_reads_tmp:-0}
-
-stat_string=\$(printf "${basename},%s,%s,%s" "\${total_reads}" "\${surviving_reads}" "\${dropped_reads}")
-echo "\$stat_string" >> $outputs->{main}
-!;
-    if ($options->{pairwise}) {
-        ## The output looks a bit different for pairwise input:
-        ## Input Read Pairs: 10000 Both Surviving: 9061 (90.61%) Forward Only Surviving: 457 (4.57%) Reverse Only Surviving: 194 (1.94%) Dropped: 288 (2.88%)
-        $jstring = qq!
-if [ \! -r $outputs->{main} ]; then
-  echo "total_reads,surviving_both,surviving_forward,surviving_reverse,dropped_reads" > $outputs->{main}
-fi
-total_reads_tmp=\$( { grep "^Input Read Pairs" $options->{input} || test \$? = 1; } | awk '{print \$4}')
-total_reads=\${total_reads_tmp:-0}
-surviving_both_tmp=\$( { grep "^Input Read Pairs" $options->{input} || test \$? = 1; } | awk '{print \$7}')
-surviving_both=\${surviving_both_tmp:-0}
-surviving_forward_tmp=\$( { grep "^Input Read Pairs" $options->{input} || test \$? = 1; } | awk '{print \$12}')
-surviving_forward=\${surviving_forward_tmp:-0}
-surviving_reverse_tmp=\$( { grep "^Input Read Pairs" $options->{input} || test \$? = 1; } | awk '{print \$17}')
-surviving_reverse=\${surviving_reverse_tmp:-0}
-dropped_reads_tmp=\$( { grep "^Input Read Pairs" $options->{input} || test \$? = 1; } | awk '{print \$20}')
-dropped_reads=\${dropped_reads_tmp:-0}
-stat_string=\$(printf "${basename},%s,%s,%s,%s,%s" "\${total_reads}" "\${surviving_both}" "\${surviving_forward}" "\${surviving_reverse}" "\${dropped_reads}")
-echo "\$stat_string" >> $outputs->{main}
-!;
+    my $function_info = Bio::Adventure::Config::Get_Function_Vars($class, \%args);
+    my $all_inputref = $class->inputs;
+    my $inputs = $all_inputref->[$#$all_inputref];
+    my %options = %{$function_info};
+    $options{template} = $options{template_single};
+    if ($options{paired}) {
+        $options{template} = $options{template_pair};
     }
-    my $stats = $class->Submit(
-        input => $options->{input},
-        jdepends => $options->{jdepends},
-        jstring => $jstring,
-        outputs => $outputs,);
+    $options{stat_output} = $options{main};
+    $options{input_name} = $args{input_name};
+    $options{input} = $inputs->[0]->{input};
+    print "About to update state with template: $options{template}\n";
+    my $updated = $class->Bio::Adventure::Config::Update_State(
+        jdepends => $options{jdepends},
+        function_info => $function_info,
+        options => \%options,);
+    my $stats = $class->Submit();
+    ## Added to return the state of the system to what it was
+    ## before we messed with the options.
     return($stats);
 }
 

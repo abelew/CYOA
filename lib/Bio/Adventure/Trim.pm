@@ -7,6 +7,7 @@ use Moo;
 extends 'Bio::Adventure';
 use Bio::Adventure::Config;
 use Cwd qw"abs_path getcwd cwd";
+use Data::Printer;
 use File::Basename;
 use File::Path qw"make_path";
 use File::ShareDir qw":ALL";
@@ -92,114 +93,117 @@ fi
 =cut
 sub Cutadapt {
     my ($class, %args) = @_;
-    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars();
-    my $paths = $function_info->{paths};
-    my $inputs = $function_info->{inputs};
-    my $options = $class->current_state;
-    my $extra_args = $class->Passthrough_Args(arbitrary => $options->{arbitrary});
+    ## Once I get all this cleaned up, I would like to create %template_args
+    ## right at the beginning of each function and fill it in as we go;
+    ## but until I am comfortable with the workflow let us add the variables
+    ## right before Update_Spec() so that I can poke and play easily.
+    ## Ideally, I will just make a copy of class->current_state as %template_args
+    ## and modify the slots of interest.
+    print "TESTME Starting Cutadapt current_state->cluster: $class->{current_state}->{cluster}\n";
+    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars(\%args);
+    ## Dereference this so that we may change them without messing with the underlying
+    ## function information.
+    my %options = %{$function_info};
+    print "Starting cutadapt with cluster: $options{cluster}\n";
+    my $all_inputs = $class->inputs;
+    my $inputs = $all_inputs->[$#$all_inputs];
+
+    my $extra_args = $class->Passthrough_Args(arbitrary => $options{arbitrary});
     my $num_inputs = scalar(@{$inputs});
 
-    my $adapter_string = q{};
-    if ($options->{any_adapter}) {
-        $adapter_string .= qq"-a $options->{any_adapter} ";
+    $options{adapter_string} = q{};
+    if ($options{any_adapter}) {
+        $options{adapter_string} .= qq"-a $options{any_adapter} ";
     }
-    if ($options->{left_adapter}) {
-        $adapter_string .= qq"-b $options->{left_adapter} ";
+    if ($options{left_adapter}) {
+        $options{adapter_string} .= qq"-b $options{left_adapter} ";
     }
-    if ($options->{right_adapter}) {
-        $adapter_string .= qq"-g $options->{right_adapter} ";
+    if ($options{right_adapter}) {
+        $options{adapter_string} .= qq"-g $options{right_adapter} ";
     }
-    my $maxlength = $options->{maxlength};
-    my $minlength = $options->{minlength};
-    if ($options->{type} eq 'old_tnseq') {
-        $adapter_string = $options->{old_tnseq_adapter};
-        $maxlength = 20;
-    } elsif ($options->{type} eq 'old_riboseq') {
-        $adapter_string = $options->{old_riboseq_adapter};
-        $minlength = 16;
-        $maxlength = 42;
+    if ($options{type} eq 'old_tnseq') {
+        $options{adapter_string} = $options{old_tnseq_adapter};
+        $options{maxlength} = 20;
+    } elsif ($options{type} eq 'old_riboseq') {
+        $options{adapter_string} = $options{old_riboseq_adapter};
+        $options{minlength} = 16;
+        $options{maxlength} = 42;
     }
 
-    my $min_flag = q{};
-    if ($minlength) {
-        $min_flag = qq"-m ${minlength} --too-short-output=$paths->{too_short_r1}";
+    $options{min_flag} = q{};
+    if ($options{minlength}) {
+        $options{min_flag} = qq"-m $options{minlength} --too-short-output=$options{too_short_r1}";
     }
-    my $max_flag = q{};
-    if ($maxlength) {
-        $max_flag = qq"-M ${maxlength} --too-long-output=$paths->{too_long_r1}";
+    $options{max_flag} = q{};
+    if ($options{maxlength}) {
+        $options{max_flag} = qq"-M $options{maxlength} --too-long-output=$options{too_long_r1}";
+    }
+    ## The maximum number of times an adapter may be removed.
+    unless ($options{max_removed}) {
+        $options{max_removed} = 3;
+    }
+    ## Separate trimmed/untrimmed reads into two piles?
+    ## output_r1 is in functions.json under Cutadapt->paths
+    $options{compress_string} = qq"xz -9e -f $options{output_r1}\n";
+    $options{untrimmed_string} = q{};
+    if ($options{separate}) {
+        $options{untrimmed_string} = qq"--untrimmed-output=$options{untrimmed_r1}";
+        $options{compress_string} .= qq"xz -9e -f $options{untrmmed_r1}\n";
     }
 
     ## Define input/output strings here, then fill in the exceptions.
-    my $input_string = q{};
-    my $output = qq"$paths->{output_r1}";
-    my $output_string = q{};
-    my $untrimmed_string = qq"--untrimmed-output=$paths->{untrimmed_r1}";
-    my $compress_string = qq"xz -9e -f $paths->{output_r1}\n";
-    if ($options->{separate}) {
-        $compress_string .= qq"xz -9e -f $paths->{untrimmed_r1}\n";
-    }
+    $options{input_string} = q{};
+    my $output = qq"$options{output_r1}";
+    $options{output_string} = q{};
 
+    $options{paired} = 0;
     if ($num_inputs == 1) {
-        $input_string = Bio::Adventure::Get_FD(input => $inputs->[0]->{fullpath});
+        $options{input_string} = Bio::Adventure::Get_FD(
+            input => $inputs->[0]->{fullpath},
+            ignored => '.gz');
         my $r1_base = $inputs->[0]->{filebase_extension};
-        if ($options->{compress}) {
+        if ($options{compress}) {
             $output .= '.xz';
-            $compress_string = qq"
-xz -9e -f $paths->{output_r1}
+            $options{compress_string} = qq"
+xz -9e -f $options{output_r1}
 ";
         }
-        $output_string = qq"-o $paths->{output_r1}";
+        $options{output_string} = qq"-o $options{output_r1}";
     } elsif ($num_inputs == 2) {
+        $options{paired} = 1;
         my $r1_fd = $class->Get_FD(input => $inputs->[0]->{fullpath});
         my $r2_fd = $class->Get_FD(input => $inputs->[1]->{fullpath});
-        $input_string = qq"${r1_fd} ${r2_fd}";
-        $output_string = qq"-o $paths->{output_r1} -p $paths->{output_r2}";
-        if ($options->{separate}) {
-            $untrimmed_string .= qq" --untrimmed-paired-output=$paths->{untrimmed_r2}";
-            $compress_string .= qq"xz -9e -f $paths->{untrimmed_r2}\n";
+        $options{input_string} = qq"${r1_fd} ${r2_fd}";
+        $options{output_string} = qq"-o $options{output_r1} -p $options{output_r2}";
+        if ($options{separate}) {
+            $options{untrimmed_string} .= qq" --untrimmed-paired-output=$options{untrimmed_r2}";
+            $options{compress_string} .= qq"xz -9e -f $options{untrimmed_r2}\n";
         }
-        if ($minlength) {
-            $min_flag .= qq" --too-short-paired-output=$paths->{too_short_r2}";
+        if ($options{minlength}) {
+            $options{min_flag} .= qq" --too-short-paired-output=$options{too_short_r2}";
         }
-        if ($maxlength) {
-            $max_flag .= qq" --too-long-paired-output=$paths->{too_long_r2}";
+        if ($options{maxlength}) {
+            $options{max_flag} .= qq" --too-long-paired-output=$options{too_long_r2}";
         }
-        $compress_string .= qq"xz -9e -f  $paths->{output_r2}\n";
+        $options{compress_string} .= qq"xz -9e -f  $options{output_r2}\n";
     } else {
         croak("This requires either 1 or 2 inputs, not ${num_inputs}.\n");
     }
 
-
-    if ($options->{maxerr}) {
-        $options->{maxerr} = qq"-e $options->{maxerr}";
+    if ($options{maxerr}) {
+        $options{max_err_string} = qq"-e $options{maxerr}";
     }
-
-    ## Set up the template here.
-    my %template_args = ();
-    for my $k (keys %{$paths}) {
-        $template_args{$k} = $paths->{$k}
-    }
-    $template_args{type_flag} = '';
-    $template_args{adapter_string} = $adapter_string;
-    $template_args{min_flag} = $min_flag;
-    $template_args{output_string} = $output_string;
-    $template_args{max_error} = $options->{max_error};
-    $template_args{max_flag} = $max_flag;
-    $template_args{untrimmed_string} = $untrimmed_string;
-    $template_args{input_string} = $input_string;
-    $template_args{compress_string} = $compress_string;
-    my $updated = $class->Bio::Adventure::Config::Update_Spec(
-        function_info => $function_info,
-        template_args => \%template_args,);
+    my $updated = $class->Bio::Adventure::Config::Update_State(
+        options => \%options,);
     my $cutadapt = $class->Submit();
     my $stats = $class->Bio::Adventure::Metadata::Cutadapt_Stats(
-        input => $paths->{stderr},
-        input_name => $paths->{output_base},
-        jdepends => $cutadapt->{job_id},);
+        input => $options{stdout},
+        input_name => $options{output_base},
+        jdepends => $cutadapt->{job_id},
+        paired => $options{paired});
     $cutadapt->{stats} = $stats;
     return($cutadapt);
 }
-
 
 =head2 C<Fastp>
 
@@ -263,80 +267,72 @@ One note: it appears that fastp is unable to successfully read from a bash subsh
 =cut
 sub Fastp {
     my ($class, %args) = @_;
-    my $function_info = Bio::Adventure::Config::Get_Function_Vars($class);
-    my $paths = $function_info->{paths};
-    my $inputs = $function_info->{inputs};
-    my $options = $class->current_state;
-    my $extra_args = $class->Passthrough_Args(arbitrary => $options->{arbitrary});
-    $extra_args .= ' -D ' if ($options->{deduplicate});
-    $extra_args .= ' -c ' if ($options->{correction});
-    $extra_args .= ' -y ' if ($options->{complexity});
+    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars(\%args);
+    my %options = %{$function_info};
+    my $all_inputs = $class->inputs;
+    my $inputs = $all_inputs->[$#$all_inputs];
+    my $extra_args = $class->Passthrough_Args(arbitrary => $options{arbitrary});
+    $extra_args .= ' -D ' if ($options{deduplicate});
+    $extra_args .= ' -c ' if ($options{correction});
+    $extra_args .= ' -y ' if ($options{complexity});
     my $input_string = q{};
     my $num_inputs = scalar(@{$inputs});
     my $output = q{};
     my $compress_string = q{};
+    $options{paired} = 0;
+    $options{r1} = $inputs->[0]->{fullpath};
+    my $r1 = $inputs->[0]->{fullpath};
+    my $r1_base = $inputs->[0]->{filebase_extension};
+    $options{r1} = Bio::Adventure::Get_FD(input => $inputs->[0]->{fullpath},
+                                          ignored => '.gz');
+    $options{input_r1_string} = qq"-i $options{r1}";
+    $options{output_r1_string} = qq"-o $options{output_r1}";
+    if ($options{compress}) {
+        $output = qq"$options{output_r1}.xz";
+        $compress_string = qq"
+xz -9e -f $options{output_r1}
+";
+    }
     if ($num_inputs == 2) {
-        my $r1 = $inputs->[0]->{fullpath};
+        $options{paired} = 1;
         my $r2 = $inputs->[1]->{fullpath};
-        unless ($r1 =~ /\.fastq$|\.gz$/) {
-            $r1 = $class->Get_FD(input => $r1);
-            $r2 = $class->Get_FD(input => $r2);
-        }
-        my $r1_base = $inputs->[0]->{filebase_extension};
+        $options{r2} = Bio::Adventure::Get_FD(input => $inputs->[1]->{fullpath},
+                                              ignored => '.gz');
         my $r2_base = $inputs->[1]->{filebase_extension};
-        if ($options->{compress}) {
-            $paths->{main} = qq"$paths->{output_r1}.xz:$paths->{output_r2}.xz";
+        if ($options{compress}) {
+            $options{main} = qq"$options{output_r1}.xz:$options{output_r2}.xz";
             $compress_string = qq"
-xz -9e -f $paths->{output_r1}
-xz -9e -f $paths->{output_r2}
+xz -9e -f $options{output_r1}
+xz -9e -f $options{output_r2}
 ";
         }
-        $input_string = qq"-i ${r1} \\
-  -o $paths->{output_r1} \\
-  -I ${r2} \\
-  -O $paths->{output_r2} ";
-    } elsif ($num_inputs == 1) {
-        my $r1 = $inputs->[0]->{fullpath};
-        unless ($r1 =~ /\.fastq$|\.gz$/) {
-            $r1 = $class->Get_FD(input => $r1);
-        }
-        my $r1_base = $inputs->[0]->{filebase_extension};
-        if ($options->{compress}) {
-            $output = qq"$paths->{output_r1}.xz";
-            $compress_string = qq"
-xz -9e -f $paths->{output_r1}
-";
-        }
-        $input_string = qq"-i ${r1} \\
-  -o $paths->{output_r1}";
-    } else {
+        $options{input_r2_string} = qq"-I $options{r2}";
+        $options{output_r2_string} = qq"-O $options{output_r2}";
+    } elsif ($num_inputs > 2) {
         die("An unusual number of inputs was provided: ${num_inputs}.");
     }
     my $umi_flags = '';
-    if ($options->{umi}) {
+    if ($options{umi}) {
         $umi_flags = '-U';
     }
-    my $report_flags = qq"-h $paths->{report} \\
-  -j $paths->{json}";
+    my $report_flags = qq"-h $options{report}";
+    my $json_flags = qq"-j $options{json}";
+
+    $options{report_flags} = $report_flags;
+    $options{json_flags} = $json_flags;
+    $options{umi_flags} = $umi_flags;
+    $options{input_string} = $input_string;
+    $options{extra_args} = $extra_args;
 
     ## Set up the template here.
-    my %template_args = ();
-    for my $k (keys %{$paths}) {
-        $template_args{$k} = $paths->{$k};
-    }
-    $template_args{umi_flags} = $umi_flags;
-    $template_args{input_string} = $input_string;
-    $template_args{report_flags} = $report_flags;
-    $template_args{extra_args} = $extra_args;
-    $template_args{compress_string} = $compress_string;
-    my $updated = $class->Bio::Adventure::Config::Update_Spec(
-        function_info => $function_info,
-        template_args => \%template_args,);
+    my $updated = $class->Bio::Adventure::Config::Update_State(
+        options => \%options,);
     my $fastp = $class->Submit();
     my $stats = $class->Bio::Adventure::Metadata::Fastp_Stats(
-        input => $paths->{stderr},
-        input_name => $paths->{output_base},
-        jdepends => $fastp->{job_id},);
+        input => $options{stderr},
+        input_name => $options{output_base},
+        jdepends => $fastp->{job_id},
+        paired => $options{paired},);
     $fastp->{stats} = $stats;
     return($fastp);
 }
@@ -545,18 +541,21 @@ echo \"Finished correction of $input_list[$c].\" >> ${stdout}
 =cut
 sub Trimomatic {
     my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        args => \%args,
-        required => ['input',],
-        compress => 1,
-        input_paired => undef,
-        length => 50,
-        quality => '20',);
+    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars(\%args);
+    my %options = %{$function_info};
+    my $all_inputs = $class->inputs;
+    my $inputs = $all_inputs->[$#$all_inputs];
+    my $extra_args = $class->Passthrough_Args(arbitrary => $options{arbitrary});
+    my $num_inputs = scalar(@{$inputs});
     my $trim;
-    if ($options->{input} =~ /$options->{delimiter}/) {
-        $trim = $class->Bio::Adventure::Trim::Trimomatic_Pairwise(%{$options});
+    if ($num_inputs == 1) {
+        $options{paired} = 0;
+        $trim = $class->Bio::Adventure::Trim::Trimomatic_Single(%options);
+    } elsif ($num_inputs == 2) {
+        $options{paired} = 1;
+        $trim = $class->Bio::Adventure::Trim::Trimomatic_Pairwise(%options);
     } else {
-        $trim = $class->Bio::Adventure::Trim::Trimomatic_Single(%{$options});
+        die("I do not understand this number of inputs: ${num_inputs}.");
     }
     return($trim);
 }
@@ -567,18 +566,14 @@ sub Trimomatic {
 
 =cut
 sub Trimomatic_Pairwise {
-    my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        args => \%args,
-        compress => 1,
-        length => 50,
-        quality => '20',
-        required => ['input',],);
-    my $exe = undef;
+    my ($class, %options) = @_;
+    my $all_inputref = $class->inputs;
+    my $inputs = $all_inputref->[$#$all_inputref];
     my $found_exe = 0;
+    my $exe = q{};
     my %exe_list = (trimomatic => 'trimomatic PE',
-                    TrimmomaticSE => 'TrimmomaticPE',
-                    TrimomaticSE => 'TrimmomaticPE',
+                    TrimmomaticPE => 'TrimmomaticPE',
+                    TrimomaticPE => 'TrimmomaticPE',
                     trimmomatic => 'trimmomatic PE');
     for my $test_exe (keys %exe_list) {
         if (which($test_exe)) {
@@ -587,126 +582,88 @@ sub Trimomatic_Pairwise {
     }
     if (!defined($exe)) {
         die('Unable to find the trimomatic executable.');
+    } else {
+        $options{trimomatic_exe} = $exe;
     }
-    my $adapter_file = dist_file('Bio-Adventure', 'genome/adapters.fa');
-    if (defined($options->{adapter_file})) {
-        $adapter_file = $options->{adapter_file};
+    unless ($options{adapter_file}) {
+        $options{adapter_file} = dist_file('Bio-Adventure', 'genome/adapters.fa');
     }
-    my $input = $options->{input};
-    my @input_list = split(/$options->{delimiter}/, $input);
-    if (scalar(@input_list) <= 1) {
-        my $ret = $class->Bio::Adventure::Trim::Trimomatic_Single(input => $input,);
-        return($ret);
-    }
-    my $r1 = $input_list[0];
-    my $r2 = $input_list[1];
-    my @suff = ('.fastq', '.gz', '.xz');
 
-    my $basename = basename($r1, @suff);
-    $basename = basename($basename, @suff);
-    $basename =~ s/_R1$//g;
-    $basename =~ s/_forward$//g;
-
+    my @suff = ('.fastq', '.gz', '.xz', '.bz2');
+    my $r1 = $inputs->[0]->{filename};
+    my $r2 = $inputs->[1]->{filename};
     my $r1b = basename($r1, @suff);
     $r1b = basename($r1b, @suff);
     my $r2b = basename($r2, @suff);
     $r2b = basename($r2b, @suff);
-    my $reader = qq"${r1} ${r2}";
+    $options{input_string} = qq"${r1} ${r2}";
     if ($r1 =~ /\.fastq\.xz$/) {
         my $r1_fd = $class->Get_FD(input => $r1);
         my $r2_fd = $class->Get_FD(input => $r2);
-        $reader = qq"${r1_fd} ${r2_fd}";
+        $options{input_string} = qq"${r1_fd} ${r2_fd}";
     }
-    my $r1o = qq"$paths->{output_dir}/${r1b}-trimmed.fastq";
-    my $r1op = qq"$paths->{output_dir}/${r1b}-trimmed_paired.fastq";
-    my $r1ou = qq"$paths->{output_dir}/${r1b}-trimmed_unpaired.fastq";
+    $options{thread_flags} = qq"-threads $options{jcpu}";
 
-    my $r2o = qq"$paths->{output_dir}/${r2b}-trimmed.fastq";
-    my $r2op = qq"$paths->{output_dir}/${r2b}-trimmed_paired.fastq";
-    my $r2ou = qq"$paths->{output_dir}/${r2b}-trimmed_unpaired.fastq";
+    my $r1o = qq"$options{output_dir}/${r1b}-trimmed.fastq";
+    $options{r1o} = $r1o;
+    my $r1op = qq"$options{output_dir}/${r1b}-trimmed_paired.fastq";
+    $options{r1op} = $r1op;
+    my $r1ou = qq"$options{output_dir}/${r1b}-trimmed_unpaired.fastq";
+    $options{r1ou} = $r1ou;
 
-    my $leader_trim = '';
-    #if ($options->{task} eq 'dnaseq') {
-    #    $leader_trim = 'HEADCROP:20 LEADING:3 TRAILING:3';
-    #}
+    my $r2o = qq"$options{output_dir}/${r2b}-trimmed.fastq";
+    $options{r2o} = $r2o;
+    my $r2op = qq"$options{output_dir}/${r2b}-trimmed_paired.fastq";
+    $options{r2op} = $r2op;
+    my $r2ou = qq"$options{output_dir}/${r2b}-trimmed_unpaired.fastq";
+    $options{r2ou} = $r2ou;
+
+    $options{leader_flags} = '';
+    if ($options{task} eq 'dnaseq') {
+        $options{leader_flags} = 'HEADCROP:$options{min_quality} LEADING:3 TRAILING:3';
+    }
     my $suffix_trim = '';
-    if (defined($options->{arbitrary}) &&
-        $options->{arbitrary} =~ /^CROP/) {
-        $suffix_trim = $options->{arbitrary};
+    if (defined($options{arbitrary}) &&
+        $options{arbitrary} =~ /^CROP/) {
+        $suffix_trim = $options{arbitrary};
     }
 
-    my $output = qq"${r1o}:${r2o}";
+    my $output = qq"${r1op}:${r2op}";
     my $output_unpaired = qq"${r1ou}:${r2ou}";
     my $compress_string = '';
-    if ($options->{compress}) {
-        $output = qq"${r1o}.xz:${r2o}.xz";
+    if ($options{compress}) {
+        $output = qq"${r1op}.xz:${r2op}.xz";
         $output_unpaired = qq"${r1ou}.xz:${r2ou}.xz";
-        $compress_string = qq"
+        $options{compress_string} = qq"
 ## Recompress the unpaired reads, this should not take long.
 xz -9e -f ${r1ou}
 xz -9e -f ${r2ou}
 ## Recompress the paired reads.
-xz -9e -f ${r1o}
-xz -9e -f ${r2o}
-ln=\$(cd $paths->{output_dir} && ln -sf ${r1b}-trimmed.fastq.xz r1_trimmed.fastq.xz)
-ln=\$(cd $paths->{output_dir} && ln -sf ${r2b}-trimmed.fastq.xz r2_trimmed.fastq.xz)
+xz -9e -f ${r1op}
+xz -9e -f ${r2op}
 ";
     }
-    my $stdout = qq"$paths->{output_dir}/${basename}-trimomatic.stdout";
-    my $stderr = qq"$paths->{output_dir}/${basename}-trimomatic.stderr";
-    my $jstring = qq!## Note that trimomatic prints all output and errors to STDERR, so send both to output
-${exe} \\
-  -threads 1 \\
-  -phred33 \\
-  ${reader} \\
-  ${r1op} ${r1ou} \\
-  ${r2op} ${r2ou} \\
-  ${leader_trim} ILLUMINACLIP:${adapter_file}:2:$options->{quality}:10:2:keepBothReads ${suffix_trim} \\
-  SLIDINGWINDOW:4:$options->{quality} MINLEN:$options->{length} \\
-  1>${stdout} \\
-  2>${stderr}
-excepted=\$( { grep "Exception" "$paths->{output_dir}/${basename}-trimomatic.stdout" || test \$? = 1; } )
-## The following is in case the illumina clipping fails, which it does if this has already been run I think.
-if [[ "\${excepted}" \!= "" ]]; then
-  ${exe} \\
-    -threads 1 \\
-    -phred33 \\
-    ${reader} \\
-    ${r1op} ${r1ou} \\
-    ${r2op} ${r2ou} \\
-    ${leader_trim} SLIDINGWINDOW:4:$options->{quality} MINLEN:$options->{length} \\
-    1>${stdout} \\
-    2>${stderr}
-fi
-sleep 10
-mv ${r1op} ${r1o}
-mv ${r2op} ${r2o}
-!;
 
-    if ($options->{compress}) {
-        $jstring .= qq"${compress_string}\n";
+    if (-r $options{adapter_file}) {
+        $options{adapter_flags} = qq"ILLUMINACLIP:$options{adapter_file}:2:$options{min_quality}:10:2";
+    } else {
+        carp("The adapter file: $options{adapter_file} is not readable.");
+        $options{adapter_flags} = qq"ILLUMINACLIP:TruSeq3-PE.fa:2:$options{min_quality}:10:2";
     }
-    ## Example output from trimomatic:
-    ## Input Read Pairs: 10000 Both Surviving: 9061 (90.61%) Forward Only Surviving: 457 (4.57%) Reverse Only Surviving: 194 (1.94%) Dropped: 288 (2.88%)
-    ## Perhaps I can pass this along to Get_Stats()
-    my $trim = $class->Submit(
-        args => $options,
-        input => $input,
-        jstring => $jstring,
-        length => $options->{length},
-        outputs => $outputs,
-        main => $output,
-        output_unpaired => $output_unpaired,
-        prescript => $options->{prescript},
-        postscript => $options->{postscript},);
-    my $new_prefix = qq"$options->{jprefix}_1";
-    my $trim_stats = $class->Bio::Adventure::Metadata::Trimomatic_Stats(
-        basename => $basename,
+    $options{suffix_flags} = qq"${suffix_trim}";
+    $options{window_flags} = qq"SLIDINGWINDOW:4:$options{min_quality} MINLEN:$options{min_length}";
+    my $stdout = qq"$options{output_dir}/$options{basename}-trimomatic.stdout";
+    my $stderr = qq"$options{output_dir}/$options{basename}-trimomatic.stderr";
+    $options{template} = $options{template_pair};
+    my $updated = $class->Bio::Adventure::Config::Update_State(
+        options => \%options,);
+    my $trim = $class->Submit();
+    my $stats = $class->Bio::Adventure::Metadata::Trimomatic_Stats(
+        input => $options{stderr},
+        input_name => $options{output_base},
         jdepends => $trim->{job_id},
-        input => $outputs->{stderr},
-        output_dir => $paths->{output_dir},
-        pairwise => 1,);
-    $trim->{stats} = $trim_stats;
+        paired => 1);
+    $trim->{stats} = $stats;
     return($trim);
 }
 
@@ -716,16 +673,11 @@ mv ${r2op} ${r2o}
 
 =cut
 sub Trimomatic_Single {
-    my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        args => \%args,
-        required => ['input',],
-        compress => 1,
-        length => 50,
-        quality => '20',
-        required => ['input',],);
-    my $exe = undef;
+    my ($class, %options) = @_;
+    my $all_inputref = $class->inputs;
+    my $inputs = $all_inputref->[$#$all_inputref];
     my $found_exe = 0;
+    my $exe = q{};
     my %exe_list = (trimomatic => 'trimomatic SE',
                     TrimmomaticSE => 'TrimmomaticSE',
                     TrimomaticSE => 'TrimmomaticSE',
@@ -737,49 +689,56 @@ sub Trimomatic_Single {
     }
     if (!defined($exe)) {
         die('Unable to find the trimomatic executable.');
+    } else {
+        $options{trimomatic_exe} = $exe;
     }
-    my $adapter_file = dist_file('Bio-Adventure', 'genome/adapters.fa');
-    if (defined($options->{adapter_file})) {
-        $adapter_file = $options->{adapter_file};
+    unless ($options{adapter_file}) {
+        $options{adapter_file} = dist_file('Bio-Adventure', 'genome/adapters.fa');
     }
-    my $leader_trim = "";
-    #if (defined($options->{task}) && $options->{task} eq 'dnaseq') {
-    #    $leader_trim = 'HEADCROP:20 LEADING:3 TRAILING:3';
-    #}
-    my $input = $options->{input};
+    $options{leader_flags} = '';
+    if ($options{task} eq 'dnaseq') {
+        $options{leader_flags} = 'HEADCROP:20 LEADING:3 TRAILING:3';
+    }
+    my $suffix_trim = '';
+    if (defined($options{arbitrary}) &&
+        $options{arbitrary} =~ /^CROP/) {
+        $suffix_trim = $options{arbitrary};
+    }
+
+    if (-r $options{adapter_file}) {
+        $options{adapter_flags} = qq"ILLUMINACLIP:$options{adapter_file}:2:$options{min_quality}:10:2";
+    } else {
+        carp("The adapter file: $options{adapter_file} is not readable.");
+        $options{adapter_flags} = qq"ILLUMINACLIP:TruSeq3-PE.fa:2:$options{min_quality}:10:2";
+    }
+    $options{suffix_flags} = qq"${suffix_trim}";
+    $options{window_flags} = qq"SLIDINGWINDOW:4:$options{min_quality} MINLEN:$options{min_length}";
+    my $input = $inputs->[0]->{filename};
     my $basename = $input;
     $basename = basename($basename, ('.gz', '.xz', '.bz2'));
     $basename = basename($basename, ('.fastq'));
-    my $r1_fd = $class->Get_FD(input => $input);
-    my $jstring = qq!## Note that trimomatic prints all output and errors to STDERR, so send both to output
-${exe} \\
-  -phred33 \\
-  ${r1_fd} \\
-  $outputs->{main} \\
-  ${leader_trim} ILLUMINACLIP:${adapter_file}:2:30:10 \\
-  SLIDINGWINDOW:4:$options->{quality} MINLEN:$options->{length} \\
-  1>$outputs->{stdout} 2>$outputs->{stderr}
-!;
-    my $compress_string = '';
-    if ($options->{compress}) {
-        $compress_string = qq"
+    $options{input_string} = $input;
+    if ($input =~ /\.fastq\.xz$/) {
+        $options{input_string} = $class->Get_FD(input => $input);
+    }
+    $options{thread_flags} = qq"-threads $options{jcpu}";
+    $options{compress_string} = '';
+    if ($options{compress}) {
+        $options{compress_string} = qq"
 ## Compress the trimmed reads.
-xz -9e -f $outputs->{main}
-ln=\$(cd $paths->{output_dir} && ln -sf ${basename}-trimmed.fastq.xz r1_trimmed.fastq.xz)
+xz -9e -f $options{output_r1}
 ";
     }
-    $jstring .= $compress_string;
-    my $trim = $class->Submit(
-        args => $options,
-        input => $input,
-        jstring => $jstring,
-        length => $options->{length},
-        outputs => $outputs,
-        output_unpaired => '',);
+    $options{template} = $options{template_single};
+    my $updated = $class->Bio::Adventure::Config::Update_State(
+        options => \%options,);
+    my $trim = $class->Submit();
     my $trim_stats = $class->Bio::Adventure::Metadata::Trimomatic_Stats(
-        input => $outputs->{stderr},
         basename => $basename,
+        input => $options{stderr},
+        input_name => $options{output_base},
         jdepends => $trim->{job_id},
+        paired => 0,
     );
     $trim->{stats} = $trim_stats;
     return($trim);

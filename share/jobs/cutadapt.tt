@@ -9,15 +9,15 @@
 ## untrimmed_string: [% untrimmed_string %]
 ## max_error: [% max_error %]
 ## too_short: [% too_short %]
-## compress_string: [% compress_string %]
 ## max_removed: [% max_removed %]
+## Note: one may not expect type, adapter, arbitrary, nor min_flag to be defined.
 
-/usr/bin/time -v -o [% time %] -a \
-    cutadapt \
-      [% type_flag %] [% adapter_string %] [% arbitrary %] \
-      [% min_flag %] [% output_string %] \
-      -n [% max_removed %] [% max_error %] [% max_flag %] [% untrimmed_string %] \
-      [% input_string %] \
-      2>[% stderr %] \
-      1>[% stdout %]
+/usr/bin/time -v -o [% time_file %] -a \
+  cutadapt \
+    [% type_flag %] [%= adapter_string =%] [%= arbitrary =%] [%= min_flag =%] [%= output_string =%] \
+    -n [%= max_removed =%] [%= max_error_string =%] [%= max_flag =%] [%= untrimmed_string =%] \
+    [% input_string %] \
+    2>[% stderr %] \
+    1>[% stdout %]
+
 [% compress_string %]

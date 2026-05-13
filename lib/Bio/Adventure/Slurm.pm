@@ -4,10 +4,10 @@ use autodie qw":all";
 use diagnostics;
 use warnings qw"all";
 use Moo;
-extends 'Bio::Adventure';
 
 use Bio::Adventure::Languages;
 use Cwd;
+use Data::Printer;
 use File::Basename qw"basename dirname";
 use File::Path qw"make_path remove_tree";
 use File::ShareDir qw"dist_file module_dir dist_dir";
@@ -20,7 +20,7 @@ use Template;
 use Text::CSV;
 use Tie::Array::CSV;
 my $template_base = dist_dir('Bio-Adventure');
-my $template_dir = qq"${template_base}/templates";
+my $template_dir = qq"${template_base}/jobs";
 
 ## List of accounts, partitions, qos for this user
 has accounts => (is => 'rw', default => undef);
@@ -149,11 +149,11 @@ sub BUILD {
 =cut
 sub Check_Job {
     my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Bio::Adventure::Get_Vars(args => \%args);
-    my $id = $options->{input};
-    my $write = $options->{write};
+    my %options = %{$class->current_state};
+    my $id = $args{id};
+    my $write = $args{write};
     $write = 0 if (!defined($write));
-    my $jobs_csv = qq"$options->{basedir}/outputs/logs/jobs.csv";
+    my $jobs_csv = qq"$options{basedir}/outputs/logs/jobs.csv";
     my @all_info = ();
     my %ids;
     my @check_ids = ();
@@ -187,7 +187,7 @@ sub Check_Job {
         }
     } else {
         print "No id provided, reading the jobs.txt file.\n";
-        my $job_file = FileHandle->new("<$options->{basedir}/outputs/logs/jobs.txt");
+        my $job_file = FileHandle->new("<$options{basedir}/outputs/logs/jobs.txt");
       JOBLOG: while (my $line = <$job_file>) {
             chomp $line;
             next JOBLOG if ($line =~ /^#/);
@@ -252,13 +252,11 @@ sub Check_Job {
                             $num = $element;
                             $num =~ s/K$//g;
                             $num = $num / 1e6;
-                        }
-                        elsif ($element =~ /M$/) {
+                        } elsif ($element =~ /M$/) {
                             $num = $element;
                             $num =~ s/M$//g;
                             $num = $num / 1e3;
-                        }
-                        else {
+                        } else {
                             $num = $element;
                             $num =~ s/G$//g;
                         }
@@ -569,8 +567,7 @@ sub Choose_QOS {
                     my @qos_v2 = ();
                     if (defined($associations->{$cluster}->{$account}->{qos})) {
                         @qos_v2 = @{$associations->{$cluster}->{$account}->{qos}};
-                    }
-                    else {
+                    } else {
                         next ACCOUNT2;
                     }
                   QOS2: for my $q (@qos_v2) {
@@ -1533,29 +1530,29 @@ sub Sjob {
 =cut
 sub Submit {
     my ($class, $parent, %args) = @_;
-    my $class_jprefix = $class->{jprefix};
-    my ($options, $paths, $inputs, $outputs) = $parent->Get_Vars(
-        args => \%args,
-        jname => 'unknown',);
+    my $state_ref = $parent->current_state;
+    my %state = %{$state_ref};
+    my $caller = $parent->caller;
+    my $all_options = $parent->options;
+    my $job_options = $all_options->[$#$all_options];
+    my $primary_jstring = $parent->Bio::Adventure::Languages::Make_Sub_Job();
     my $sbatch = $class->Check_Sbatch();
-    ## I think this is no longer needed
-    ## Note that Get_Args now includes a call to Get_Spec
-    ## my $wanted = $class->Get_Spec(options => $options);
-    my $wanted = $parent->{spec};
+    my $comment_string = Bio::Adventure::Languages::Make_Comment(
+        language => $state{language}, jcomment => $state{jcomment});
 
     my $depends_prefix = '--dependency=afterok';
-    ## For arguments to sbatch, start with the defaults in the constructor in $class
-    ## then overwrite with any application specific requests from %args
-    my $sbatch_log = qq"$options->{basedir}/outputs/log.txt";
-
-    if (defined($wanted->{jcomment})) {
-        unless ($wanted->{jcomment} =~ /^#/) {
-            ## One day, add a function to comment-ize arbitrary languages
-            $wanted->{jcomment} = qq"## $options->{jcomment}";
-        }
-    } else {
-        print "No comment was defined for this function.\n";
+    $state{slurm_log} = qq"$state{basedir}/outputs/log.txt";
+    if (!defined($state{jname})) {
+        $state{jname} = 'undefined';
     }
+    my $job = {};
+    for my $k (keys %args) {
+        next if ($k eq 'jstring');
+        next if ($k eq 'comment');
+        $job->{$k} = $args{$k};
+    }
+    my $log_directory = qq"$state{basedir}/outputs/logs";
+    my $finished_file = qq"${log_directory}/$state{jname}.finished";
 
     ## Get my current usage, which fills in a hash of:
     ## usage->{user}->{partition}->{account}->{qos}->{mem, cpu, jobs, running, queued, failed}
@@ -1576,254 +1573,85 @@ sub Submit {
     ## slurm queueing and organization, so keep this in mind until I do...
     my $chosen_qos = $class->Choose_QOS(current_usage => $usage);
 
-    $class->{chosen_cluster} = $chosen_qos->{chosen_cluster};
-    $class->{chosen_partition} = $chosen_qos->{chosen_partition};
-    $class->{chosen_account} = $chosen_qos->{chosen_account};
-    $class->{chosen_qos} = $chosen_qos->{chosen_qos};
+    $state{chosen_cluster} = $chosen_qos->{chosen_cluster};
+    $state{chosen_partition} = $chosen_qos->{chosen_partition};
+    $state{chosen_account} = $chosen_qos->{chosen_account};
+    $state{chosen_qos} = $chosen_qos->{chosen_qos};
 
-    my $depends_string = '';
-    if ($options->{jdepends}) {
-        $depends_string = qq"${depends_prefix}:$options->{jdepends}";
-    }
-    my $finished_file = qq"$options->{logdir}/$options->{jname}.finished";
-
-    my $job = {};
-    foreach my $k (keys %args) {
-        next if ($k eq 'jstring');
-        next if ($k eq 'jcomment');
-        $job->{$k} = $args{$k};
-    }
-    my @wanted_vars = ('basedir', 'depends_string', 'input',
-                       'cpu', 'mem', 'name', 'queue', 'walltime', 'output');
-    foreach my $w (@wanted_vars) {
-        $job->{$w} = $options->{$w} if (!defined($job->{$w}));
+    $state{depends_string} = '';
+    if ($state{jdepends}) {
+        $state{depends_string} = qq"${depends_prefix}:$state{jdepends}";
     }
     ## Now fill in the job's qos etc from the slurm instance
-    my $qos_string = '';
-    if ($class->{chosen_qos}) {
-        $qos_string = $class->{chosen_qos};
+    $state{qos_string} = '';
+    if ($state{chosen_qos}) {
+        $state{qos_string} = $state{chosen_qos};
     }
-    ##else {
-    ##    print "QOS is not defined, setting it to the empty string\n";
-    ##}
-    my $account_string = '';
-    if ($class->{chosen_account}) {
-        $account_string = $class->{chosen_account};
+    $state{account_string} = '';
+    if ($state{chosen_account}) {
+        $state{account_string} = $state{chosen_account};
     }
-    ## else {
-    ##    print "account is not defined, setting it to the empty string\n";
-    ##}
-    my $cluster_string = '';
-    if ($class->{chosen_cluster}) {
-        $cluster_string = $class->{chosen_cluster};
+    $state{cluster_string} = '';
+    if ($state{chosen_cluster}) {
+        $state{cluster_string} = $state{chosen_cluster};
     }
-    ##else {
-    ##    print "cluster is not defined, setting it to the empty string.\n";
-    ##}
-    my $partition_string = '';
-    if ($class->{chosen_partition}) {
-        $partition_string = $class->{chosen_partition};
-    } else {
-        ## Partition is often empty, I don't quite know why yet.
-        ## print "partition is not defined, setting it to the empty string\n";
-        $partition_string = '';
+    $state{partition_string} = '';
+    if ($state{chosen_partition}) {
+        $state{partition_string} = $state{chosen_partition};
     }
     ##  Need to catch the special case of scavenger
-    if ($qos_string eq 'scavenger') {
-        $account_string = 'scavenger';
-        $partition_string = 'scavenger';
+    if ($state{qos_string} eq 'scavenger' ||
+        $state{account_string} eq 'scavenger' ||
+        $state{partition_string} eq 'scavenger') {
+        $state{qos_string} = 'scavenger';
+        $state{account_string} = 'scavenger';
+        $state{partition_string} = 'scavenger';
     }
-    if ($account_string eq 'scavenger') {
-        $qos_string = 'scavenger';
-        $partition_string = 'scavenger';
-    }
-    if ($partition_string eq 'scavenger') {
-        $qos_string = 'scavenger';
-        $account_string = 'scavenger';
-    }
-    if ($options->{restart} && -e $finished_file) {
+    if ($state{restart} && -e $finished_file) {
         print "The restart option is on, and this job appears to have finished.\n";
         return($job);
     }
 
-    my $script_file = qq"$options->{basedir}/$options->{script_dir}/$options->{jname}.sh";
-    my $exists_test = 0;
-    $exists_test = 1 if (-r $script_file);
-    my $exists_count = 0;
-    while ($exists_test) {
-        $exists_count++;
-        my $suffix_base = basename($options->{basedir});
-        my $suffix = qq"_${suffix_base}_${exists_count}_";
-        $script_file = qq"$options->{basedir}/$options->{script_dir}/${suffix}$options->{jname}.sh";
-        unless (-r $script_file) {
-            $exists_test = 0;
-            print "Writing script to: ${script_file}\n";
-        }
-    } ## Add a counter to the suffix until we have a free filename.
-    print "Slurm::Submit: Writing to script:
-${script_file}\n" if ($options->{debug});
-    my $sbatch_cmd_line = qq"${sbatch} ${depends_string} ${script_file}";
-    my $mycwd = getcwd();
-    unless (-r qq"$options->{basedir}/options->{script_dir}/pdata") {
-        make_path("$options->{basedir}/$options->{script_dir}/pdata", {verbose => 0})
+    $state{nice_string} = '';
+    if ($state{jnice}) {
+        $state{nice_string} = qq"--nice=$state{jnice}";
     }
-    my $script_base = basename($script_file);
 
-    ## Remove the need for two functions that do the same thing except one for perl and one for bash
-    if ($options->{language} eq 'perl') {
-        my $perl_base = qq"$options->{basedir}/$options->{script_dir}";
-        my $perl_file = qq"${perl_base}/$options->{jname}.pl";
-        my $exists_test = 0;
-        $exists_test = 1 if (-r $perl_file);
-        my $exists_count = 0;
-        while ($exists_test) {
-            $exists_count++;
-            my $suffix_base = basename($options->{basedir});
-            my $suffix = qq"_${suffix_base}_${exists_count}_";
-            $perl_file = qq"$options->{basedir}/$options->{script_dir}/${suffix}$options->{jname}.pl";
-            unless (-r $perl_file) {
-                $exists_test = 0;
-                print "Writing script to: ${perl_file}\n";
-            }
-        }
-        if (defined($options->{output_dir})) {
-            $perl_base = $options->{output_dir};
-        } elsif (defined($options->{output})) {
-            $perl_base = dirname($options->{output});
-        }
-        my $perl_stderr = qq"${perl_base}/$options->{jname}.stderr";
-        my $perl_stdout = qq"${perl_base}/$options->{jname}.stdout";
-        my $perl_start = qq?#!/usr/bin/env perl
-use strict;
-use FileHandle;
-use Bio::Adventure;
-my \$out = FileHandle->new(">>${sbatch_log}");
-my (\$sec, \$min, \$hour, \$mday, \$mon, \$year, \$wday, \$yday, \$isdst) = localtime(time);
-my \$now = sprintf("%04d-%02d-%02d %02d:%02d:%02d", \$year+1900, \$mon+1, \$mday, \$hour, \$min, \$sec);
-print \$out "## Started $script_file at \${now}";
-chdir("$options->{basedir}");
-my \$h = Bio::Adventure->new();
-?;
-        if (defined($parent->{option_file})) {
-            $perl_start .= qq!
-## Pull options from the option file: $parent->{option_file}
-my \$loaded = \$h->Load_Vars(input => '$parent->{option_file}');
-!;
-        }
-        my $perl_end = qq!## The following lines give status codes and some logging
-my \$jobid = "";
-\$jobid = \$ENV{SLURM_JOBID} if (\$ENV{SLURM_JOBID});
-(\$sec, \$min, \$hour, \$mday, \$mon, \$year, \$wday, \$yday, \$isdst) = localtime(time);
-\$now = sprintf("%04d-%02d-%02d %02d:%02d:%02d", \$year+1900, \$mon+1, \$mday, \$hour, \$min, \$sec);
-my \$host = qx'hostname';
-print \$out "## \${host} finished \${jobid} ${script_base} at \${now}.\n";
-close(\$out);
-!;
-        my $total_perl_string = qq"${perl_start}\n";
-        $total_perl_string .= qq"$wanted->{jcomment}\n" if ($wanted->{jcomment});
-        $total_perl_string .= qq"$options->{prescript}\n" if ($options->{prescript});
-        $total_perl_string .= qq"$options->{jstring}\n" if ($options->{jstring});
-        $total_perl_string .= qq"${perl_end}\n";
-
-        my $perl_script = FileHandle->new(">${perl_file}");
-        print $perl_script $total_perl_string;
-        $perl_script->close();
-        chmod(0775, $perl_file);
-        $options->{jstring} = qq"
-${perl_file} \\
-  2>${perl_stderr} \\
-  1>${perl_stdout}
-";
-    } ## End extra processing for submission of a perl script (perhaps not needed for slurm?
-
-    if ($options->{jtemplate}) {
-        print "In slurm, processing with dir: ${template_dir}\n";
-        print "Template is outputting to: $script_file\n";
-        my $tt = Template->new({
-            INCLUDE_PATH => $template_dir,
-            OUTPUT => $script_file,
-            TRIM => 1,
-            INTERPOLATE => 1,});
-        $tt->process($options->{jtemplate}, $options) || die $tt->error();
-    } else {
-        my $nice_string = '';
-        $nice_string = qq"--nice=$options->{jnice}" if (defined($options->{jnice}));
-        my $array_string = '';
-        $array_string = qq"#SBATCH --array=$options->{array_string}" if ($options->{array_string});
-        my $walltime_string = qq"$wanted->{jwalltime}";
-        my $mem_string = qq"$wanted->{jmem}G";
-        my $requeue = '';
-        $requeue = '--requeue' if ($options->{requeue});
-        my $script_start = qq?#!$options->{shell}
-#SBATCH --export=ALL --mail-type=NONE --open-mode=append ${requeue}
-#SBATCH --chdir=$options->{basedir}
-#SBATCH --job-name=$options->{jname} ${nice_string}
-#SBATCH --output=${sbatch_log}.sbatch
-?;
-        $script_start .= qq?#SBATCH --account=${account_string}\n? if ($account_string);
-        $script_start .= qq?#SBATCH --partition=${partition_string}\n? if ($partition_string);
-        $script_start .= qq?#SBATCH --qos=${qos_string}\n? if ($qos_string);
-        ## FIXME: This should get smarter and be able to request multiple tasks and nodes.
-        $script_start .= qq?#SBATCH --nodes=1 --ntasks=1 --cpus-per-task=$wanted->{cpu}\n? if (defined($wanted->{cpu}));
-        $script_start .= qq?#SBATCH --gres=gpu:$wanted->{gpu}\n? if (defined($wanted->{gpu}) && $wanted->{gpu} > 0);
-        $script_start .= qq?#SBATCH --time=${walltime_string}\n? if (defined($wanted->{walltime}));
-        $script_start .= qq?#SBATCH --mem=${mem_string}\n? if (defined(${mem_string}));
-        $script_start .= qq"${array_string}\n" if ($array_string);
-        $script_start .= qq"set -x\n" if ($options->{debug});
-        $script_start .= qq?startdir=\$(pwd)
-set -o errexit
-set -o errtrace
-set -o pipefail
-echo "## Started ${script_file} at \$(date) on \$(hostname) with id \${SLURM_JOBID}." >> ${sbatch_log}
-function get_sigterm {
-  cd "\${startdir}"
-  echo "A SIGTERM was sent to $options->{jname}: \${SLURM_JOBID}." >> ${sbatch_log}
-  exit 1
-}
-trap get_sigterm SIGTERM
-function get_sigerr {
-  cd "\${startdir}"
-  echo "A SIGERR was sent to $options->{jname}: \${SLURM_JOBID}." >> ${sbatch_log}
-  exit 1
-}
-trap get_sigerr ERR
-?;
-        $script_start .= $options->{module_string} if ($options->{module_string});
-        $script_start .= $options->{conda_string} if ($options->{conda_string});
-        ## Note, the 'echo "Job status: $? " >> ${sbatch_log}'
-        ## really is not necessary now because I have errexit on.
-        my $script_end = qq!
-## The following lines give status codes and some logging
-## This might not work because it is a little circular.
-cd \${startdir}
-minutes_used=\$(( SECONDS / 60 ))
-echo "  \$(hostname) Finished \${SLURM_JOBID} ${script_base} at \$(date), it took \${minutes_used} minutes." >> ${sbatch_log}
-if [[ -x "\$(command -v sstat)" && -n "\${SLURM_JOBID}" ]]; then
-  echo "  walltime used by \${SLURM_JOBID} was: \${minutes_used:-null} minutes." >> ${sbatch_log}
-  echo "" >> ${sbatch_log}
-fi
-## Note, you can score a bunch more information by running cyoa --method checkjob from the working directory.
-!;
-        my $total_script_string = '';
-        $total_script_string .= qq"${script_start}\n";
-        $total_script_string .= qq"$wanted->{jcomment}\n" if ($wanted->{comment});
-        $total_script_string .= qq"$options->{prescript}\n" if ($options->{prescript});
-        ## The prescript contains the module() definition when needed.
-        ## So put that after it.
-        $total_script_string .= qq"$options->{jstring}\n" if ($options->{jstring});
-        $total_script_string .= qq"$options->{postscript}\n" if ($options->{postscript});
-        $total_script_string .= "${script_end}\n";
-        my $script = FileHandle->new(">$script_file");
-        if (!defined($script)) {
-            die("Could not write the script: $script_file
-  $!");
-        }
-        print $script $total_script_string;
-        $script->close();
-        chmod(0755, $script_file);
+    $state{array_string} = '';
+    if ($state{array_string}) {
+        $state{array_string} = qq"--array=$state{array_string}";
     }
+
+    $state{walltime_string} = qq"$state{jwalltime}";
+    $state{mem_string} = qq"$state{jmem}G";
+    $state{requeue_string} = '--no-requeue';
+    if ($state{requeue}) {
+        $state{requeue_string} = '--requeue';
+    }
+
+    $state{jsleep} = 1 unless ($state{jsleep});
+    make_path($log_directory, {verbose => 0}) unless (-r $log_directory);
+    unless (-r qq"$state{basedir}/$state{script_dir}/json") {
+        make_path("$state{basedir}/$state{script_dir}/json", {verbose => 0});
+    }
+    my $script_file = $parent->Get_Script_Filename();
+
+    $state{debug_string} = q{};
+    if ($state{debug}) {
+        $state{debug_string} = 'set -x';
+    }
+    $state{primary_jstring} = $primary_jstring;
+    $state{script_base} = basename($script_file);
+    my $templater = Template->new({
+        INCLUDE_PATH => $template_dir,
+        TRIM => 0,
+        INTERPOLATE => 0,});
+    my $processed = $templater->process('slurm.tt', \%state, $script_file) or die $templater->error;
+    say "Writing job script to ${script_file}.";
+    chmod(0755, $script_file);
     my $job_id = undef;
     my $handle = IO::Handle->new;
+    my $sbatch_cmd_line = qq"${sbatch} $state{depends_string} ${script_file}";
     my $sbatch_pid = open($handle, qq"${sbatch_cmd_line} |");
     while (my $line = <$handle>) {
         chomp($line);
@@ -1834,50 +1662,43 @@ fi
 
     if (!defined($job_id)) {
         warn("The job id did not get defined, submission likely failed.");
-        warn("Attempted submission: qos_string: ${qos_string}, QOS: $class->{chosen_qos}, account: $class->{chosen_account}, cluster: $class->{chosen_cluster}, partition: $class->{chosen_partition}\n");
+        warn("Attempted submission: qos_string: $state{qos_string}, QOS: $state{chosen_qos}, account: $state{chosen_account}, cluster: $state{chosen_cluster}, partition: $state{chosen_partition}\n");
         return(undef);
     } else {
-        print "Submitted job name: $options->{jname} with ID: ${job_id}.\n";
+        say "Submitted job name: $state{jname} with ID: ${job_id}.";
     }
-    sleep($options->{jsleep});
+    sleep($state{jsleep});
     my @jobid_list = split(/\./, $job_id);
     my $short_jobid = shift(@jobid_list);
 
-    my $new_job_string = qq"Starting a slurm job: ${short_jobid} $options->{jname}\n";
-    if ($cluster_string) {
-        $new_job_string .= " cluster: ${cluster_string} ";
+    my $new_job_string = qq"Starting a slurm job: ${short_jobid} $state{jname}\n";
+    if ($state{cluster_string}) {
+        $new_job_string .= " cluster: $state{cluster_string} ";
     }
-    if ($partition_string) {
-        $new_job_string .= " partition: ${partition_string} ";
+    if ($state{partition_string}) {
+        $new_job_string .= " partition: $state{partition_string} ";
     }
-    if ($account_string) {
-        $new_job_string .= " account: ${account_string} ";
+    if ($state{account_string}) {
+        $new_job_string .= " account: $state{account_string} ";
     }
-    if ($cluster_string || $partition_string || $account_string) {
-        $new_job_string .= "\n";
-    }
+    say $new_job_string;
 
-    if ($options->{jdepends}) {
-        print "This job depends on $options->{jdepends}.\n";
-        $job->{depends} = $options->{jdepends};
+    if ($state{jdepends}) {
+        say "This job depends on $state{jdepends}.";
+        $job->{depends} = $state{jdepends};
     }
-    $job->{log} = $sbatch_log;
+    $job->{log} = qq"$state{stdout}.sbatch";
     $job->{job_id} = $job_id;
-    $job->{jname} = $options->{jname};
     $job->{pid} = $sbatch_pid;
     $job->{script_file} = $script_file;
-
-    ## Take a moment to reset the shell and language
-    ##my $reset = Bio::Adventure::Reset_Vars($class);
-    ##$reset = Bio::Adventure::Reset_Vars($parent);
-    $parent->{language} = 'bash';
-    make_path(qq"$options->{basedir}/outputs/logs");
-    my $job_logger = FileHandle->new(">>$options->{basedir}/outputs/logs/jobs.txt");
-    print $job_logger "$options->{jname}\tslurm\t${job_id}\n";
+    for my $k (keys %state) {
+        $job->{$k} = $state{$k};
+    }
+    $class->{language} = 'bash';
+    my $logging_file = qq"${log_directory}/jobs.txt";
+    my $job_logger = FileHandle->new(">>${logging_file}");
+    print $job_logger "$state{jname}\tslurm\t${job_id}\n";
     $job_logger->close();
-    $job->{main} = $outputs->{main};
-    $job->{stdout} = $outputs->{stdout};
-    $job->{stderr} = $outputs->{stderr};
     return($job);
 }
 
@@ -1910,6 +1731,15 @@ sub Wait {
     my $finished = 0;
     my $failed = 0;
     my $job = $args{job};
+    ## If no job is provided, assume it is the last element of $class->job_ids
+    if (!defined($job)) {
+        my @job_ids = @{$class->job_ids};
+        $job = $job_ids[$#job_ids];
+    }
+    my $maximum = undef;
+    if (defined($args{maximum})) {
+        $maximum = $args{maximum};
+    }
     my $id;
     if (ref($job) eq 'HASH') {
         if (defined($job->{jobids})) {
@@ -1924,9 +1754,6 @@ sub Wait {
         print "There is no job to wait on.\n";
         return(undef);
     }
-    if (defined($args{sleep})) {
-        sleep($args{sleep});
-    }
 
     my $datum;
     my $wait_count = {
@@ -1936,37 +1763,46 @@ sub Wait {
         cancelled => 0,
         failed => 0,
     };
+    my $increment_number = 0;
+    my $sleep_amount = 5;
   WAITLOOP: while ($wait_count->{finished} < 1 && $wait_count->{failed} < 1) {
-        sleep(20);
-        my $info = $class->Bio::Adventure::Slurm::Check_Job(input => $id, write => 0);
+        $increment_number++;
+        my $sleep_amount = ceil($sleep_amount + (($increment_number / 2)  * $sleep_amount));
+        sleep($sleep_amount);
+        my $info = $class->Bio::Adventure::Slurm::Check_Job(id => $id, write => 0);
         $datum = $info->[0];
         if (!defined($datum->{State})) {
             ## I do not know what is going on, State should eval to RUNNING
             $wait_count->{running}++;
             next;
-        }
-        elsif ($datum->{State} eq 'COMPLETED') {
+        } elsif ($datum->{State} eq 'COMPLETED') {
             $wait_count->{finished}++;
             print qq"The job ${id}:$datum->{JobName} required $datum->{MaxVMSize}G memory, ";
             print qq"$datum->{MaxDiskWrite}G disk, and ";
             print qq"$datum->{'Elapsed'} time using $datum->{'AveCPUFreq'}Mhz on $datum->{'MaxVMSizeNode'}.\n";
-        }
-        elsif ($datum->{State} eq 'PENDING') {
+        } elsif ($datum->{State} eq 'PENDING') {
             $wait_count->{pending}++;
-            print "This job is still pending.\n";
-        }
-        elsif ($datum->{State} eq 'CANCELLED') {
+            if (defined($maximum)) {
+                if ($wait_count->{pending} > ($maximum * 2)) {
+                    print "Dropping out while pending after $wait_count->{pending} loops.\n";
+                    return($datum);
+                }
+            }
+        } elsif ($datum->{State} eq 'CANCELLED') {
             $wait_count->{cancelled}++;
             $wait_count->{finished}++;
             print "This job was cancelled.\n";
-        }
-        elsif ($datum->{State} eq 'RUNNING') {
+        } elsif ($datum->{State} eq 'RUNNING') {
             $wait_count->{running}++;
-        }
-        elsif ($datum->{State} eq 'FAILED') {
+            if (defined($maximum)) {
+                if ($wait_count->{running} > $maximum) {
+                    print "Dropping out while running after $wait_count->{running} loops.\n";
+                    return($datum);
+                }
+            }
+        } elsif ($datum->{State} eq 'FAILED') {
             $wait_count->{failed}++;
-        }
-        else {
+        } else {
             print "I need to collect the various states, this one is: $datum->{State}.\n";
         }
     }

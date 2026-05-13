@@ -1,0 +1,47 @@
+[% shebang %]
+#SBATCH --export ALL --mail-type=NONE --open-mode=append [% requeue_string %]
+#SBATCH --chdir=[% abs_basedir %] --job-name=[% jname %] [% nice_string %]
+#SBATCH --output=[% stdout %].sbatch --error=[% stderr %].sbatch [% IF array_string =%][% array_string %]
+[% END -%]
+[% IF account_string %]#SBATCH --account=[% account_string %]
+[% END -%]
+[% IF partition_string %]#SBATCH --partition=[% partition_string %]
+[% END -%]
+[% IF qos_string %]#SBATCH --qos=[% qos_string %]
+[% END -%]
+[% IF jcpu %]#SBATCH --cpus-per-task=[% jcpu %]
+[% END -%]
+[% IF jgpu %]#SBATCH --gres=gpu:[% jgpu %]
+[% END -%]
+[% IF walltime_string %]#SBATCH --time=[% walltime_string %]
+[% END -%]
+[% IF mem_string %]#SBATCH --mem=[% mem_string %]
+[% END -%]
+[% IF debug_string %][% debug_string %]
+[% END -%]
+set -o errexit
+set -o errtrace
+set -o pipefail
+[% IF bash_source %][% bash_source %]
+trap get_sigterm SIGTERM
+trap get_sigerr ERR
+[% END -%]
+export JNAME=[% jname %]
+echo "## Started [% script_base %] at $(date) on $(hostname)." >> [% bash_log %]
+
+cd [% abs_basedir %] || exit
+[% IF module_string %][% module_string %]
+[% END -%]
+[% IF conda_string %][% conda_string %]
+[% END -%]
+[% IF spack_string %][% spack_string %]
+[% END -%]
+[% IF prescript %][% prescript %]
+[% END -%]
+
+[% primary_jstring %]
+
+[% IF postscript %][% postscript %]
+[% END -%]
+echo "Job status: $?" >> [% bash_log %]
+echo "$(hostname) finished [% script_base %] at $(date), it took $(( SECONDS / 60 )) minutes." >> [% bash_log %]
