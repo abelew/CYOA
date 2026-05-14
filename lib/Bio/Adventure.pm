@@ -275,6 +275,10 @@ sub BUILD {
         my $set = $class->_set_cmdline_args($cmdline_args);
     }
 
+    ## Uncomment the next two lines to print out the menu as a perl data structure.
+    ## my $funkytown = Bio::Adventure::Config::Get_Menus();
+    ## p $funkytown;
+
     ## Read the json file of function-specific default values.
     ## Ideally I should be pulling quite a lot out of the global
     ## defaults into this.

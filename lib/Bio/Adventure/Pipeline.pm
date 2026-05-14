@@ -614,7 +614,7 @@ nextflow run nf-core/rnaseq \\
   for this instances when I am revisiting previous data.
 
 =cut
-sub Process_DNASeq {
+sub Process_DNAseq {
     my ($class, %args) = @_;
     my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
         args => \%args,

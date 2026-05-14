@@ -497,7 +497,7 @@ sub Riboseq_Bam {
     return($align_count);
 }
 
-sub Riboseq_Count_States {
+sub Count_States {
     my ($class, %args) = @_;
     my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(args => \%args);
     my $datum = $options->{datum};
