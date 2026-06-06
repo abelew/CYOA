@@ -1,0 +1,29 @@
+
+## Write out the various arguments here to see what happened:
+## output: [% main %]
+## metrics: [% metrics %]
+## discordant aligned: [% aligned_discodant %]
+## discordant unaligned: [% unaligned_discordant %]
+## input string: [% input_string %]
+## samtools: [% samtools %]
+## json_out: [% json_flags %]
+## extra: [% extra_flags %]
+## stdout: [% stdout %]
+## stderr: [% stderr %]
+
+## Invoke hisat2 on some (presumably) trimmed reads.
+## FIXME: Make sure the arbitrary flags are ready to be used.
+/usr/bin/time -v -o [% time_file %] -a \
+  hisat2 -x [% index_shell %] \
+    -p [% jcpu %] [% input_flag %] [% input_string %] \
+    --phred[% phred %] \
+    --un [% unaligned_discordant %] \
+    --al [% aligned_discordant %] \
+[% IF unaligned_concordant %]    --un-conc [% unaligned_concordant %] \
+[% END -%]
+[% IF aligned_concordant %]    --al-conc [% aligned_concordant %] \
+[% END -%]
+    -S [% main %] \
+    --met-file [% metrics %] \
+    2>[% stderr %] \
+    1>[% stdout %]

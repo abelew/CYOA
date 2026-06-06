@@ -11,6 +11,7 @@ use Bio::DB::Sam;
 use Bio::FeatureIO;
 use Bio::Tools::GFF;
 use Cwd;
+use Data::Printer;
 use File::Basename;
 use File::Path qw"make_path";
 use File::Which qw"which";
@@ -56,96 +57,44 @@ bedtools genomecov -bga -ibam $options->{input} 1>$outputs->{stdout} 2>$outputs-
 =cut
 sub Feature_Counts {
     my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        args => \%args,
-        required => ['input', 'species',],
-        fractional => 0,
-        minlength => 50,
-        maxlength => 800,
-        paired => 1,);
-    my $sort = $options->{sort};
-    my $qual = $options->{qual};
-    if (!defined($qual)) {
-        print "Setting minimum quality to 0.\n";
-        $qual = '0';
-    }
-    my $stranded = $options->{stranded};
+    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars(\%args);
+    my %options = %{$function_info};
+    my $all_inputs = $class->inputs;
+    my $inputs = $all_inputs->[$#$all_inputs];
+    my $input = $inputs->[0];
+    my $input_directory = $input->{directory};
+    my $basename = $input->{basename};
+    $options{input_file} = $input->{input};
+    $options{output_prefix} = qq"${input_directory}/${basename}";
 
-    ## The following block is repeated in Config::Get_Outputs()
-    ## and needs to be removed from one of these places.
-    ## But, before I do so, I need to ensure that the logic of
-    ## when the option is set and when the outputs are created
-    ## is consistent.  Once this reorganization is completed
-    ## it should be easy to decide on the appropriate place/way.
-    ## Another strategy would be to just make a separate variables
-    ## for strandedness when using htseq vs. featurecounts.
-    if (defined($stranded)) {
-        if ($stranded eq 'forward') {
-            $options->{stranded} = 1;
-        } elsif ($stranded eq 'reverse') {
-            $options->{stranded} = 2;
+    if (defined($options{stranded})) {
+        if ($options{stranded} eq 'forward') {
+            $options{stranded} = 1;
+        } elsif ($options{stranded} eq 'reverse') {
+            $options{stranded} = 2;
         } else {
-            $options->{stranded} = 0;
+            $options{stranded} = 0;
         }
     } else {
-        $options->{stranded} = 0;
+        $options{stranded} = 0;
     }
 
-    my $fc_invocation = qq"counted=0
-gff_type=$options->{gff_type}
-gff_tag=$options->{gff_tag}
-max_length=$options->{maxlength}
-max_reads=$options->{max_reads}
-min_length=$options->{minlength}
-min_quality=${qual}
-mode=$options->{mode}
-secondary=$options->{secondary}
-stranded=${stranded}
-
-{
-  /usr/bin/time -v -o $paths->{time} -a featureCounts \\
-    -T 1 ";
-    if ($options->{introns}) {
-        $fc_invocation .= qq" -J -G $paths->{fasta}";
-    }
-    if ($options->{fractional}) {
-        print "It is recommended that if one wants multimapped/fractional reads to use salmon/kallisto/etc.\n";
-        $fc_invocation .= ' -M --fraction';
-    }
-    $fc_invocation .= qq" -s \${stranded}";
-
-    $fc_invocation .= qq" -Q \${min_quality}";
-    if ($options->{paired}) {
-        $fc_invocation .= qq" -p --countReadPairs -B -P -d \${min_length} -D \${max_length}";
-    }
-    $fc_invocation .= qq" \\
-    -R CORE -t \${gff_type} -g \${gff_tag} \\
-    -a $paths->{gff} \\
-";
-
-    $fc_invocation .= qq!    -o $outputs->{main_variables} \\
-    $options->{input} \\
-    2>>$outputs->{stderr} \\
-    1>>$outputs->{stdout}
-  counted=\$?
-} || {
-  echo 'featureCounts failed.' >> $outputs->{stderr}
-}
-if [[ "\${counted}" = 0 ]]; then
-  xz -9e -f $outputs->{main_variables}
-  xz -9e -f $outputs->{featurecount}
-fi
-!;
-    $outputs->{main} .= '.xz';
-    $outputs->{featurecount} .= '.xz';
-    my $fc = $class->Submit(
-        gff_type => $options->{gff_type},
-        gff_tag => $options->{gff_tag},
-        input => $options->{input},
-        outputs => $outputs,
-        jdepends => $options->{jdepends},
-        jstring => $fc_invocation,);
-    return($fc);
+    ## It is a litle silly to have separate variables for the compressed
+    ## and uncompressed versions of these files; but I want an explicit
+    ## record that I am using them for different things.
+    ## The uncompressed copies will be in the job script and xz invoked
+    ## upon them at the end
+    ## the compressed copies will be used if there are jobs which depend
+    ## on them.
+    $options{main_uncomp_variable} = qq"$options{output_prefix}_s\${stranded}_\${gff_type}_\${gff_tag}_fcounts.csv";
+    $options{main_uncomp} = qq"$options{output_prefix}_s$options{stranded}_$options{gff_type}_$options{gff_tag}_fcounts.csv";
+    $options{main} = qq"$options{main_uncomp}.xz";
+    $options{featurecount_uncomp} = qq"options{output_prefix}_featurecount.txt";
+    $options{featurecount} = qq"$options{featurecount_uncomp}.xz";
+    my $updated = $class->Bio::Adventure::Config::Update_State(
+        options => \%options);
+    my $featurecount_job = $class->Submit();
+    return($featurecount_job);
 }
 
 =head2 C<Guess_Strand>

@@ -5,6 +5,7 @@ use diagnostics;
 use warnings qw"all";
 use Moo;
 extends 'Bio::Adventure';
+use Data::Printer;
 use File::Basename;
 use File::Copy qw"cp";
 use File::Spec;
@@ -872,248 +873,225 @@ ${sa_rm}
 =cut
 sub Hisat2 {
     my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        args => \%args,
-        compress => 1,
-        count => 1,
-        counter => 'featureCounts',
-        get_insertsize => 1,
-        libtype => 'genome',
-        maximum => undef,
-        output_dir => undef,
-        output_unaligned => undef,
-        unaligned_discordant => undef,
-        required => ['species', 'input',],
-        samtools => 1,);
-    if ($options->{species} =~ /:/) {
-        my $start_species = $options->{species};
-        my @species_lst = split(/:/, $options->{species});
+    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars(\%args);
+    my %options = %{$function_info};
+    my $all_inputs = $class->inputs;
+    my $inputs = $all_inputs->[$#$all_inputs];
+
+    if ($options{species} =~ /:/) {
+        my $start_species = $options{species};
+        my @species_lst = split(/:/, $options{species});
         my @result_lst = ();
         for my $sp (@species_lst) {
             print "Invoking hisat2 on ${sp}\n";
-            $options->{species} = $sp;
-            my $result = $class->Bio::Adventure::Map::Hisat2(%{$options});
-            push (@result_lst, $result);
+            my $result = $class->Bio::Adventure::Map::Hisat2(species => $sp);
+                push (@result_lst, $result);
         }
-        $options->{species} = $start_species;
+        $options{species} = $start_species;
         return(@result_lst);
     }
 
-    unless ($options->{introns}) {
+    unless ($options{introns}) {
         print "It appears that introns are disabled for this hisat run, is this correct?\n";
         sleep(5);
     }
 
     my $ready;
-    if (!$options->{jdepends}) {
-        $ready = $class->Check_Input(files => $options->{input},);
+    if (!$options{jdepends}) {
+        $ready = $class->Check_Input(files => $options{input},);
     }
-    my $hisat_args = $class->Passthrough_Args(arbitrary => $options->{hisat_args});
-    $hisat_args .= qq" -k $options->{maximum} " if (defined($options->{maximum}));
-    if ($options->{task} eq 'dnaseq' or !$options->{introns}) {
-        $hisat_args .= qq" --no-spliced-alignment ";
+    $options{hisat_args} = $class->Passthrough_Args(arbitrary => $options{hisat_args});
+    $options{hisat_args} .= qq" -k $options{maximum} " if (defined($options{maximum}));
+    if ($options{task} eq 'dnaseq' or !$options{introns}) {
+        $options{hisat_args} .= qq" --no-spliced-alignment ";
     }
 
-    ## Set up the names of this and the following jobs.
+        ## Set up the names of this and the following jobs.
     my $prefix_name = 'hisat';
-    $prefix_name .= qq"_k$options->{maximum}" if (defined($options->{maximum}));
-    my $hisat_name = qq"${prefix_name}_$options->{species}_$options->{libtype}";
-    my $xz_jname = qq"xz_${hisat_name}";
-    my $sam_jname = qq"s2b_${hisat_name}";
-    my $counter_jname = qq"counter_${hisat_name}";
-    my $stat_jname = qq"${hisat_name}_stat";
+    $prefix_name .= qq"_k$options{maximum}" if (defined($options{maximum}));
+    $options{hisat_name} = qq"${prefix_name}_$options{species}_$options{libtype}";
+    my $xz_jname = qq"xz_$options{hisat_name}";
+    my $sam_jname = qq"s2b_$options{hisat_name}";
+    my $counter_jname = qq"counter_$options{hisat_name}";
+    my $stat_jname = qq"$options{hisat_name}_stat";
 
     ## A couple of notes
-
     ## After years of working without problem, suddenly my lesspipe
     ## process substitution pre-filter for arbitrarily compressed files
     ## stopped working and might well give me an aneurysm trying to figure out.
     ## It turns out that there is a race condition somewhere which is triggered when
     ## less buffers its output -- so make sure the environment variable 'LESS'
     ## contains --unbuffered
-
     ## It is noteworthy that I modified hisat2 on my computer
     ## so that it supports xz inputs.
-    my $stranded = $options->{stranded};
     my $number_inputs = scalar(@{$inputs});
     my $paired = 0;
     my $input_string = '';
     my $test_file = $inputs->[0]->{fullpath};
     if ($number_inputs == 1) {
-        $input_string = qq" -U ${test_file} ";
-        $stranded = 'no';
-        $options->{get_insertsize} = 0;
+        $options{input_string} = qq" -U ${test_file} ";
+        $options{stranded} = 'no';
+        $options{get_insertsize} = 0;
     } elsif ($number_inputs == 2) {
-        $paired = 1;
-        $input_string = qq" -1 ${test_file} -2 $inputs->[1]->{fullpath} ";
+        $options{paired} = 1;
+        $options{input_string} = qq" -1 ${test_file} -2 $inputs->[1]->{fullpath} ";
     } else {
         die("This number of inputs is unsuitable: ${number_inputs}.\n");
     }
 
     ## Check that the indexes exist
-    my $cluster = $options->{cluster};
-    if (!-r $paths->{index_file} && !-r $paths->{index_file2}) {
-        my $genome_fasta = $paths->{fasta};
+    my $cluster = $options{cluster};
+    if (!-r $options{index_file} && !-r $options{index_file2}) {
         my $index_job = $class->Bio::Adventure::Index::Hisat2_Index(
             cluster => 0,
-            input => $genome_fasta,
-            prefix => $options->{jprefix},
-            output_dir => $paths->{output_dir},
-            jdepends => $options->{jdepends},
-            libtype => $options->{libtype},);
+            input => $options{fasta},
+            jdepends => $options{jdepends},
+            libtype => $options{libtype},);
         ## The following line inserts the indexer into the dependency chain
         ## Do not forget this, it is rather important.
     }
+    ## There is a decent chance we can/should move these to the functions.json.
+    my $aligned_discordant_filename = qq"$options{output_dir}/aldis_$options{species}_$options{libtype}.fastq";
+    $options{aligned_discordant} = $aligned_discordant_filename;
+    my $unaligned_discordant_filename = qq"$options{output_dir}/unaldis_$options{species}_$options{libtype}.fastq";
+    $options{unaligned_discordant} = $unaligned_discordant_filename;
+    my $aligned_concordant_filename = qq"$options{output_dir}/alcon_$options{species}_$options{libtype}.fastq";
+    $options{aligned_concordant} = $aligned_concordant_filename;
+    my $unaligned_concordant_filename = qq"$options{output_dir}/unalcon_$options{species}_$options{libtype}.fastq";
+    $options{unaligned_concordant} = $unaligned_concordant_filename;
+    my $sam_filename = qq"$options{output_dir}/$options{species}_$options{libtype}.sam";
+    $options{main} = $sam_filename;
+    $options{metrics} = qq"$options{output_dir}/$options{species}_$options{libtype}_metrics.txt";
 
-    my $hisat_input_flag = '-q '; ## fastq by default
-    $hisat_input_flag = '-f ' if ($test_file =~ /\.fasta$/);
+    $options{input_flag} = '-f' if ($test_file =~ /\.fasta$/);
+    my $updated = $class->Bio::Adventure::Config::Update_State(
+        options => \%options,);
+    my $hisat_job = $class->Submit();
 
-    my $jstring = qq!mapped=1
-{
-  /usr/bin/time -v -o $paths->{time}.time -a hisat2 -x $paths->{index_shell} ${hisat_args} \\
-    -p $options->{jcpu} \\
-    ${hisat_input_flag} ${input_string} \\
-    --phred$options->{phred} \\
-    --un $outputs->{unaligned_discordant} \\
-    --al $outputs->{aligned_discordant} \\
-!;
     ## Record the aligned/unaligned filenames both before and after compression.
-    my $aligned_filenames = $outputs->{aligned_discordant};
+    my $aligned_filenames = $options{aligned_discordant};
     my $aligned_xz = qq"${aligned_filenames}.xz";
-    my $unaligned_filenames = $outputs->{unaligned_discordant};
+    my $unaligned_filenames = $options{unaligned_discordant};
     my $unaligned_xz = qq"${unaligned_filenames}.xz";
-    if ($paired) {
-        ## The concordant flag tries to send reads to xxx.1 and xxx.2 even if
-        ## the data is not paired.
-        $jstring .= qq!    --un-conc $outputs->{unaligned_concordant} \\
-    --al-conc $outputs->{aligned_concordant} \\
-!;
-        my $aligned_base = basename($outputs->{aligned_concordant}, ('.fastq', '.fasta'));
-        my $unaligned_base = basename($outputs->{unaligned_concordant}, ('.fastq', '.fastq'));
-        my $the_dirname = dirname($outputs->{aligned_concordant});
-        ## For the set of all aligned filenames, there should now be 3, the original discordant and two more.
-        ## For the xz filenames, there should be 2, just the concordant; because these will be used downstream.
-        $aligned_filenames .= qq":${the_dirname}/${aligned_base}.1.fastq:${the_dirname}/${aligned_base}.2.fastq";
-        $aligned_xz = qq"${the_dirname}/${aligned_base}.1.fastq.xz:${the_dirname}/${aligned_base}.2.fastq.xz";
 
-        $unaligned_filenames = qq"${the_dirname}/${unaligned_base}.1.fastq:${the_dirname}/${unaligned_base}.2.fastq:$outputs->{unaligned_discordant}";
-        $unaligned_xz = qq"${the_dirname}/${unaligned_base}.1.fastq.xz:${the_dirname}/${unaligned_base}.2.fastq.xz:$outputs->{unaligned_discordant}.xz";
-    }
+    my $aligned_base = basename($options{aligned_concordant}, ('.fastq', '.fasta'));
+    my $unaligned_base = basename($options{unaligned_concordant}, ('.fastq', '.fastq'));
+    my $the_dirname = dirname($options{aligned_concordant});
+    ## For the set of all aligned filenames, there should now be 3, the original discordant and two more.
+    ## For the xz filenames, there should be 2, just the concordant; because these will be used downstream.
+    $aligned_filenames .= qq":${the_dirname}/${aligned_base}.1.fastq:${the_dirname}/${aligned_base}.2.fastq";
+    $aligned_xz = qq"${the_dirname}/${aligned_base}.1.fastq.xz:${the_dirname}/${aligned_base}.2.fastq.xz";
+
+    $unaligned_filenames = qq"${the_dirname}/${unaligned_base}.1.fastq:${the_dirname}/${unaligned_base}.2.fastq:$options{unaligned_discordant}";
+    $unaligned_xz = qq"${the_dirname}/${unaligned_base}.1.fastq.xz:${the_dirname}/${unaligned_base}.2.fastq.xz:$options{unaligned_discordant}.xz";
+
     my $all_filenames = qq"${aligned_filenames}:${unaligned_filenames}";
-    $jstring .= qq!    -S $outputs->{main} \\
-    --met-file $outputs->{metrics} \\
-    2>$outputs->{stderr} \\
-    1>$outputs->{stdout}
-} || {
-  echo 'hisat2 failed.' >> $outputs->{stderr}
-}
-## It seems like small files on NFS can cause a race condition leading to failure to properly
-## read the sam/un(aligned) outputs.
-sync
-!;
-    ## Explicitly setting the cluster state to whatever it was before checking for indexes
-    ## Because I started setting the index creation in a bash job to avoid
-    ## accidental overwriting of indexes by multiple jobs.
-    my $hisat_job = $class->Submit(
-        cluster => $cluster,
-        jdepends => $options->{jdepends},
-        jstring => $jstring,
-        paired => $paired,);
-    ## HT1_Stats also reads the trimomatic output, which perhaps it should not.
-    ## my $trim_output_file = qq"outputs/$options->{job_basename}-trimomatic.out";
-    my $sam_job = $class->Bio::Adventure::Convert::Samtools(
-        input => $outputs->{main},
+
+    ## Now set up a samtools job using this information.
+    my $samtools_job = $class->Bio::Adventure::Convert::Samtools(
+        input => $options{main},
         jdepends => $hisat_job->{job_id},
-        jprefix => $options->{jprefix},
-        paired => $paired,
-        species => $options->{species},);
-    $hisat_job->{samtools} = $sam_job;
-    if ($options->{compress}) {
-        my $comp = $class->Bio::Adventure::Compress::Compress(
+        jprefix => $options{jprefix},
+        paired => $options{paired},
+        species => $options{species},);
+    $hisat_job->{samtools} = $samtools_job;
+    p $samtools_job;
+
+    ## Compress the various plain text outputs.
+    if ($options{compress}) {
+        my $compress_job = $class->Bio::Adventure::Compress::Compress(
             jname => $xz_jname,
-            jprefix => $options->{jprefix},
+            jprefix => $options{jprefix},
             input => qq"${aligned_filenames}:${unaligned_filenames}",
-            jdepends => $sam_job->{job_id});
-        $hisat_job->{compression} = $comp;
+            jdepends => $samtools_job->{job_id});
+        $hisat_job->{compression} = $compress_job;
         ## Sneak the compression job's ID in place as hisat's.
         ## No, I changed my mind, let the samtools jump ahead.
         ## $hisat_job->{job_id} = $comp->{job_id};
     }
 
-    if ($options->{get_insertsize}) {
-        my $sizes = $class->Bio::Adventure::Count::Insert_Size(
-            input => $sam_job->{main},
-            jprefix => $options->{jprefix},
-            jdepends => $sam_job->{job_id},);
-        $hisat_job->{insertsizes} = $sizes;
+    ## If the reads are paired-end, we can get the library insert sizes.
+    if ($options{get_insertsize}) {
+        my $size_job = $class->Bio::Adventure::Count::Insert_Size(
+            input => $samtools_job->{main},
+            jprefix => $options{jprefix},
+            jdepends => $samtools_job->{job_id},);
+        $hisat_job->{insertsizes} = $size_job;
     }
-    if ($options->{duplicate}) {
-        my $duplication = $class->Bio::Adventure::Convert::GATK_Dedup(
-            input => $sam_job->{output},
-            remove => $options->{remove},
-            jprefix => $options->{jprefix},
-            jdepends => $sam_job->{job_id},);
+
+    ## We can use the start/end positions of the read(s) to make some
+    ## estimates about duplication rates.  Late libraries may have
+    ## UMI's which we may use to get truly accurate rates.
+    if ($options{duplicate}) {
+        my $duplication_job = $class->Bio::Adventure::Convert::GATK_Dedup(
+            input => $samtools_job->{output},
+            remove => $options{remove},
+            jprefix => $options{jprefix},
+            jdepends => $samtools_job->{job_id},);
     }
+
+    ## Use HTSeq or featureCounts to count up reads/featue.
     my $counter_input;
     if ($paired) {
-        $counter_input = $sam_job->{paired};
+        $counter_input = $samtools_job->{paired};
     } else {
-        $counter_input = $sam_job->{main};
+        $counter_input = $samtools_job->{main};
     }
     my $counter_out = '';
     my $counter;
-    if ($options->{count} && $options->{counter} eq 'htseq') {
-        if ($options->{libtype} eq 'rRNA') {
-            $counter = $class->Bio::Adventure::Count::HTSeq(
+    my $counter_job;
+    if ($options{count} && ($options{counter} eq 'htseq' || $options{counter} eq 'both')) {
+        if ($options{libtype} eq 'rRNA') {
+            $counter_job = $class->Bio::Adventure::Count::HTSeq(
                 input => $counter_input,
-                jdepends => $sam_job->{job_id},
-                jprefix => $options->{jprefix},
-                libtype => $options->{libtype},
+                jdepends => $samtools_job->{job_id},
+                jprefix => $options{jprefix},
+                libtype => $options{libtype},
                 mapper => 'hisat2',
-                paired => $paired,
-                stranded => $stranded,);
+                paired => $options{paired},
+                stranded => $options{stranded},);
         } else {
-            $counter = $class->Bio::Adventure::Count::HT_Multi(
+            $counter_job = $class->Bio::Adventure::Count::HT_Multi(
                 input => $counter_input,
-                jdepends => $sam_job->{job_id},
-                jprefix => $options->{jprefix},
-                libtype => $options->{libtype},
+                jdepends => $samtools_job->{job_id},
+                jprefix => $options{jprefix},
+                libtype => $options{libtype},
                 mapper => 'hisat2',
-                paired => $paired,
-                stranded => $stranded,);
+                paired => $options{paired},
+                stranded => $options{stranded},);
         }
-        $hisat_job->{htseq} = $counter;
-        if (ref($hisat_job->{htseq}) eq 'ARRAY') {
+        $hisat_job->{counter} = $counter_job;
+        if (ref($hisat_job->{counter}) eq 'ARRAY') {
             $counter_out = $hisat_job->{htseq}->[0]->{main};
         } else {
             $counter_out = $hisat_job->{htseq}->{main};
         }
-        ## If this is not the final job in a chain, then make sure
-        ## that any jobs queued after it do not start until
-        ## samtools/htseq/etc are finished.
-    } elsif ($options->{count} && $options->{counter} eq 'featureCounts') {
-        $counter = $class->Bio::Adventure::Count::Feature_Counts(
+    }
+    if ($options{count} && ($options{counter} eq 'featureCounts' || $options{counter} eq 'both')) {
+        $counter_job = $class->Bio::Adventure::Count::Feature_Counts(
             input => $counter_input,
-            jdepends => $sam_job->{job_id},
-            jprefix => $options->{jprefix},
-            libtype => $options->{libtype},
+            jdepends => $samtools_job->{job_id},
+            jprefix => $options{jprefix},
+            libtype => $options{libtype},
             mapper => 'hisat2',
-            paired => $paired,
-            stranded => $stranded,);
+            paired => $options{paired},
+            stranded => $options{stranded},);
         ## If this is not the final job in a chain, then make sure
         ## that any jobs queued after it do not start until
         ## samtools/htseq/etc are finished.
         $hisat_job->{job_id} = $counter->{job_id};
     }
-    $hisat_job->{counter} = $counter;
-    my $stats = $class->Bio::Adventure::Metadata::Hisat2_Stats(
-        input => $outputs->{stderr},
+    $hisat_job->{counter} = $counter_job;
+    print "TESTME: About to invoke hisat2_stats with input: $hisat_job->{stderr} and count_table: $counter_out and hisat jobid: $hisat_job->{job_id}\n";
+
+    my $stats_job = $class->Bio::Adventure::Metadata::Hisat2_Stats(
+        input => $options{stderr},
         count_table => $counter_out,
         jdepends => $hisat_job->{job_id},
-        jprefix => $options->{jprefix},
-        output_dir => $paths->{output_dir},);
-    $hisat_job->{stats} = $stats;
-    $hisat_job->{job_id} = $stats->{job_id};
+        jprefix => $options{jprefix},
+        output_dir => $options{output_dir},);
+    $hisat_job->{stats} = $stats_job;
+    $hisat_job->{job_id} = $stats_job->{job_id};
     return($hisat_job);
 }
 

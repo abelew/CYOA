@@ -1,0 +1,14 @@
+if [[ ! -r "[% main %]" ]]; then
+  echo "id,original_reads,single_hits,failed_reads,multi_hits" > [% main %]
+fi
+
+original_reads_tmp=$( { grep " reads; of these" "[% input_file %]" 2>/dev/null || test $? = 1; } | awk '{print $1}' | sed 's/ //g')
+original_reads=${original_reads_tmp:-0}
+one_align_tmp=$( { grep " aligned exactly 1 time" "[% input_file %]" || test $? = 1; } | awk '{print $1}' | sed 's/ .*//g')
+one_align=${one_align_tmp:-0}
+failed_tmp=$( { grep " aligned 0 times" "[% input_file %]" || test $? = 1; } | tail -n 1 | awk '{print $1}' | sed 's/ .*//g')
+failed=${failed_tmp:-0}
+sampled_tmp=$( { grep " aligned >1 times" "[% input_file %]" || test $? = 1; } | awk '{print $1}' | sed 's/ .*//g')
+sampled=${sampled_tmp:-0}
+stat_string=$(printf "[% jbasename %],%s,%s,%s,%s" "${original_reads}" "${one_align}" "${failed}" "${sampled}")
+echo "$stat_string" >> [% main %]

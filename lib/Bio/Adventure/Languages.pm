@@ -32,6 +32,10 @@ sub Get_JSON {
 sub Make_Comment {
     my %args = @_;
     my $comment_string = '';
+    if (!defined($args{jcomment})) {
+        ## I am moving these comments to the job templates
+        return(q{});
+    }
     if ($args{language} =~ /lisp/) {
         $comment_string = qq";; $args{jcomment}";
     } elsif ($args{language} eq 'c' || $args{language} eq 'c++' ||

@@ -10,6 +10,7 @@ use Bio::Seq;
 use Bio::SeqFeature::Generic;
 use Bio::Tools::GuessSeqFormat;
 use Cwd qw"abs_path getcwd cwd";
+use Data::Printer;
 use Data::Table;
 use Data::Table::Excel qw"tables2xlsx";
 use File::Basename;
@@ -1677,30 +1678,15 @@ echo "\$stat_string" >> $outputs->{main}
 =cut
 sub Hisat2_Stats {
     my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        args => \%args,
-        required => ['input']);
-    my $count_table = '';
-    $count_table = $options->{count_table} if ($options->{count_table});
-    my $jstring = qq!
-if [ \! -e "$outputs->{main}" ]; then
-    echo "id, original reads, single hits, failed reads, multi-hits" > $outputs->{main}
-fi
-original_reads_tmp=\$( { grep " reads; of these" "$options->{input}" 2>/dev/null || test \$? = 1; } | awk '{print \$1}' | sed 's/ //g')
-original_reads=\${original_reads_tmp:-0}
-one_align_tmp=\$( { grep " aligned exactly 1 time" "$options->{input}" || test \$? = 1; } | awk '{print \$1}' | sed 's/ .*//g')
-one_align=\${one_align_tmp:-0}
-failed_tmp=\$( { grep " aligned 0 times" "$options->{input}" || test \$? = 1; } | tail -n 1 | awk '{print \$1}' | sed 's/ .*//g')
-failed=\${failed_tmp:-0}
-sampled_tmp=\$( { grep " aligned >1 times" "$options->{input}" || test \$? = 1; } | awk '{print \$1}' | sed 's/ .*//g')
-sampled=\${sampled_tmp:-0}
-stat_string=\$(printf "$inputs->[0]->{jbasename},%s,%s,%s,%s" "\${original_reads}" "\${one_align}" "\${failed}" "\${sampled}")
-echo "\$stat_string" >> $outputs->{main}
-!;
-    my $stats = $class->Submit(
-        jdepends => $options->{jdepends},
-        jstring => $jstring,);
-    return($stats);
+    my $function_info = Bio::Adventure::Config::Get_Function_Vars($class, \%args);
+    my $all_inputref = $class->inputs;
+    my $inputs = $all_inputref->[$#$all_inputref];
+    my %options = %{$function_info};
+    $options{input_file} = $options{input};
+    my $updated = $class->Bio::Adventure::Config::Update_State(
+        options => \%options);
+    my $hisat2_stats_job = $class->Submit();
+    return($hisat2_stats_job);
 }
 
 =head2 C<Salmon_Stats>

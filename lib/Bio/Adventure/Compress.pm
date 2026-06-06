@@ -6,6 +6,7 @@ use warnings qw"all";
 use Moo;
 extends 'Bio::Adventure';
 
+use Data::Printer;
 use File::Basename qw"basename dirname";
 use File::Path qw"make_path";
 use File::Which qw"which";
@@ -29,56 +30,27 @@ Invoke xz to recompress a given input file.
 =cut
 sub Compress {
     my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        args => \%args,
-        required => ['input'],
-        comment => '## Compressing files.',
-        jmem => 12,
-        jname => 'xz',
-        jprefix => '',
-        jwalltime => '36:00:00',
-        modules => undef,);
+    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars(\%args);
+    my %options = %{$function_info};
+    my $all_inputs = $class->inputs;
+    my $inputs = $all_inputs->[$#$all_inputs];
+
     my $check = which('xz');
     die('Could not find xz in your PATH.') unless($check);
-    my $jstring = "";
     my $output_string = '';
+    $options{input_files} = $inputs;
   INPUTS: for my $in (@{$inputs}) {
         my $in_dir = $in->{directory};
         my $in_base = $in->{filebase_compress};
-        my $in_full = $in->{fullpath};
         my $output_file = qq"${in_dir}/${in_base}.xz";
         $output_string .= qq"${output_file}:";
-        $jstring .= qq!
-## Compressing ${in_full}
-echo "Compressing ${in_full}" 1>>$outputs->{stdout}
-compressed=1
-if [ -f "${in_full}" ]; then
-  {
-    /usr/bin/du -h ${in_full} 1>>$outputs->{stdout} 2>>$outputs->{stderr}
-    /usr/bin/time -a -o $paths->{time} xz -9e -f ${in_full} 1>>$outputs->{stdout} 2>>$outputs->{stderr}
-  } || {
-    echo "Compression of ${in_full} failed." >> $outputs->{stdout}
-    compressed=0
-  }
-else
-  echo "The input: ${in_full} does not exist." 1>>$outputs->{stderr}
-fi
-!;
     } ## End looping over input files.
     $output_string =~ s/:$//g;
-
-    my $compression = $class->Submit(
-        comment => $options->{comment},
-        jdepends => $options->{jdepends},
-        input => $options->{input},
-        jcpu => 1,
-        jmem => $options->{jmem},
-        jname => $options->{jname},
-        jprefix => $options->{jprefix},
-        jstring => $jstring,
-        jwalltime => $options->{jwalltime},
-        outputs => $outputs,);
-    return($compression);
+    $options{main} = $output_string;
+    my $updated = $class->Bio::Adventure::Config::Update_State(
+        options => \%options,);
+    my $compress_job = $class->Submit();
+    return($compress_job);
 }
 
 sub Recompress {

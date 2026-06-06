@@ -1,0 +1,25 @@
+
+## Write out the various arguments here to see what happened:
+## output: [% main %]
+## input: [% input %]
+## stdout: [% stdout %]
+## stderr: [% stderr %]
+
+## Compess arbitrary files aggressively.
+
+[% FOR file = input_files %]
+## Compressing [% file.fullpath %] 1>>[% stdout %]
+compressed=1
+if [[ -f "[% file.fullpath %]" ]]; then
+  {
+    /usr/bin/du -h [% file.fullpath %] 1>>[% stdout %] 2>>[% stderr %]
+    /usr/bin/time -v -o [% time_file %] -a \
+      xz -9e -f [% file.fullpath %] 1>>[% stdout %] 2>>[% stderr %]
+  } || {
+    echo "Compression of [% file.fullpath %] failed." >>[% stdout %]
+    compressed=0
+  }
+else
+  echo "The input: [% file.fullpath %] does not exist." 1>>[% stderr %]
+fi
+[% END -%]

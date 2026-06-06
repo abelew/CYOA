@@ -650,7 +650,6 @@ sub Process_DNAseq {
     }
 
     my $map_input = $options->{input};
-    my $map_prereq = $last_job;
     my $trim;
     if ($options->{trim}) {
         $prefix = sprintf("%02d", ($prefix + 1));
@@ -666,7 +665,6 @@ sub Process_DNAseq {
         $map_input = $trim->{output};
         sleep($options->{jsleep});
         $last_job = $trim->{job_id};
-        $map_prereq = $last_job;
     }
 
     $prefix = sprintf("%02d", ($prefix + 1));
@@ -763,7 +761,7 @@ sub Process_DNAseq {
             introns => 0,
             species => $first_species,
             jprefix => $prefix,
-            jdepends => $map_prereq,
+            jdepends => $last_job,
             stranded => $options->{stranded});
         $hisat_compress_input .= qq"$first_map->{unaligned}:$first_map->{aligned}:";
         $last_job = $first_map->{job_id};
@@ -932,6 +930,7 @@ sub Process_RNAseq {
         filter => 0,
         freebayes => 0,
         input_paired => undef,
+        length => 50,
         library => 'bacteria',
         sra => 0,
         stranded => 'reverse',);
@@ -963,7 +962,6 @@ sub Process_RNAseq {
     }
 
     my $map_input = $options->{input};
-    my $map_prereq = $last_job;
     my $trim;
     $prefix = sprintf("%02d", ($prefix + 1)) if ($increment);
     if ($options->{trim}) {
@@ -977,7 +975,7 @@ sub Process_RNAseq {
             }
             $trim->{outputs}->{output} = $map_input;
         } else {
-            print "\n${prefix}: Starting trimmer.\n";
+            print "\n${prefix}: Starting trimmer with length: $options->{length}.\n";
             $trim = $class->Bio::Adventure::Trim::Trimomatic(
                 compress => $options->{compress},
                 input => $options->{input},
@@ -989,7 +987,6 @@ sub Process_RNAseq {
             $map_input = $trim->{output};
             sleep($options->{jsleep});
             $last_job = $trim->{job_id};
-            $map_prereq = $last_job;
         }
     }
 
@@ -1086,7 +1083,7 @@ sub Process_RNAseq {
             libtype => 'genome',
             species => $first_species,
             jprefix => $prefix,
-            jdepends => $map_prereq,
+            jdepends => $last_job,
             stranded => $options->{stranded});
         $hisat_compress_input .= qq"$first_map->{unaligned}:$first_map->{aligned}:";
         $last_job = $first_map->{job_id};
@@ -1094,12 +1091,24 @@ sub Process_RNAseq {
         $ret->{$jobid} = $first_map;
         sleep($options->{jsleep});
         $last_sam_job = $first_map->{samtools}->{job_id};
+        if (-f "$ENV{HOME}/libraries/rRNA/fasta/${first_species}.fasta") {
+            $prefix = sprintf("%02d", ($prefix + 1));
+            my $first_rrna = $class->Bio::Adventure::Map::Hisat2(
+                input => $map_input,
+                introns => $first_intron,
+                libtype => 'rRNA',
+                species => $first_species,
+                jprefix => $prefix,
+                jdepends => $last_job,
+                stranded => $options->{stranded},);
+            $last_job = $first_rrna->{job_id};
+        }
 
         if ($options->{coverage}) {
             $prefix = sprintf("%02d", ($prefix + 1)) if ($increment);
             print "\n${prefix}: Printing coverage/base with bbmap.\n";
             my $coverage = $class->Bio::Adventure::Assembly::Assembly_Coverage(
-                jdepends => $last_sam_job,
+                jdepends => $last_job,
                 input => $trim->{outputs}->{output},
                 libtype => 'genome',
                 jprefix => $prefix,
@@ -1113,7 +1122,7 @@ sub Process_RNAseq {
         if ($options->{freebayes}) {
             print "\n${prefix}: Performing freebayes search against ${first_species}.\n";
             my $first_snp = $class->Bio::Adventure::SNP::Freebayes_SNP_Search(
-                jdepends => $last_sam_job,
+                jdepends => $last_job,
                 input => $first_map->{samtools}->{outputs}->{paired},
                 species => $first_species,
                 gff_type => $first_type,
@@ -1121,6 +1130,7 @@ sub Process_RNAseq {
                 introns => $first_intron,
                 jprefix => $prefix,);
             $jobid = qq"${prefix}freebayes";
+            $last_job = $first_snp->{job_id};
             $ret->{$jobid} = $first_snp;
             sleep($options->{jsleep});
         }
@@ -1132,8 +1142,8 @@ sub Process_RNAseq {
             species => $first_species,
             jprefix => $prefix,
             libtype => 'CDS',
-            jdepends => $trim->{job_id},);
-        $last_job = $first_map->{job_id};
+            jdepends => $last_job,);
+        $last_job = $first_salmon->{job_id};
         $jobid = qq"${prefix}salmon";
         $ret->{$jobid} = $first_map;
         sleep($options->{jsleep});
@@ -1143,8 +1153,9 @@ sub Process_RNAseq {
     my $kraken = $class->Bio::Adventure::Count::Kraken(
         input => $first_map->{outputs}->{unaligned},  ## Not unaligned_comp$map_input,
         jprefix => $prefix,
-        jdepends => $last_sam_job,
+        jdepends => $last_job,
         library => $options->{library});
+    $last_job = $kraken->{job_id};
     print "\n${prefix}: Running kraken2 against $options->{library}.\n";
 
     if ($species_length >= 1) {
@@ -1179,13 +1190,13 @@ sub Process_RNAseq {
                 sleep($options->{jsleep});
                 $jobid = qq"${prefix}hostfilt";
                 $ret->{$jobid} = $nth_map;
-                $last_sam_job = $nth_map->{samtools}->{job_id};
+                $last_job = $nth_map->{job_id};
             } else {
                 print "\n${prefix}: Performing additional mapping against ${nth_species} without filtering.\n";
                 if ($options->{mapper} =~ /hisat/) {
                     $nth_map = $class->Bio::Adventure::Map::Hisat2(
                         compress => 0,
-                        jdepends => $last_sam_job,
+                        jdepends => $last_job,
                         input => $map_input,
                         introns => $nth_intron,
                         libtype => 'genome',
@@ -1197,13 +1208,13 @@ sub Process_RNAseq {
                     $hisat_compress_input .= qq"$nth_map->{unaligned}:$nth_map->{aligned}:";
                     $jobid = qq"${prefix}hisat";
                     $ret->{$jobid} = $nth_map;
-                    $last_sam_job = $nth_map->{samtools}->{job_id};
+                    $last_job = $nth_map->{job_id};
                     sleep($options->{jsleep});
                     $prefix = sprintf("%02d", ($prefix + 1)) if ($increment);
                     if ($options->{freebayes}) {
                         print "\n${prefix}: Performing freebayes search against ${nth_species}.\n";
                         my $nth_snp = $class->Bio::Adventure::SNP::Freebayes_SNP_Search(
-                            jdepends => $last_sam_job,
+                            jdepends => $last_job,
                             input => $nth_map->{samtools}->{outputs}->{paired},
                             libtype => 'genome',
                             species => $nth_species,
@@ -1221,15 +1232,28 @@ sub Process_RNAseq {
                 if ($options->{mapper} =~ /salmon/) {
                     print "\n${prefix}: Starting salmon in for loop.\n";
                     $nth_salmon = $class->Bio::Adventure::Map::Salmon(
-                        jdepends => $trim->{job_id},
+                        jdepends => $last_job,
                         input => $map_input,
                         libtype => 'CDS',
                         species => $nth_species,
                         jprefix => $prefix,);
                     sleep($options->{jsleep});
                     $jobid = qq"${prefix}salmon";
+                    $last_job = $nth_salmon->{job_id};
                     $ret->{$jobid} = $nth_map;
                 }
+            }
+            if (-f "$ENV{HOME}/libraries/rRNA/fasta/${nth_species}.fasta") {
+                $prefix = sprintf("%02d", ($prefix + 1));
+                my $nth_rrna = $class->Bio::Adventure::Map::Hisat2(
+                    input => $map_input,
+                    introns => $nth_intron,
+                    libtype => 'rRNA',
+                    species => $nth_species,
+                    jprefix => $prefix,
+                    jdepends => $last_job,
+                    stranded => $options->{stranded},);
+                $last_job = $nth_rrna->{job_id};
             }
             $c++;
         } ## End iterating over extra species

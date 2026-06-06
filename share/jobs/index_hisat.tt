@@ -1,0 +1,13 @@
+
+## Write out the various arguments here to see what happened:
+## input: [% input %]
+## index: [% index %]
+## stdout: [% stdout %]
+## stderr: [% stderr %]
+
+## Create a hisat2 index from a fasta genome.
+/usr/bin/time -v -o [% time_file %] -a \
+  hisat2-build [% input %] \
+    [% index %] \
+    2>[% stderr %] \
+    1>[% stdout %]

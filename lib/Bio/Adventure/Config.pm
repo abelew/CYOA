@@ -20,7 +20,7 @@ use Template;
 my $template_base = dist_dir('Bio-Adventure');
 my $template_dir = qq"${template_base}/jobs";
 
-our @EXPORT = qw"Get_Modules Get_Menus Get_TODOs";
+our @EXPORT = qw"Get_Menus Get_TODOs";
 our @ISA = qw"Exporter";
 
 ## 202605 survey: Invoked when reading an ini file
@@ -282,100 +282,13 @@ sub Get_Shell_Functions {
     ## This command, if run via bash, requires a controlling pty in order to find the
     ## bash function 'module'.  slurm and the various managers will not provide that
     ## so, we can use typescript to allocate one post-facto.
-    my $module_test = qq!/usr/bin/script -q -c 'bash -i -c "type module"' /dev/null |!;
-    my $modulecmd_handle = FileHandle->new($module_test);
-    my $shell_text = qq!function get_sigterm {
-  echo "A SIGTERM was sent to \$JNAME." >> $args{bash_log}
-  exit 1
-}
-export -f get_sigterm
-trap get_sigterm SIGTERM
-
-function get_sigerr {
-  echo "A ERR was sent to \$JNAME." >> $args{bash_log}
-  exit 1
-}
-export -f get_sigerr
-trap get_sigerr ERR
-
-function module() {
-!;
-
-    my $num_modulecmd_lines = 0;
-  MOD: while (my $line = <$modulecmd_handle>) {
-        chomp $line;
-        next MOD if ($line =~ /is a function/);
-        next MOD if ($line =~ /^module/);
-        if ($line =~ /^\{\s*$/) {
-            next MOD;
-        }
-        ## In case there are weird encodings.
-        $line =~ s/\s*$//g;
-        $num_modulecmd_lines++;
-        $shell_text .= qq"${line}\n";
-    }
-    $shell_text .= q"export -f module
-
-";
-    $modulecmd_handle->close();
-    if (-f 'typescript') {
-        print "The stupid typescript file still got created.\n";
-        rm('typescript');
-    }
-    ## If module is not in the current environment, check for the
-    ## modulecmd executable and just use that.
-    if ($num_modulecmd_lines == 0) {
-        my $modulecmd = which('modulecmd');
-        if ($modulecmd) {
-            $shell_text .= qq!${modulecmd} bash "$@"
-export -f module
-
-!;
-        } else {
-            $shell_text .= q!echo "The module command does not appear to exist".
-}
-export -f module
-
-!;
-        }
-    }
-
-    my $spack_test = qq!/usr/bin/script -q -c 'bash -i -c "type spack"' /dev/null |!;
-    my $spack_handle = FileHandle->new($spack_test);
-    $shell_text .= qq!function spack() {
-!;
-    my $num_spack_lines = 0;
-  SP: while (my $line = <$spack_handle>) {
-        chomp $line;
-        next SP if ($line =~ /is a function/);
-        next SP if ($line =~ /^spack/);
-        next SP if ($line =~ /^\{\s*$/);
-        ## In case there are weird encodings.
-        $line =~ s/\s*$//g;
-        $num_spack_lines++;
-        $shell_text .= qq"${line}\n";
-    }
-    $shell_text .= q"export -f spack
-
-";
-    $spack_handle->close();
-    if ($num_spack_lines == 0) {
-        $shell_text .= q!echo "The spack command does not appear to exist".
-}
-export -f spack
-
-!;
-    }
-
-    my $conda_test = which('conda');
-    if (!$conda_test) {
-        $shell_text .= q!
-function conda() {
-  echo "The conda command does not appear to exist."
-}
-export -f conda
-!;
-    }
+    my $shell_text = q{};
+    my $module_string = Bio::Adventure::Software::Get_Modulecmd(@_);
+    $shell_text .= $module_string;
+    my $spack_string = Bio::Adventure::Software::Get_Spackcmd(@_);
+    $shell_text .= $spack_string;
+    my $conda_string = Bio::Adventure::Software::Get_Condacmd(@_);
+    $shell_text .= $conda_string;
     return($shell_text);
 }
 
@@ -406,8 +319,8 @@ sub Get_Input_Info {
         my $filename = basename($in);
         my $filebase_compress = basename($in, ('.gz', '.xz', '.bz2'));
         ## FIXME: Replace this with options->{suffix_array}
-        my @exts = ('.fastq', '.fasta', '.fsa', '.faa', 'fna', '.fa', '.ffn',
-                    'gff', '.gff3', '.gbk', '.gbf', '.sqn', 'tbl', '.tsv', '.txt');
+        my @exts = ('.bam', '.fastq', '.fasta', '.fsa', '.faa', 'fna', '.fa', '.ffn',
+                    'gff', '.gff3', '.gbk', '.gbf', '.sam', '.sqn', 'tbl', '.tsv', '.txt');
         my $filebase_extension = basename($filebase_compress, @exts);
         my $directory = dirname($in);
         my $dirname = basename($directory);
@@ -576,6 +489,11 @@ sub Get_Function_Vars {
     my ($class, $funcall_args) = @_;
     my $caller = $class->Bio::Adventure::Config::Get_Caller();
     my $state_ref = $class->current_state;
+
+    ## Store the changed state elements here.
+    ## They should get reset at the end of Submit()
+    ## We will leave global defaults and instance args alone
+    my %modified_state = ();
     ## To an annoying degree this is effectively redoing the
     ## BUILD function from Adventure.pm
     ## I should think about how I can clean this up so that
@@ -586,6 +504,7 @@ sub Get_Function_Vars {
     ## order of precedence is:
     ## global_defaults < instance_args < function_defaults < function_args
     my %state = %{$state_ref};
+    $state{caller} = lc($caller);
     my $global_defaults = $class->global_defaults;
     for my $k (keys %{$global_defaults}) {
         $state{$k} = $global_defaults->{$k};
@@ -614,11 +533,33 @@ sub Get_Function_Vars {
     ## will not already have the variables interpolated.
     my %function_args = %{$all_function_args{$caller}};
     for my $k (keys %function_args) {
+        if (defined($state{$k})) {
+            $modified_state{$k} = $state{$k};
+        } else {
+            $modified_state{$k} = undef;
+        }
         $state{$k} = $function_args{$k};
     }
-    for my $j (keys %{$funcall_args}) {
-        $state{$j} = $funcall_args->{$j};
+
+    MODIFIED: for my $j (keys %{$funcall_args}) {
+          if (defined($state{$j})) {
+              ## I set aside the string 'undef' for
+              ## key/value pairs which should be reserved
+              ## but are left initially undefined, so
+              ## have a specific check for them here.
+              next MODIFIED if ($state{$j} eq 'undef');
+                  $modified_state{$j} = $state{$j};
+          } else {
+              $modified_state{$j} = undef;
+          }
+          $state{$j} = $funcall_args->{$j};
+      }
+
+    ## Add the global paths
+    for my $i (keys %gl_paths) {
+        $state{$i} = $gl_paths{$i};
     }
+
     ## Define the set of accessible interpolation variables here.
     my @info_array = @{$last_input};
     my %first_file_info = %{$info_array[0]};
@@ -736,6 +677,7 @@ sub Get_Function_Vars {
     ## Thus, we can trivially pull all of those options in future jobs.
     my @option_array = @{$class->options};
     push(@option_array, $interp_state_ref);
+    $interp_state_ref->{modified_state} = \%modified_state;
     $class->options(\@option_array);
     $class->current_state($interp_state_ref);
     return($interp_state_ref);
@@ -829,6 +771,23 @@ sub Update_State {
     } else {
         make_path($options{output_dir});
     }
+
+    ## Set stdout/stderr if they are not provided by the functions.json
+    if (!$options{stdout}) {
+        $options{stdout} = qq"$options{output_dir}/stdout";
+    }
+    if (!$options{stderr}) {
+        $options{stderr} = qq"$options{output_dir}/stderr";
+    }
+    if ($options{main}) {
+        print "TESTME: MAIN, main is set to $options{main}\n";
+    }
+
+    ## If prefix is not provided, set it to the number of inputs obseved so far.
+    if (!$options{jprefix}) {
+        my $num_inputs = scalar(@{$class->inputs});
+        $options{jprefix} = $num_inputs;
+    }
     ## Unfortunately, this cannot fix the problem, because the arbitrary output
     ## variables which are created all over the place have already interpolated
     ## the original jprefix containing string.
@@ -841,7 +800,17 @@ sub Update_State {
     ## END FIXME:
 
     my $options_ref = $class->self_interp(hashref => \%options);
-    if ($options{template}) {
+    ## Add portions of this to the current state
+  OPTS: for my $k (keys %{$options_ref}) {
+        next OPTS unless (defined($options_ref->{$k}));
+        next OPTS if (defined($current_state{$k}));
+        my $opt_class = ref($options_ref->{$k});
+        next OPTS unless ($opt_class eq 'SCALAR');
+        next OPTS if ($options_ref->{$k} eq 'undef');
+        $current_state{$k} = $options_ref->{$k};
+    }
+
+    if ($options_ref->{template}) {
         my $jstring = q{};
         my $templater = Template->new({
             INCLUDE_PATH => $template_dir,
@@ -849,10 +818,12 @@ sub Update_State {
             PRE_CHOMP => 0,
             POST_CHOMP => 0,
             INTERPOLATE => 0,});
-        print "About to process $options{template} from $template_dir\n";
+        print "TESTME: About to process template: $options_ref->{template}\n";
+
         ##my $processed = $tt->process($function_info->{template}, $args{template_args}, \$jstring) || die $tt->error();
-        my $processed = $templater->process($options_ref->{template}, $options_ref, \$jstring);
+        my $processed = $templater->process($options_ref->{template}, $options_ref, \$jstring) or die $templater->error();
         $current_state{jstring} = $jstring;
+        print "TESTME: current_state{jstring}: $current_state{jstring}\n";
     } elsif ($args{jstring}) {
         print "Adding jstring.\n";
         $current_state{jstring} = $args{jstring};
@@ -863,6 +834,7 @@ sub Update_State {
     if (!defined($current_state{language})) {
         $current_state{language} = 'bash';
     }
+
     ## I would much prefer to not need the following because
     ## if I do this, I cannot reuse the cyoa instance because this modifies
     ## the pre-interpolated variables.

@@ -300,32 +300,18 @@ kraken2-build --build --db \${KRAKEN_DB_PATH}/$options->{library} \\
 =cut
 sub Hisat2_Index {
     my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        args => \%args,
-        output_dir => undef,
-        required => ['input'],);
-    my $species = basename($options->{input}, split(/,/, $options->{suffixes}));
-    my $output_dir = $paths->{output_dir};
-    my $copied = undef;
-    if (-r $paths->{fasta}) {
-        print "The index fasta file appears to exist at: $paths->{fasta}.\n";
-    } else {
-        print "Copying $options->{input} to $paths->{fasta}\n";
-        $copied = cp($options->{input}, $paths->{fasta});
+    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars(\%args);
+    my %options = %{$function_info};
+    my $all_inputs = $class->inputs;
+    my $inputs = $all_inputs->[$#$all_inputs];
+    my $index_directory = dirname($options{index});
+    if (!-d $index_directory) {
+        make_path($index_directory);
     }
-    my $jstring = qq!
-hisat2-build $options->{input} \\
-  $paths->{index} \\
-  2>$outputs->{stderr} \\
-  1>$outputs->{stdout}
-!;
-    my $indexer = $class->Submit(
-        jdepends => $options->{jdepends},
-        jstring => $jstring,
-        outputs => $outputs,
-        prescript => $options->{prescript},
-        postscript => $options->{postscript},);
-    return($indexer);
+    my $updated = $class->Bio::Adventure::Config::Update_State(
+        options => \%options,);
+    my $index = $class->Submit();
+    return($index);
 }
 
 =head2 C<Kallisto_Index>

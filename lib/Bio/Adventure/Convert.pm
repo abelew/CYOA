@@ -100,8 +100,7 @@ sub Extract_Subseq {
                 $found_id = 1;
             }
             ## If seqid is not provided, assume there is only 1 sequence and use the first.
-        }
-        else {
+        } else {
             $found_id = 1;
         }
         if ($found_id) {
@@ -146,6 +145,53 @@ sub Extract_SeqIDs {
         }
     }
     $in_fh->close();
+}
+
+=head2 C<Fasta2Gff>
+
+  Convert a fasta file to a simple gff file.
+
+  This is really only intended to make a fasta database of stuff like
+  rRNAs into a simple gff file so that it is easier to count up rRNA
+  reads observed per molecule per sample.  As such it makes no attempt
+  to do anything useful other than write out the entry names and lengths.
+
+=cut
+sub Fasta2Gff {
+    my ($class, %args) = @_;
+    my $options = $class->Get_Vars(
+        args => \%args,
+        required => ['input'],
+        jprefix => '78');
+    my $dir = dirname($options->{input});
+    my $base = basename($options->{input}, ('.fasta', '.fsa', '.fna', '.fa'));
+    my $gff_name = qq"${dir}/${base}.gff";
+    my $gff_opened = open(GFF, ">${gff_name}");
+    my $features;
+    my $seqio_in = Bio::SeqIO->new(-format => 'fasta', -file => $options->{input});
+    my $gff_out = Bio::Tools::GFF->new(-fh => \*GFF, -gff_version => 3);
+    my $features_written = 0;
+  SEQS: while (my $seq = $seqio_in->next_seq) {
+      my $len = $seq->length;
+      my $id = $seq->id;
+      print "Writing entry for $id\n";
+      my $fasta_feature = Bio::SeqFeature::Generic->new(
+          -primary => 'misc_feature',
+          -seq_id => $id,
+          -source => 'fasta_file',
+          -start => 1,
+          -end => $len,
+          -strand => +1,
+          -score => undef,
+          -frame => 0,
+          -tag => {
+              'ID' => $id,
+          },);
+      $fasta_feature->display_name($id);
+      $gff_out->write_feature($fasta_feature);
+      $features_written++;
+  }
+    return($features_written);
 }
 
 =head2 C<GATK_Dedup>
@@ -284,27 +330,30 @@ sub Gb2Gff_Worker {
                 my $id = '';
                 if (defined($id_hash->{standard_name})) {
                     $id = qq"$id_hash->{standard_name}";
-                }
-                elsif (defined($id_hash->{gene})) {
+                } elsif (defined($id_hash->{gene})) {
                     $id = qq"$id_hash->{gene}";
                 }
+
                 if (defined($rrna_id_counter->{id})) {
                     my $id_count = $rrna_id_counter->{id} + 1;
                     $rrna_id_counter->{id} = $id_count;
                     $id .= qq".${id_count}";
-                }
-                else {
+                } else {
                     $rrna_id_counter->{id} = 0;
                 }
+
                 if (defined($id_hash->{gene})) {
                     $desc .= "$id_hash->{gene} ; ";
                 }
+
                 if (defined($id_hash->{db_xref})) {
                     $desc .= "$id_hash->{db_xref} ; ";
                 }
+
                 if (defined($id_hash->{product})) {
                     $desc .= "$id_hash->{product}";
                 }
+
                 my $start = $feat_object->start;
                 my $end = $feat_object->end;
                 my $len = $feat_object->length;
@@ -327,8 +376,7 @@ sub Gb2Gff_Worker {
                 my $rrna_object = Bio::PrimarySeq->new(-id => $id_string, -seq => $seq,
                                                        description => $desc);
                 $rrna_fasta->write_seq($rrna_object);
-            }
-            elsif ($feat_object->primary_tag eq 'CDS') {
+            } elsif ($feat_object->primary_tag eq 'CDS') {
                 $cds_gff->write_feature($feat_object);
                 $feat_count++;
                 my $id_string = '';
@@ -340,28 +388,31 @@ sub Gb2Gff_Worker {
                 my $id = '';
                 if (defined($id_hash->{standard_name})) {
                     $id = qq"$id_hash->{standard_name}";
-                }
-                elsif (defined($id_hash->{protein_id})) {
+                } elsif (defined($id_hash->{protein_id})) {
                     $id = qq"$id_hash->{protein_id}";
                 }
+
                 if (defined($cds_id_counter->{id})) {
                     my $id_count = $cds_id_counter->{id} + 1;
                     $cds_id_counter->{id} = $id_count;
                     $id .= qq".${id_count}";
-                }
-                else {
+                } else {
                     $cds_id_counter->{id} = 0;
                 }
+
                 my $desc = '';
                 if (defined($id_hash->{gene})) {
                     $desc .= "$id_hash->{gene};";
                 }
+
                 if (defined($id_hash->{db_xref})) {
                     $desc .= "$id_hash->{db_xref};";
                 }
+
                 if (defined($id_hash->{product})) {
                     $desc .= "$id_hash->{product}";
                 }
+
                 $desc .= "\n";
                 my $start = $feat_object->start;
                 my $end = $feat_object->end;
@@ -400,8 +451,7 @@ sub Gb2Gff_Worker {
                 $cds_fasta->write_seq($seq_object);
                 my $ttseq = $seq_object->seq;
                 $pep_fasta->write_seq($pep_object);
-            }
-            elsif ($feat_object->primary_tag eq 'ncRNA') {
+            } elsif ($feat_object->primary_tag eq 'ncRNA') {
                 $nc_gffout->write_feature($feat_object);
                 $feat_count++;
                 my $id_string = '';
@@ -413,16 +463,15 @@ sub Gb2Gff_Worker {
                 my $id = '';
                 if (defined($id_hash->{standard_name})) {
                     $id = $id_hash->{standard_name};
-                }
-                elsif (defined($id_hash->{gene})) {
+                } elsif (defined($id_hash->{gene})) {
                     $id = $id_hash->{gene};
                 }
+
                 if (defined($ncrna_id_counter->{$id})) {
                     my $id_count = $ncrna_id_counter->{$id} + 1;
                     $ncrna_id_counter->{$id} = $id_count;
                     $id .= ".${id_count}";
-                }
-                else {
+                } else {
                     $ncrna_id_counter->{$id} = 0;
                 }
 
@@ -430,10 +479,12 @@ sub Gb2Gff_Worker {
                 if (defined($id_hash->{db_xref})) {
                     $desc .= "$id_hash->{db_xref};";
                 }
+
                 if (defined($id_hash->{product})) {
                     $desc .= "$id_hash->{product}";
                 }
                 $desc .= "\n";
+
                 my $start = $feat_object->start;
                 my $end = $feat_object->end;
                 my $len = $feat_object->length;
@@ -460,8 +511,7 @@ sub Gb2Gff_Worker {
                 my $seq_object = Bio::PrimarySeq->new(-id => $id, -seq => $seq, description => $desc);
                 $nc_fasta->write_seq($seq_object);
                 my $ttseq = $seq_object->seq;
-            }
-            elsif ($feat_object->primary_tag eq 'misc_RNA') {
+            } elsif ($feat_object->primary_tag eq 'misc_RNA') {
                 ## Note: misc_RNA appears to me to be an ensembl-specific type and includes the various
                 ## feature types which fall under ncRNA at NCBI...
                 ## This is noteworthy, because ensembl's genbank files keep the ID under the tag
@@ -478,26 +528,28 @@ sub Gb2Gff_Worker {
                 my $id = '';
                 if (defined($id_hash->{standard_name})) {
                     $id = $id_hash->{standard_name};
-                }
-                elsif (defined($id_hash->{gene})) {
+                } elsif (defined($id_hash->{gene})) {
                     $id = $id_hash->{gene};
                 }
+
                 if (defined($miscrna_id_counter->{$id})) {
                     my $id_count = $miscrna_id_counter->{$id} + 1;
                     $miscrna_id_counter->{$id} = $id_count;
                     $id .= ".${id_count}";
-                }
-                else {
+                } else {
                     $miscrna_id_counter->{$id} = 0;
                 }
                 my $desc = '';
+
                 if (defined($id_hash->{db_xref})) {
                     $desc .= "$id_hash->{db_xref};";
                 }
+
                 if (defined($id_hash->{product})) {
                     $desc .= "$id_hash->{product}";
                 }
                 $desc .= "\n";
+
                 my $start = $feat_object->start;
                 my $end = $feat_object->end;
                 my $len = $feat_object->length;
@@ -533,8 +585,7 @@ sub Gb2Gff_Worker {
             my $p_size = {};
             if ($c == 0) {
                 $p_size = $feature_list[$#feature_list];
-            }
-            else {
+            } else {
                 $p_size = $feature_list[$c - 1];
             }
 
@@ -553,22 +604,23 @@ sub Gb2Gff_Worker {
 
             if ($p_start > $p_end) {
                 $interstart = $p_start;
-            }
-            else {
+            } else {
                 $interstart = $p_end;
             }
+
             if ($c_start < $c_end) {
                 $interend = $c_start;
-            }
-            else {
+            } else {
                 $interend = $c_end;
             }
+
             my $tmp_start = $interstart;
             my $tmp_end = $interend;
             if ($tmp_start > $tmp_end) {
                 $interstart = $tmp_end;
                 $interend = $tmp_start;
             }
+
             ## I need a little logic to catch the first feature
             ## As it is currently written, it grabs the position of the last feature
             ## and uses that number rather than the beginning of the chromosome.
@@ -587,7 +639,8 @@ sub Gb2Gff_Worker {
             $new_feature->{_location} = $inter_location;
             $inter_gffout->write_feature($new_feature);
         }
-    }                           ## End while every sequence
+    } ## End while every sequence
+
     my $ret_stats = {
         num_sequences => $seq_count,
         total_nt => $total_nt,
@@ -664,6 +717,7 @@ sub Gff2Fasta {
         $genome = $options->{input};
         $gff = $options->{gff};
     }
+
     $species = basename($genome, @{$class->{suffix_array}});
     $species = basename($species, @{$class->{suffix_array}});
     ## Count IDs as we come across them.
@@ -729,8 +783,7 @@ sub Gff2Fasta {
 
         if (!defined($id_counter->{$id})) {
             $id_counter->{$id} = 1;
-        }
-        else {
+        } else {
             $id_counter->{$id}++;
             $id_string = $long_id_string;
         }
@@ -738,6 +791,7 @@ sub Gff2Fasta {
         if (!defined($id_string)) {
             $id_string = $long_id_string;
         }
+
         my $nt_sequence = Bio::Seq->new(
             -id => $id_string,
             -seq => $cds->seq());
@@ -791,6 +845,7 @@ sub Read_GFF {
             print STDERR "Something is wrong with $gff_chr\n";
             next LOOP;
         }
+
         for my $i (@ids) {
             $i =~ s/^cds_//g;
             $i =~ s/\-\d+$//g;
@@ -851,26 +906,23 @@ sub Sam2Bam {
     my @input_list = ();
     if ($options->{input}) {
         push(@input_list, $options->{input});
-    }
-    elsif (-r $options->{input} and $options->{input} =~ /\.sam$/) {
+    } elsif (-r $options->{input} and $options->{input} =~ /\.sam$/) {
         push(@input_list, $options->{input});
-    }
-    elsif (-r $options->{input} and $options->{input} =~ /\.fastq$/) {
+    } elsif (-r $options->{input} and $options->{input} =~ /\.fastq$/) {
         if (-d "bowtie_out") {
             find({ wanted => sub { push(@input_list, "bowtie_out/$_") if ($_ =~ /\.sam$/); }, follow => 1 }, 'bowtie_out/');
 
-        }
-        else {
+        } else {
             foreach my $k (%{$options->{bt_args}}) {
                 my $output_string = qq"bowtie_out/$paths->{jbasename}-${k}.sam";
                 push(@input_list, $output_string);
             }
             my $bt = $class->Bio::Adventure::Map::Bowtie(%args);
         }
-    }
-    else {
+    } else {
         die("I don't know what to do without a .fastq file nor a .sam file.\n");
     }
+
     my $loaded = $class->Module_Load(modules => $options->{modules});
     my $sam = $class->Bio::Adventure::Convert::Samtools(%args,
                                                         jdepends => $options->{jdepends},
@@ -903,149 +955,48 @@ sub Sam2Bam {
 =cut
 sub Samtools {
     my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        args => \%args,
-        required => ['input', 'species'],
-        paired => 1,
-        mismatch => 1,);
-    my $input = $options->{input};
-    ## Add a samtools version check because *sigh*
-    my $samtools_version = qx"samtools 2>&1 | grep 'Version'";
-    my $samtools_type = 'new';
-    ## Start out assuming we will use the new samtools syntax.
-    my $samtools_first = qq!
-## If a previous sort file exists due to running out of memory,
-## then we need to get rid of them first.
-## hg38_100_genome-sorted.bam.tmp.0000.bam
-if [[ -f "$outputs->{main}.tmp.000.bam" ]]; then
-  rm -f $outputs->{main}.tmp.*.bam
-fi
-echo 'Time for initial samtools conversion command.' >> $paths->{time}
-## I think the most likely reason for this to fail is when
-## hisat dropped out in the middle of reading the input because of a mismatch in R1/R2.
-{
-  /usr/bin/time -v -o $paths->{time} -a samtools view -u -t $paths->{fasta} \\
-    -S ${input} -o $outputs->{main}  \\
-    2>$outputs->{stderr} \\
-    1>$outputs->{stdout}
-} || {
-  echo "Sam conversion failed."
-}
-!;
+    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars(\%args);
+    my %options = %{$function_info};
+    my $all_inputs = $class->inputs;
+    my $inputs = $all_inputs->[$#$all_inputs];
 
-    my $samtools_second = qq"echo 'Time for initial samtools sort command.' >> $paths->{time}
-/usr/bin/time -v -o $paths->{time} -a samtools sort -l 9 $outputs->{main} \\
-  -o $outputs->{sorted} \\
-  2>>$outputs->{stderr} \\
-  1>>$outputs->{stdout}";
-    my $paired_string = '';
-    if ($options->{paired}) {
-        $paired_string = qq!
-## The following will fail if this is single-ended.
-echo 'Time for second samtools command.' >> $paths->{time}
-/usr/bin/time -v -o $paths->{time} -a samtools view -b -f 2 \\
-  -o $outputs->{paired} \\
-  $outputs->{main} \\
-  2>>$outputs->{stderr} \\
-  1>>$outputs->{stdout}
-echo 'Time for second samtools index.' >> $paths->{time}
-/usr/bin/time -v -o $paths->{time} -a samtools index $outputs->{paired} \\
-  2>>$outputs->{stderr} \\
-  1>>$outputs->{stdout}
-echo 'Time for second bamtools.' >> $paths->{time}
-/usr/bin/time -v -o $paths->{time} -a bamtools stats -in $outputs->{paired} \\
-  2>>$paths->{nosuffix}_samtools.stats 1>&2
-!;
+    my $ready;
+    if (!$options{jdepends}) {
+        $ready = $class->Check_Input(files => $inputs);
     }
-    else {
-        ## If it is not paired, just set the paired output name to the output name so that
-        ## jobs which run this as part of a chain do not need to go looking for the paired output.
-        ## I am considering this primarily in the case of gatk deduplication which demands
-        ## properly paired reads or single ended; therefore if I set this here I do not need to
-        ## check later for different inputs.
-        my $paired_name = basename($outputs->{main}, ('.bam'));
-    }
-    my $jstring = qq!
+    $options{samtools_args} = $class->Passthrough_Args(arbitrary => $options{arbitrary});
 
-echo "Starting samtools"
-if [[ -f "$outputs->{main}" && -f "${input}" ]]; then
-  echo "Both the bam and sam files exist, rerunning."
-elif [[ -f "$outputs->{paired}" ]]; then
-  echo "The output file exists, quitting."
-  exit 0
-elif [[ \! -f "${input}" ]]; then
-  echo "Could not find the samtools input file."
-  exit 1
-fi
-echo 'Time for first samtools command.' >> $paths->{time}
-${samtools_first}
-echo "First samtools command finished with \$?"
-${samtools_second}
-
-rm $outputs->{main}
-mv $outputs->{sorted} $outputs->{main}
-echo 'Time for samtools index command.' >> $paths->{time}
-/usr/bin/time -v -o $paths->{time} -a samtools index $outputs->{main} \\
-  2>>$outputs->{stderr} \\
-  1>>$outputs->{stdout}
-echo "Second samtools command finished with \$?"
-echo 'Time for bamtools command.' >> $paths->{time}
-/usr/bin/time -v -o $paths->{time} -a bamtools stats -in $outputs->{main} \\
-  2>>$paths->{nosuffix}_samtools.stats 1>&2
-echo "Bamtools finished with \$?"
-${paired_string}
-!;
-
-    unless ($options->{mismatch}) {
-        $jstring .= qq!
-bamtools filter -tag XM:0 \\
-  -in $outputs->{main} \\
-  -out $outputs->{output_sorted_nomismatch} \\
-  2>>$paths->{nosuffix}_samtools.stats 1>&2
-echo "bamtools filter finished with: \$?"
-samtools index \\
-  $outputs->{output_sorted_nomismatch} \\
-  2>>$outputs->{stderr} \\
-  1>>$outputs->{stdout}
-echo "final samtools index finished with: \$?"
-!;
+    ## There are a few options in my samtools template to check:
+    ## sam_input which may just be input, main (output),
+    ## paired and output_paired,
+    ## fasta (the reference genome and should come from gfv),
+    ## nosuffix (some version of this should come from gfv),
+    ## nomismatch (defaults to 0) and output_sorted_nomismatch,
+    ## mapped (defaults to 0) and output_mapped (fastq),
+    ## unmapped (defaults to 0) and output_unmapped (fastq)
+    $options{sam_input} = $inputs->[0]->{fullpath};
+    my $sam_name = $inputs->[0]->{basename};
+    my $sam_dir = $inputs->[0]->{directory};
+    my $sam_ext = $inputs->[0]->{filebase_extension};
+    $options{main} = qq"${sam_dir}/${sam_name}.bam";
+    $options{output_sorted} = qq"${sam_dir}/${sam_name}_sorted.bam";
+    $options{output_paired} = qq"${sam_dir}/${sam_name}_paired.bam";
+    $options{output_nosuffix} = qq"${sam_dir}/${sam_name}";
+    $options{output_nomismatch} = qq"${sam_dir}/${sam_name}_nomismatch.bam";
+    $options{output_mismatch} = qq"${sam_dir}/${sam_name}_mismatch.bam";
+    if ($options{samtools_mapped}) {
+        $options{output_mapped} = qq"${sam_dir}/${sam_name}_samtools_mapped.fastq";
     }
 
-    if ($options->{samtools_mapped}) {
-        my $mapped = $input;
-        $mapped =~ s/\.sam/_samtools_mapped\.fastq/g;
-        $jstring .= qq"
-samtools fastq $outputs->{main} -F 4 \\
-  1>${mapped} \\
-  2>${mapped}.stderr
-xz -9e -f ${mapped}
-";
+    if ($options{samtools_unmapped}) {
+        $options{output_unmapped} = qq"${sam_dir}/${sam_name}_samtools_unmapped.fastq";
     }
 
-    if ($options->{samtools_unmapped}) {
-        my $unmapped = $input;
-        $unmapped =~ s/\.sam/_samtools_unmapped\.fastq/g;
-        $jstring .= qq"
-samtools fastq $outputs->{main} -f 4 \\
-  1>${unmapped} \\
-  2>${unmapped}.stderr
-xz -9e -f ${unmapped}
-";
-    }
-
-    $jstring .= qq"
-rm ${input}
-";
-
-    my $jobname = qq"$options->{jname}_$options->{species}";
-    my $samtools = $class->Submit(
-        depends => $options->{jdepends},
-        input => $input,
-        outputs => $outputs,
-        postscript => $options->{postscript},
-        prescript => $options->{prescript},
-        jstring => $jstring,);
-    return($samtools);
+    my $updated = $class->Bio::Adventure::Config::Update_State(
+        options => \%options,);
+    print "TESTME: Samtools about to submit with main: $options{main}\n";
+    my $samtools_job = $class->Submit();
+    return($samtools_job);
 }
 
 =head2 C<Species2SF>
@@ -1068,10 +1019,10 @@ sub Species2SF {
         my $contig_id = $feature->seq_id;
         if (defined($sf_by_contig->{$contig_id})) {
             @sf_tmp_features = @{$sf_by_contig->{$contig_id}};
-        }
-        else {
+        } else {
             $sf_by_contig->{$contig_id} = ();
         }
+
         push(@sf_tmp_features, $feature);
         $sf_by_contig->{$contig_id} = \@sf_tmp_features;
     }
@@ -1102,7 +1053,6 @@ sub Species2SF {
             my $in_gff_attached = $in_seq->add_SeqFeature($in_feature);
         }
         $sf_sequences->{$id} = $in_seq;
-
     }
     my $ret = {
         contigs => $contig_features,

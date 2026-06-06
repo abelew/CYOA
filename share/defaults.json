@@ -51,7 +51,7 @@
     "method_comment" : "When appropriate, choose a method.",
     "module_string" : "",
     "module_string_comment" : "The command invoked when loading specific environment modules.",
-    "modules" : "",
+    "modules" : "undef",
     "modules_comment" : "Load these modules for the current command.",
     "option_file" : "${script_dir}/json/${jobname}.json",
     "option_file_comment" : "Use this file to read options in an asynchronous job.",

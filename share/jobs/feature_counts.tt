@@ -1,0 +1,42 @@
+
+## Write out the various arguments here to see what happened:
+## output: [% main %]
+## input: [% input %]
+## stdout: [% stdout %]
+## stderr: [% stderr %]
+
+## Count reads via subread::featurecounts
+counted=0
+gff_type=[% gff_type %]
+gff_tag=[% gff_tag %]
+max_length=[% maxlength %]
+max_reads=[% max_reads %]
+min_length=[% minlength %]
+min_quality=[% qual %]
+mode=[% mode %]
+secondary=[% secondary %]
+stranded=[% stranded %]
+
+/usr/bin/time -v -o [% time_file %] -a \
+  featureCounts -T 1 \
+[% IF introns %]  -J -G [% fasta %] \
+[% END -%]
+[% IF fractional %]  -s [% stranded %] -Q [% min_quality %] \
+[% END -%]
+[% IF paired %]  -p --countReadPairs -B -P \
+[% END -%]
+[% IF minlength %]  -d [% minlength %] \
+[% END -%]
+[% IF maxlength %]  -D [% maxlength %] \
+[% END -%]
+  -R CORE -t [% gff_type %] -g [% gff_tag %] \
+  -a [% gff %] -o [% main_uncomp %] \
+  [% input_file %] \
+  2>>[% stderr %] \
+  1>>[% stdout %]
+counted=$?
+
+if [[ "${counted}" == 0 ]]; then
+  xz -9e -f [% main_uncomp %]
+  xz -9e -f [% featurecount_uncomp %]
+fi

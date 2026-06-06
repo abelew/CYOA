@@ -177,7 +177,7 @@
     "module_file_comment" : "Place to put the invocation of the module command.",
     "module_string" : "",
     "module_string_comment" : "The command invoked when loading specific environment modules.",
-    "modules" : "",
+    "modules" : ["cyoa/202601"],
     "modules_comment" : "Load these modules for the current command.",
     "numerator" : "guess",
     "numerator_comment" : "Use this when a numerator is needed.",

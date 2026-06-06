@@ -195,6 +195,7 @@ xz -9e -f $options{output_r1}
     }
     my $updated = $class->Bio::Adventure::Config::Update_State(
         options => \%options,);
+
     my $cutadapt = $class->Submit();
     my $stats = $class->Bio::Adventure::Metadata::Cutadapt_Stats(
         input => $options{stdout},

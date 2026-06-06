@@ -1,0 +1,109 @@
+## Write out the various arguments here to see what happened:
+## output: [% main %]
+## stdout: [% stdout %]
+## stderr: [% stderr %]
+
+## FIXME: Hey, dummy, fix those if statement so they are not stupid
+## and make them -z or something useful.
+
+## If a previous sort file exists due to running out of memory,
+## then we need to get rid of them first.  Here is an example name:
+## hg38_100_genome-sorted.bam.tmp.0000.bam
+if [[ -f "[% sam_input %].tmp.000.bam" ]]; then
+  rm -f [% sam_input %].tmp.*.bam
+fi
+## I think the most likely reason for this to fail is when
+## hisat dropped out in the middle of reading the input because of a mismatch in R1/R2.
+
+echo "Starting samtools"
+if [[ -f "[% main %]" && -f "[% sam_input %]" ]]; then
+  echo "Both the bam and sam files exist, rerunning."
+elif [[ -f "[% output_paired %]" ]]; then
+  echo "The output file exists, quitting."
+  exit 0
+elif [[ ! -f "[% sam_input %]" ]]; then
+  echo "Could not find the samtools input file."
+  exit 1
+fi
+
+## Perform the initial conversion to a bam file,
+## with an option to create a file with _only_ the paired reads.
+echo 'Time for first samtools command.' > [% time_file %]
+/usr/bin/time -v -o [% time_file %] -a \
+  samtools view -u -t [% fasta %] \
+    -S [% sam_input %] -o [% main %]  \
+    2>>[% stderr %] \
+    1>>[% stdout %]
+
+## Now sort the new bam file.
+echo 'Time for initial samtools sort command.' >> [% time_file %]
+/usr/bin/time -v -o [% time_file %] -a \
+  samtools sort -l 9 [% main %] \
+    -o [% output_sorted %] \
+    2>>[% stderr %] \
+    1>>[% stdout %]
+
+## Overwrite the unsorted bam file with the sorted.
+mv [% output_sorted %] [% main %]
+
+echo 'Time for samtools index command.' >> [% time_file %]
+/usr/bin/time -v -o [% time_file %] -a \
+  samtools index [% main %] \
+    2>>[% stderr %] \
+    1>>[% stdout %]
+echo "Second samtools command finished with $?"
+echo 'Time for bamtools command.' >> [% time_file %]
+/usr/bin/time -v -o [% time_file %] -a \
+  bamtools stats -in [% main %] \
+    2>>[% output_nosuffix %]_samtools.stats 1>&2
+echo "Bamtools finished with $?"
+
+
+if [[ "[% paired %]" == "1" ]]; then
+  ## The following will fail if this is single-ended.
+  echo 'Time for second samtools command.' >> [% time_file %]
+  /usr/bin/time -v -o [% time_file %] -a \
+    samtools view -b -f 2 \
+      -o [% output_paired %] \
+      [% main %] \
+      2>>[% stderr %] \
+      1>>[% stdout %]
+  echo 'Time for second samtools index.' >> [% time_file %]
+  /usr/bin/time -v -o [% time_file %] -a \
+    samtools index [% output_paired %] \
+    2>>[% stderr %] \
+    1>>[% stdout %]
+  echo 'Time for second bamtools.' >> [% time_file %]
+  /usr/bin/time -v -o [% time_file %] -a \
+    bamtools stats -in [% output_paired %] \
+      2>>[% output_nosuffix %]_samtools.stats 1>&2
+fi
+
+rm [% sam_input %]
+
+[% IF nomismatch %]
+bamtools filter -tag XM:0 \
+  -in [% main %] \
+  -out [% output_sorted_nomismatch %] \
+  2>>[% output_nosuffix %]_samtools.stats 1>&2
+echo "bamtools filter finished with: $?"
+samtools index \
+  [% output_sorted_nomismatch %] \
+  2>>[% stderr %] \
+  1>>[% stdout %]
+echo "final samtools index finished with: $?"
+[% END -%]
+
+[% IF samtools_mapped %]
+samtools fastq [% main %] -F 4 \
+  1>[% output_mapped %] \
+  2>[% output_mapped %].stderr
+xz -9e -f [% output_mapped %]
+[% END -%]
+
+[% IF unmapped %]
+samtools fastq [% main %] -f 4 \
+  1>[% output_unmapped %] \
+  2>[% output_unmapped %].stderr
+xz -9e -f ${output_unmapped}
+[% END -%]

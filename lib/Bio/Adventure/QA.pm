@@ -178,7 +178,7 @@ for badname in  \$(cd $paths->{output_dir} && /bin/ls -d *_fastqc); do
   mv $paths->{output_dir}/\${badname}.html $paths->{output_dir}/r\${read_num}_trimmed_fastqc.html 2>/dev/null
   echo "html move finished with: \$?"
   mv $paths->{output_dir}/\${badname}.zip $paths->{output_dir}/r\${read_num}_trimmed_fastqc.zip 2>/dev/null
-  echo "zip move finished with: $?"
+  echo "zip move finished with: \$?"
   mv $paths->{output_dir}/\${badname} outputs/01fastqc/r\${read_num}_trimmed_fastqc 2>/dev/null
   echo "directory move finished with: \$?"
   let "read_num++"
