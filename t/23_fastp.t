@@ -40,7 +40,19 @@ unless(ok($expected eq $actual, 'Are the fastp single-end results the expected v
     diag("-- expected --\n${old}\n-- actual --\n${new}\n");
 }
 
-my $input = qq"${start_dir}/r1.fastq.xz:${start_dir}/r2.fastq.xz";
+my $input_r1 = qq"${start_dir}/r1.fastq.xz";
+my $input_r2 = qq"${start_dir}/r2.fastq.xz";
+my $local_r1 = basename($input_r1);
+my $local_r2 = basename($input_r2);
+if (!-r $local_r1) {
+    print "Copying ${input_r1} to the current working directory.\n";
+    cp($input_r1, $local_r1);
+}
+if (!-r $local_r2) {
+    print "Copying ${input_r2} to the current working directory.\n";
+    cp($input_r2, $local_r2);
+}
+my $input = qq"r1.fastq.xz:r2.fastq.xz";
 $trimmer = $cyoa->Bio::Adventure::Trim::Fastp(
     input => $input,
     jprefix => '23_2',);

@@ -54,8 +54,11 @@ function conda() {
 export -f conda
 !;
     }
-
-    return($shell_text);
+    my $conda = {
+        found => 0,
+        shell_text => $shell_text,
+    };
+    return($conda);
 }
 
 =head2 C<Get_Modulecmd>
@@ -68,6 +71,7 @@ sub Get_Modulecmd {
     my %args = @_;
     my $module_test = qq!/usr/bin/script -q -c 'bash -i -c "type module"' /dev/null |!;
     my $modulecmd_handle = FileHandle->new($module_test);
+    my $found = 0;
     my $shell_text = qq!function get_sigterm {
   echo "A SIGTERM was sent to \$JNAME." >> $args{bash_log}
   exit 1
@@ -110,6 +114,7 @@ function module() {
     if ($num_modulecmd_lines == 0) {
         my $modulecmd = which('modulecmd');
         if ($modulecmd) {
+            $found++;
             $shell_text .= qq!${modulecmd} bash "$@"
 export -f module
 
@@ -121,8 +126,14 @@ export -f module
 
 !;
         }
+    } else {
+        $found++;
     }
-    return($shell_text);
+    my $module = {
+        found => $found,
+        shell_text => $shell_text,
+    };
+    return($module);
 }
 
 =head2 C<Get_Spackarch>
@@ -149,6 +160,7 @@ sub Get_Spackcmd {
     my $shell_text = q{};
     my $spack_test = qq!/usr/bin/script -q -c 'bash -i -c "type spack"' /dev/null |!;
     my $spack_handle = FileHandle->new($spack_test);
+    my $found = 0;
     $shell_text .= qq!function spack() {
 !;
     my $num_spack_lines = 0;
@@ -156,6 +168,7 @@ sub Get_Spackcmd {
         chomp $line;
         next SP if ($line =~ /is a function/);
         next SP if ($line =~ /^spack/);
+        next SP if ($line =~ /not found/);
         next SP if ($line =~ /^\{\s*$/);
         ## In case there are weird encodings.
         $line =~ s/\s*$//g;
@@ -175,8 +188,15 @@ sub Get_Spackcmd {
 export -f spack
 
 !;
+    } else {
+        print "Software::Get_Spack: There are: $num_spack_lines \n";
+        $found = 1;
     }
-    return($shell_text);
+    my $spack_cmd = {
+        found => $found,
+        shell_text => $shell_text,
+    };
+    return($spack_cmd);
 }
 
 =head2 C<Module_Catalog>

@@ -283,13 +283,24 @@ sub Get_Shell_Functions {
     ## bash function 'module'.  slurm and the various managers will not provide that
     ## so, we can use typescript to allocate one post-facto.
     my $shell_text = q{};
-    my $module_string = Bio::Adventure::Software::Get_Modulecmd(@_);
-    $shell_text .= $module_string;
-    my $spack_string = Bio::Adventure::Software::Get_Spackcmd(@_);
-    $shell_text .= $spack_string;
-    my $conda_string = Bio::Adventure::Software::Get_Condacmd(@_);
-    $shell_text .= $conda_string;
-    return($shell_text);
+    my $module = Bio::Adventure::Software::Get_Modulecmd(@_);
+    $shell_text .= $module->{shell_text};
+    my $spack = Bio::Adventure::Software::Get_Spackcmd(@_);
+    $shell_text .= $spack->{shell_text};
+    my $conda = Bio::Adventure::Software::Get_Condacmd(@_);
+    $shell_text .= $conda->{shell_text};
+    print "TESTME: $spack->{found}\n";
+    print "TESTME: $spack->{shell_text}\n";
+    my $shell_functions = {
+        module_found => $module->{found},
+        module_string => $module->{shell_text},
+        spack_found => $spack->{found},
+        spack_string => $spack->{shell_text},
+        conda_found => $conda->{found},
+        conda_string => $conda->{shell_text},
+        shell_text => $shell_text,
+    };
+    return($shell_functions);
 }
 
 =head2 C<Get_Input_Info>

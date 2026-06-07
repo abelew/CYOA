@@ -277,20 +277,6 @@ sub BUILD {
         my $set = $class->_set_cmdline_args($cmdline_args);
     }
 
-    if (!%{$class->available_sw}) {
-        my $sw_module = Bio::Adventure::Software::Module_Catalog();
-        my $sw_spack = Bio::Adventure::Software::Spack_Catalog();
-        my $sw_conda = {};
-        my $sw_container = {};
-        my $sw = {
-            module => $sw_module,
-            spack => $sw_spack,
-            conda => $sw_conda,
-            containers => $sw_container,
-        };
-        my $set = $class->_set_available_sw($sw);
-    }
-
     ## Read the json file of function-specific default values.
     ## Ideally I should be pulling quite a lot out of the global
     ## defaults into this.
@@ -366,12 +352,12 @@ sub BUILD {
     $current_state->{libpath} = $path_agrees->{libpath};
     $current_state->{libdir} = $path_agrees->{libdir};
     ## Write out a few functions to assist the shell: error traps and module particularly.
-    my $shell_function = Bio::Adventure::Config::Get_Shell_Functions(
+    my $shell_functions = Bio::Adventure::Config::Get_Shell_Functions(
         bash_log => $current_state->{bash_log});
     my $exists = make_path(dirname($current_state->{bash_functions}));
     if (!-f $current_state->{bash_functions}) {
         my $source_fh = FileHandle->new(">$current_state->{bash_functions}");
-        print $source_fh $shell_function;
+        print $source_fh $shell_functions->{shell_text};
         $source_fh->close();
     }
     $current_state->{bash_functions} = abs_path($current_state->{bash_functions});
@@ -381,6 +367,30 @@ sub BUILD {
     if ($current_state->{modules}) {
         $current_state->{module_string} = qq"module add $current_state->{modules}";
     }
+
+    if (!%{$class->available_sw}) {
+        my $sw_module = {};
+        if ($shell_functions->{module_found}) {
+            $sw_module = Bio::Adventure::Software::Module_Catalog();
+        }
+        my $sw_spack = {};
+        if ($shell_functions->{spack_found}) {
+            $sw_spack = Bio::Adventure::Software::Spack_Catalog();
+        }
+        my $sw_conda = {};
+        if ($shell_functions->{conda_found}) {
+            $sw_conda = Bio::Adventure::Software::Conda_Catalog();
+        }
+        my $sw_container = {};
+        my $sw = {
+            module => $sw_module,
+            spack => $sw_spack,
+            conda => $sw_conda,
+            containers => $sw_container,
+        };
+        my $set = $class->_set_available_sw($sw);
+    }
+
     $class->current_state($current_state);
     ## Get the relatively small number of paths which should prove universal.
     my $global_paths = $class->Bio::Adventure::Config::Get_Global_Paths();
