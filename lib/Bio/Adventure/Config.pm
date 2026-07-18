@@ -15,6 +15,7 @@ use File::Which qw"which";
 use Getopt::Long qw"GetOptionsFromArray";
 use JSON;
 use POSIX qw"ceil";
+use Scalar::Util qw"reftype";
 use String::Interpolate qw"interpolate";
 use Template;
 my $template_base = dist_dir('Bio-Adventure');
@@ -61,12 +62,20 @@ sub Add_Config_File {
 ## 202605 Survey: Invoked at the beginning of BUILD to get command line arguments.
 sub Get_ARGV {
     my $cmdline_args = {};
-    if ($#ARGV <= 0) {
+    my @checked_argv = @ARGV;
+    if (scalar(@checked_argv) < 1) {
         return $cmdline_args;
     }
     my $arg_string = q{};
     my @spec_strings = ();
-    foreach my $a (@ARGV) {
+    ## Add support for the increasingly standard invocation of 'command verb modifiers'
+    ## Do so by checking the first argument, if it does not have a '-', then assume it is
+    ## the verb and prepend the checked_argv with --method.
+    ## Then just treat the argument list as usual.
+    unless ($checked_argv[0] =~ /^\-/) {
+        unshift(@checked_argv, '--method');
+    }
+    for my $a (@checked_argv) {
         $arg_string .= "$a ";
         if ($a =~ /^\-/) {
             my $spec = $a;
@@ -82,7 +91,7 @@ sub Get_ARGV {
         my $def_string = qq"${spec}:s";
         $conf_specification{$def_string} = \$argv_information{$spec};
     }
-    my $argv_result = GetOptions(%conf_specification);
+    my $argv_result = GetOptionsFromArray(\@checked_argv, %conf_specification);
     $cmdline_args = \%argv_information;
     $cmdline_args->{argv_string} = $arg_string;
     return($cmdline_args);
@@ -289,8 +298,6 @@ sub Get_Shell_Functions {
     $shell_text .= $spack->{shell_text};
     my $conda = Bio::Adventure::Software::Get_Condacmd(@_);
     $shell_text .= $conda->{shell_text};
-    print "TESTME: $spack->{found}\n";
-    print "TESTME: $spack->{shell_text}\n";
     my $shell_functions = {
         module_found => $module->{found},
         module_string => $module->{shell_text},
@@ -515,6 +522,9 @@ sub Get_Function_Vars {
     ## order of precedence is:
     ## global_defaults < instance_args < function_defaults < function_args
     my %state = %{$state_ref};
+    if (!defined($caller)) {
+        $caller = 'Default';
+    }
     $state{caller} = lc($caller);
     my $global_defaults = $class->global_defaults;
     for my $k (keys %{$global_defaults}) {
@@ -542,7 +552,12 @@ sub Get_Function_Vars {
     my %all_function_args = %{$class->function_defaults};
     ## Note, I think one must make a copy of function_args here so that future invocations
     ## will not already have the variables interpolated.
-    my %function_args = %{$all_function_args{$caller}};
+    my %function_args = ();
+    if (defined($all_function_args{$caller})) {
+        %function_args = %{$all_function_args{$caller}};
+    } else {
+        %function_args = %{$all_function_args{'Default'}};
+    }
     for my $k (keys %function_args) {
         if (defined($state{$k})) {
             $modified_state{$k} = $state{$k};
@@ -584,6 +599,9 @@ sub Get_Function_Vars {
         push(@input_base_array, $first_file_info{basename});
     }
 
+    if (!defined($state{output_basedir})) {
+        $state{output_basedir} = q{};
+    }
     $state{output_prefix} = qq"$state{output_basedir}/$state{jprefix}";
     ## The suffix of the input file(s) excluding any compression information.
     $state{input_suffix} = $first_file_info{suffix};
@@ -767,6 +785,8 @@ sub Update_State {
     }
     my %current_state = %{$class->current_state};
 
+    print "Starting Config::Update_State, main: $options{main}\n";
+    sleep(1);
     ## FIXME:
     ## There are a couple of pieces of state set in Get_Function_Vars()
     ## in a way which means they will not get new interpolated variables
@@ -791,7 +811,7 @@ sub Update_State {
         $options{stderr} = qq"$options{output_dir}/stderr";
     }
     if ($options{main}) {
-        print "TESTME: MAIN, main is set to $options{main}\n";
+        print "TESTME: Config::Update_State checking main in function body: $options{main}\n";
     }
 
     ## If prefix is not provided, set it to the number of inputs obseved so far.
@@ -812,12 +832,24 @@ sub Update_State {
 
     my $options_ref = $class->self_interp(hashref => \%options);
     ## Add portions of this to the current state
+    print "TESTME: Config::Update_State, updating current_state with options_ref: $options_ref->{main}\n";
   OPTS: for my $k (keys %{$options_ref}) {
+        if ($k eq 'main') {
+            print "Found main in options_ref\n";
+        }
         next OPTS unless (defined($options_ref->{$k}));
-        next OPTS if (defined($current_state{$k}));
-        my $opt_class = ref($options_ref->{$k});
-        next OPTS unless ($opt_class eq 'SCALAR');
+        ## TESTING overwriting of options
+        ## next OPTS if (defined($current_state{$k}));
+        my $opt_class = reftype($options_ref->{$k});
+        if (defined($opt_class)) {
+            if ($opt_class eq 'ARRAY' or $opt_class eq 'HASH') {
+                next OPTS;
+            }
+        }
         next OPTS if ($options_ref->{$k} eq 'undef');
+        if ($k eq 'main') {
+            print "TESTME IN OPTS loop, setting $current_state{$k} to $options_ref->{$k}\n";
+        }
         $current_state{$k} = $options_ref->{$k};
     }
 
@@ -835,6 +867,7 @@ sub Update_State {
         my $processed = $templater->process($options_ref->{template}, $options_ref, \$jstring) or die $templater->error();
         $current_state{jstring} = $jstring;
         print "TESTME: current_state{jstring}: $current_state{jstring}\n";
+        print "TESTME At processed job template, main is: options_ref: $options_ref->{main} vs current_state: $current_state{main}\n";
     } elsif ($args{jstring}) {
         print "Adding jstring.\n";
         $current_state{jstring} = $args{jstring};

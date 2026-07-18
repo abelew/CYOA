@@ -709,22 +709,13 @@ xz -f -9e $outputs->{main}
 =cut
 sub Insert_Size {
     my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        args => \%args,
-        required => ['input',],);
-    my $jstring = qq!
-gatk CollectInsertSizeMetrics \\
-  -I $options->{input} \\
-  -O $outputs->{output} \\
-  -H $outputs->{pdf} \\
-  -M 0.5 \\
-  2>$outputs->{stderr} 1>$outputs->{stdout}
-!;
-    my $comment_string = qq"## Use gatk to collect insert size statistics.";
-    my $gatk = $class->Submit(
-        jdepends => $options->{jdepends},
-        jstring => $jstring,
-        outputs => $outputs,);
+    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars(\%args);
+    my %options = %{$function_info};
+    my $all_inputs = $class->inputs;
+    my $inputs = $all_inputs->[$#$all_inputs];
+    my $updated = $class->Bio::Adventure::Config::Update_State(
+        options => \%options,);
+    my $gatk = $class->Submit();
     return($gatk);
 }
 

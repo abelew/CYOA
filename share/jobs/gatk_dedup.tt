@@ -1,0 +1,5 @@
+/usr/bin/time -v -o [% time_file %] -a \
+  bamCoverage [% extra_args %] \
+    -b [% input %] -o [% main %] \
+    2>[% stderr %] \
+    1>[% stdout %]

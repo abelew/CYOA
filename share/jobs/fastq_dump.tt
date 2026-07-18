@@ -1,0 +1,17 @@
+
+## Write out the various arguments here to see what happened:
+## output: [% main %]
+## stdout: [% stdout %]
+## stderr: [% stderr %]
+
+mkdir -p [% output_dir %]
+
+/usr/bin/time -v -o [% time_file %] -a \
+  prefetch [% in %] 2>[% stderr %] 1>[% stdout %]
+
+/usr/bin/time -v -o [% time_file %] -a \
+  fastq-dump --outdir [% output_dir %] \
+  --gzip --skip-technical --readids \
+  --read-filter pass --dumpbase \
+  --split-3 --clip [% in %] \\
+  2>>[% stderr %] 1>>[% stdout %]

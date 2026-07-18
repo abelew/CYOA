@@ -673,7 +673,11 @@ sub Download_SRA_PRJNA {
             } elsif ($name eq 'CreateDate') {
                 my $stuff = $item->get_content;
                 my $title = $stuff;
-                $title =~ s/.*\<Title\>(.*?)\<\/Title\>.*/$1/g;
+                if (defined($title)) {
+                    $title =~ s/.*\<Title\>(.*?)\<\/Title\>.*/$1/g;
+                } else {
+                    $title = q{};
+                }
                 $id_info->{create} = $title;
             } elsif ($name eq 'UpdateDate') {
                 my $stuff = $item->get_content;
@@ -729,16 +733,16 @@ sub Download_SRA_PRJNA {
 
 sub Download_NCBIDatasets_Accession {
     my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        args => \%args,
-        delete => 0,
-        required => ['input'],
-        jprefix => '11',);
+    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars(\%args);
+    my %options = %{$function_info};
+    my $all_inputs = $class->inputs;
+    my $inputs = $all_inputs->[$#$all_inputs];
+
     ## Make an array of the accession(s)
     my $mech = WWW::Mechanize->new(autocheck => 1);
-    my $url = qq"https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/$options->{input}/download?include_annotation_type=GENOME_FASTA&include_annotation_type=GENOME_GFF&include_annotation_type=RNA_FASTA&include_annotation_type=CDS_FASTA&include_annotation_type=PROT_FASTA&include_annotation_type=GENOME_GBFF&include_annotation_type=SEQUENCE_REPORT&hydrated=FULLY_HYDRATED";
-    print "Downloading data for $options->{input}.\n";
-    my $downloaded_file = qq"$options->{input}.zip";
+    my $url = qq"https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/$options{input}/download?include_annotation_type=GENOME_FASTA&include_annotation_type=GENOME_GFF&include_annotation_type=RNA_FASTA&include_annotation_type=CDS_FASTA&include_annotation_type=PROT_FASTA&include_annotation_type=GENOME_GBFF&include_annotation_type=SEQUENCE_REPORT&hydrated=FULLY_HYDRATED";
+    print "Downloading data for $options{input}.\n";
+    my $downloaded_file = qq"$options{input}.zip";
     if (-f $downloaded_file) {
         print "Already downloaded ${downloaded_file}.\n";
     } else {
@@ -756,22 +760,22 @@ sub Download_NCBIDatasets_Accession {
         $extracted =~ s/\s+$//g;
         my $base = basename($extracted);
         if ($base eq 'protein.faa') {
-            $base = qq"$options->{input}.faa";
+            $base = qq"$options{input}.faa";
         } elsif ($base eq 'genomic.gff') {
-            $base = qq"$options->{input}.gff";
+            $base = qq"$options{input}.gff";
         } elsif ($base eq 'genomic.gbff') {
-            $base = qq"$options->{input}.gbff";
+            $base = qq"$options{input}.gbff";
         } elsif ($base eq 'cds_from_genomic.fna') {
-            $base = qq"$options->{input}.ffn";
+            $base = qq"$options{input}.ffn";
         } elsif ($base =~ /_genomic\.fna/) {
-            $base = qq"$options->{input}.fsa";
+            $base = qq"$options{input}.fsa";
         }
         my $moved = move($extracted, $base);
     }
     $writer->close();
     print "Deleting downloaded file: ${downloaded_file}.\n";
-    my $gzipped = qx"gzip -9 $options->{input}.gbff";
-    if ($options->{delete}) {
+    my $gzipped = qx"gzip -9 $options{input}.gbff";
+    if ($options{delete}) {
         unlink $downloaded_file;
     }
     print "Deleting ncbi_dataset directory.\n";
@@ -788,17 +792,16 @@ sub Download_NCBIDatasets_Accession {
 =cut
 sub Fastq_Dump {
     my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        args => \%args,
-        required => ['input'],
-        output => undef);
-    my $fastq_comment = qq"## This script should download an sra accession to local fastq.gz files.
-";
-    my @inputs = split(/$options->{delimiter}/, $options->{input});
+    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars(\%args);
+    my %options = %{$function_info};
+    my $all_inputs = $class->inputs;
+    my $inputs = $all_inputs->[$#$all_inputs];
+
+    my @inputs = split(/$options{delimiter}/, $options{input});
     my @outputs = ();
     my $first_output = undef;
-    if (defined($options->{output})) {
-        @outputs = split(/$options->{delimiter}/, $options->{output});
+    if (defined($options{output})) {
+        @outputs = split(/$options{delimiter}/, $options{output});
         $first_output = $outputs[0];
     }
 
@@ -809,71 +812,18 @@ sub Fastq_Dump {
         $count++;
         my $in = $inputs[$i];
         print "Invoking fastq-dump for ${in}.\n";
-        my $stderr = qq"${in}/${in}_fastqdump.stderr";
-        my $stdout = qq"${in}/${in}_fastqdump.stdout";
-        my $jstring = "";
+        $options{stderr} = qq"${in}/${in}_fastqdump.stderr";
+        $options{stdout} = qq"${in}/${in}_fastqdump.stdout";
+        $options{output_dir} = $outputs[$i];
+        $options{in} = $in;
         if (defined($outputs[$i]) || defined($first_output)) {
-            $outputs[$i] = $first_output if (!defined($outputs[$i]));
-            $jstring = qq"
-mkdir -p $outputs[$i]
-prefetch ${in} 2>${stderr} 1>${stdout}
-fastq-dump --outdir $outputs[$i] \\
-  --gzip --skip-technical --readids \\
-  --read-filter pass --dumpbase \\
-  --split-3 --clip ${in} \\
-  2>>${stderr} 1>>${stdout}
-";
-        } else {
-            $jstring = qq"
-mkdir -p ${in}
-prefetch ${in} 2>${stderr} 1>${stdout}
-fastq-dump --outdir ${in} --gzip --skip-technical --readids \\
-  --read-filter pass --dumpbase \\
-  --split-3 --clip ${in} \\
-  2>>${stderr} 1>>${stdout}
-";
+            $options{in} = $first_output if (!defined($outputs[$i]));
         }
-        ## This works for single ended, but not paired.
-        my $output_files = qq"$options->{input}/$options->{input}_pass.fastq.gz";
-        my $output_paired = qq"$options->{input}/$options->{input}_pass_1.fastq.gz:$options->{input}/$options->{input}_pass_2.fastq.gz";
-        my $current_fastq_job = $class->Submit(
-            comment => $fastq_comment,
-            input => $in,
-            jdepends => $options->{jdepends},
-            jname => qq"fqd_${in}",
-            jstring => $jstring,
-            jprefix => "01",
-            jmem => 12,
-            jwalltime => '6:00:00',
-            output => $output_files,
-            output_paired => $output_paired,
-            stdout => $stdout,
-            stderr => $stderr,);
-
-        if (defined($fastq_job)) {
-            $fastq_job->{$count} = $current_fastq_job;
-        } else {
-            $fastq_job = $current_fastq_job;
-        }
-
-        ## That is weird, I thought I implemented this, but no.
-        ## Add a job which figures out if the fastq-dump results are se or paired.
-        #my $decision_string = qq?
-        #use Bio::Adventure::Prepare;
-        #my \$result = \$h->Bio::Adventure::Prepare::Write_Input_Worker(
-        #  input => '$fastq_job->{output}',
-        #  input_paired => '$fastq_job->{output_paired}',
-        #  output => '<input.txt');
-        #?;
-        #        my $input_worker = $class->Submit(
-        #            input => $fastq_job->{output},
-        #            input_paired => $fastq_job->{output_paired},
-        #            jprefix => $options->{jprefix} + 1,
-        #            jstring => $decision_string,
-        #            jname => 'se_paired',
-        #            output => '<input.txt');
-    }   ## Foreach my $input
-    return($fastq_job);
+        my $updated = $class->Bio::Adventure::Config::Update_State(
+            options => \%options,);
+        $fastq_jobs{$in} = $class->Submit();
+    }
+    return(\%fastq_jobs);
 }
 
 =head2 C<Read_Samples>

@@ -309,7 +309,10 @@ sub BUILD {
             if (!defined($inner{template})) {
                 $defaults->{$fn}->{template} = qq"${lc_fn}.tt";
             }
-        }         ## Finished checking expected keys of each function.
+            if (!defined($inner{jprefix})) {
+                $defaults->{$fn}->{jprefix} = '00';
+            }
+        } ## Finished checking expected keys of each function.
         my $set = $class->_set_function_defaults($defaults);
     }
 
@@ -1338,31 +1341,25 @@ sub Submit {
     if ($state_deref{cluster} eq 'slurm') {
         if (any {$_ eq 'slurm'} @{$avail_clusters}) {
             $runner = Bio::Adventure::Slurm->new();
-        }
-        else {
+        } else {
             $runner = Bio::Adventure::Bash->new();
         }
         ## } elsif ($state->{cluster} eq 'torque') {
-    }
-    elsif ($state_deref{cluster} eq 'torque') {
+    } elsif ($state_deref{cluster} eq 'torque') {
         if (any {$_ eq 'torque'} @${avail_clusters}) {
             $runner = Bio::Adventure::Torque->new();
-        }
-        else {
+        } else {
             $runner = Bio::Adventure::Bash->new();
         }
         ## } elsif ($state->{cluster} eq 'bash') {
-    }
-    elsif ($state_deref{cluster} eq 'bash') {
+    } elsif ($state_deref{cluster} eq 'bash') {
         ## I should probably have something to handle gracefully bash jobs.
         $runner = Bio::Adventure::Bash->new();
         ## } elsif ($state->{cluster} eq '0') {
-    }
-    elsif ($state_deref{cluster} eq '0') {
+    } elsif ($state_deref{cluster} eq '0') {
         ## On occasion I set cluster to 0 which is bash.
         $runner = Bio::Adventure::Bash->new();
-    }
-    else {
+    } else {
         carp("Could not find sbatch, qsub, nor bash.");
         print "Assuming this is running on a local shell.\n";
         $runner = Bio::Adventure::Bash->new();
@@ -1381,6 +1378,7 @@ sub Submit {
     ## They came from something before the current function call
     ## and should be returned to that state.  If they are not defined,
     ## just delete them.
+    print "TESTME: About to check modified_state: $state_deref{main}\n";
     my %modified_state = %{$state_deref{modified_state}};
   RESETTERS: for my $reset_key (keys %modified_state) {
         my $old_value = $modified_state{$reset_key};

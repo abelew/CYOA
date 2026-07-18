@@ -218,6 +218,11 @@
                 "function" : "Bio::Adventure::Convert::Any2Any",
             },
             {
+                "name" : "bam2fastq",
+                "description" : "Extract the fastq data from an alignment via bedtools.",
+                "function" : "Bio::Adventure::Convert::Bam2Fastq",
+            },
+            {
                 "name" : "sam2bam",
                 "description" : "Convert a sam mapping to compressed/sorted/indexed bam.",
                 "function" : "Bio::Adventure::Convert::Sam2Bam",

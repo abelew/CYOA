@@ -1,0 +1,3 @@
+use Bio::Adventure::Convert;
+my $result = $h->Bio::Adventure::Convert::Gb2Gff_Worker(
+  input => '[% input %]');

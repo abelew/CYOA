@@ -15,6 +15,7 @@ use Bio::SeqFeature::Generic;
 use Bio::Tools::GFF;
 use Cwd qw"abs_path getcwd cwd";
 use File::Basename;
+use File::Path qw"make_path remove_tree";
 use File::Which qw"which";
 use List::MoreUtils qw"uniq";
 use Text::CSV_XS::TSV;
@@ -36,16 +37,16 @@ no warnings qw"experimental::try";
 =cut
 sub Any2Any {
     my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        args => \%args,
-        required => ['input'],
-        informat => 'fastq',
-        outformat => 'fasta',);
-    my $in_fh = FileHandle->new("less $options->{input} |");
+    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars(\%args);
+    my %options = %{$function_info};
+    my $all_inputs = $class->inputs;
+    my $inputs = $all_inputs->[$#$all_inputs];
+
+    my $in_fh = FileHandle->new("less $options{input} |");
     my $input_seq = Bio::SeqIO->new(-fh => $in_fh,
-                                    -format => $options->{informat},);
-    my $output_seq = Bio::SeqIO->new(-file => ">$outputs->{output}",
-                                     -format => $options->{outformat},);
+                                    -format => $options{informat},);
+    my $output_seq = Bio::SeqIO->new(-file => ">$options{main}",
+                                     -format => $options{outformat},);
     while (my $input_seq = $input_seq->next_seq) {
         $output_seq->write_seq($input_seq);
     }
@@ -59,44 +60,63 @@ Convert a set of aligned reads to a bigwig coverage map.
 =cut
 sub Bam2Bigwig {
     my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        args => \%args,
-        required => ['input',],
-        remove => 1,);
-    my $extra_args = $class->Passthrough_Args();
-    my $jstring = qq!
-bamCoverage ${extra_args} \\
-  -b $options->{input} -o $outputs->{output} \\
-  2>$outputs->{stderr} \\
-  1>$outputs->{stdout}
-!;
-    my $bam2bw = $class->Submit(
-        jdepends => $options->{jdepends},
-        jstring => $jstring,
-        outputs => $outputs);
-    return($bam2bw);
+    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars(\%args);
+    my %options = %{$function_info};
+    my $all_inputs = $class->inputs;
+    my $inputs = $all_inputs->[$#$all_inputs];
+
+    $options{extra_args} = $class->Passthrough_Args();
+    my $updated = $class->Bio::Adventure::Config::Update_State(
+        options => \%options,);
+    my $bam2bw_job = $class->Submit();
+    return($bam2bw_job);
+}
+
+=head2 C<Bam2Fastq>
+
+Convert an aligned set of reads back to fastq via samtools and bedtools.
+
+=cut
+sub Bam2Fastq {
+    my ($class, %args) = @_;
+    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars(\%args);
+    my %options = %{$function_info};
+    my $all_inputs = $class->inputs;
+    my $inputs = $all_inputs->[$#$all_inputs];
+
+    my $output_name = basename($options{input}, ('.bam', '.sam'));
+    $options{output_string} = q{};
+    if ($options{paired}) {
+        $options{output_string} = qq"-fq $options{output_dir}/${output_name}_1.fastq -fq2 $options{output_dir}/${output_name}_2.fastq";
+    } else {
+        $options{output_string} = qq"-fq $options{output_dir}/${output_name}_1.fastq";
+    }
+    $options{resorted} = qq"$options{output_dir}/resorted.bam";
+
+    my $updated = $class->Bio::Adventure::Config::Update_State(
+        options => \%options,);
+    my $convert = $class->Submit();
+    return($convert);
 }
 
 sub Extract_Subseq {
     my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        args => \%args,
-        required => ['input', 'start', 'end'],
-        seqid => undef,
-        direction => 'forward',
-        informat => 'fasta',
-        outformat => 'fasta',);
-    my $in_fh = FileHandle->new("less $options->{input} |");
+    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars(\%args);
+    my %options = %{$function_info};
+    my $all_inputs = $class->inputs;
+    my $inputs = $all_inputs->[$#$all_inputs];
+
+    my $in_fh = FileHandle->new("less $options{input} |");
     my $input_seq = Bio::SeqIO->new(-fh => $in_fh,
-                                    -format => $options->{informat},);
-    my $output_seq = Bio::SeqIO->new(-file   => ">$outputs->{output}",
-                                     -format => $options->{outformat},);
+                                    -format => $options{informat},);
+    my $output_seq = Bio::SeqIO->new(-file   => qq">$options{main}",
+                                     -format => $options{outformat},);
     my $seq_count = 0;
     my $found_id = 0;
   SEQ_LOOP: while (my $input_seq = $input_seq->next_seq) {
         my $sequence_id = $input_seq->id;
-        if (defined($options->{seqid})) {
-            if ($options->{seqid} eq $sequence_id) {
+        if (defined($options{seqid})) {
+            if ($options{seqid} eq $sequence_id) {
                 $found_id = 1;
             }
             ## If seqid is not provided, assume there is only 1 sequence and use the first.
@@ -104,10 +124,10 @@ sub Extract_Subseq {
             $found_id = 1;
         }
         if ($found_id) {
-            my $subseq_region = $input_seq->subseq($options->{start}, $options->{end});
+            my $subseq_region = $input_seq->subseq($options{start}, $options{end});
             my $subseq_seq = Bio::Seq->new(
                 -seq => $subseq_region,
-                -display_id => qq"${sequence_id}_$options->{start}_$options->{end}");
+                -display_id => qq"${sequence_id}_$options{start}_$options{end}");
             $output_seq->write_seq($subseq_seq);
             last SEQ_LOOP;
         }
@@ -122,18 +142,17 @@ Yank specific Sequences by ID from an input file of arbitrary type (defaulting t
 =cut
 sub Extract_SeqIDs {
     my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        args => \%args,
-        required => ['input', 'seqid',],
-        direction => 'forward',
-        informat => 'fasta',
-        outformat => 'fasta',);
-    my @ids = split(/$options->{delimiter}/, $options->{seqid});
-    my $in_fh = FileHandle->new("less $options->{input} |");
+    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars(\%args);
+    my %options = %{$function_info};
+    my $all_inputs = $class->inputs;
+    my $inputs = $all_inputs->[$#$all_inputs];
+
+    my @ids = split(/$options{delimiter}/, $options{seqid});
+    my $in_fh = FileHandle->new("less $options{input} |");
     my $input_seq = Bio::SeqIO->new(-fh => $in_fh,
-                                    -format => $options->{informat},);
-    my $output_seq = Bio::SeqIO->new(-file   => ">$outputs->{output}",
-                                     -format => $options->{outformat},);
+                                    -format => $options{informat},);
+    my $output_seq = Bio::SeqIO->new(-file   => qq">$options{main}",
+                                     -format => $options{outformat},);
     my $seq_count = 0;
     my $found_id = 0;
   SEQ_LOOP: while (my $input_seq = $input_seq->next_seq) {
@@ -159,16 +178,17 @@ sub Extract_SeqIDs {
 =cut
 sub Fasta2Gff {
     my ($class, %args) = @_;
-    my $options = $class->Get_Vars(
-        args => \%args,
-        required => ['input'],
-        jprefix => '78');
-    my $dir = dirname($options->{input});
-    my $base = basename($options->{input}, ('.fasta', '.fsa', '.fna', '.fa'));
+    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars(\%args);
+    my %options = %{$function_info};
+    my $all_inputs = $class->inputs;
+    my $inputs = $all_inputs->[$#$all_inputs];
+
+    my $dir = dirname($options{input});
+    my $base = basename($options{input}, ('.fasta', '.fsa', '.fna', '.fa'));
     my $gff_name = qq"${dir}/${base}.gff";
     my $gff_opened = open(GFF, ">${gff_name}");
     my $features;
-    my $seqio_in = Bio::SeqIO->new(-format => 'fasta', -file => $options->{input});
+    my $seqio_in = Bio::SeqIO->new(-format => 'fasta', -file => $options{input});
     my $gff_out = Bio::Tools::GFF->new(-fh => \*GFF, -gff_version => 3);
     my $features_written = 0;
   SEQS: while (my $seq = $seqio_in->next_seq) {
@@ -204,27 +224,21 @@ sub Fasta2Gff {
 =cut
 sub GATK_Dedup {
     my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        args => \%args,
-        required => ['input',],
-        remove => 1,);
-    my $remove_string = 'true';
-    $remove_string = 'false' unless ($options->{remove});
-    my $marked = qq"$paths->{output_dir}/deduplication_stats.txt";
-    my $jstring = qq!
-gatk MarkDuplicates \\
-  -I $options->{input} \\
-  -O $outputs->{output} \\
-  -M ${marked} --REMOVE_DUPLICATES ${remove_string} --COMPRESSION_LEVEL 9 \\
-  2>$outputs->{stderr} \\
-  1>$outputs->{stdout}
-samtools index $outputs->{output}
-!;
-    my $gatk = $class->Submit(
-        jdepends => $options->{jdepends},
-        jstring => $jstring,
-        outputs => $outputs,);
-    return($gatk);
+    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars(\%args);
+    my %options = %{$function_info};
+    my $all_inputs = $class->inputs;
+    my $inputs = $all_inputs->[$#$all_inputs];
+
+    if ($options{remove}) {
+        $options{remove_string} = 'true';
+    } else {
+        $options{remove_string} = 'false'
+    }
+    $options{marked} = qq"$options{output_dir}/deduplication_stats.txt";
+    my $updated = $class->Bio::Adventure::Config::Update_State(
+        options => \%options,);
+    my $gatk_job = $class->Submit();
+    return($gatk_job);
 }
 
 =head2 C<Gb2Gff>
@@ -238,60 +252,76 @@ samtools index $outputs->{output}
 =cut
 sub Gb2Gff {
     my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        args => \%args,
-        required => ['input'],);
-    my $base = basename($options->{input}, ('.xz', '.gz', '.bz2'));
-    $base = basename($base, ('.gb', '.gba', '.gbk', '.genbank', '.gbff',));
-    my $comment = '## Convert from genbank to other formats.';
-    my $jname = qq"${base}_convert";
-    my $jstring = qq!use Bio::Adventure::Convert;
-my \$result = \$h->Bio::Adventure::Convert::Gb2Gff_Worker(
-  input => '$options->{input}',
-  jdepends => '$options->{jdepends}',);
-!;
-    my $convert = $class->Submit(
-        input => $options->{input},
-        jdepends => $options->{jdepends},
-        jstring => $jstring,
-        outputs => $outputs,
-        language => 'perl',);
-    return($convert);
+    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars(\%args);
+    my %options = %{$function_info};
+    my $all_inputs = $class->inputs;
+    my $inputs = $all_inputs->[$#$all_inputs];
+
+    $options{perl_job} = qq"$options{basedir}/$options{script_dir}/$options{jprefix}$options{jname}.pl";
+    $options{worker} = 'Gb2Gff_Worker';
+    my $updated = $class->Bio::Adventure::Config::Update_State(
+        options => \%options,);
+    my $convert_job = $class->Submit();
+    return($convert_job);
 }
 
 sub Gb2Gff_Worker {
     my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        args => \%args,
-        required => ['input']);
+    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars(\%args);
+    my %options = %{$function_info};
+    my $all_inputs = $class->inputs;
+    my $inputs = $all_inputs->[$#$all_inputs];
+
     my $handle = IO::Handle->new;
-    open($handle, "less $options->{input} |");
+    open($handle, "less $options{input} |");
+    my $base = basename($options{input}, ('.xz', '.gz', '.bz2'));
+    $base = basename($base, ('.gb', '.gba', '.gbk', '.genbank', '.gbff',));
+    $options{output_dir} = $inputs->[0]->{directory};
+    $options{output_base} = $base;
+    ## By default, put all the outputs in the same directory as the input.
+    print "TESTME: I expect output_dir and output_base to be passed from the original input:
+  $options{output_dir} and $options{output_base}\n";
+    make_path($options{output_dir}) unless(-d $options{output_dir});
+    $options{fasta} = qq"$options{output_dir}/$options{output_base}.fsa";
+    $options{cds_fasta} = qq"$options{output_dir}/$options{output_base}.ffn";
+    $options{misc_fasta} = qq"$options{output_dir}/$options{output_base}.ffn";
+    $options{nc_fasta} = qq"$options{output_dir}/$options{output_base}_ncRNA.fasta";
+    $options{pep_fasta} = qq"$options{output_dir}/$options{output_base}.faa";
+    $options{rrna_fasta} = qq"$options{output_dir}/$options{output_base}_rRNA.fasta";
+    $options{all_gff} = qq"$options{output_dir}/$options{output_base}_all.gff";
+    $options{gene_gff} = qq"$options{output_dir}/$options{output_base}.gff";
+    $options{cds_gff} = qq"$options{output_dir}/$options{output_base}_cds.gff";
+    $options{inter_gff} = qq"$options{output_dir}/$options{output_base}_inter_cds.gff";
+    $options{misc_gff} = qq"$options{output_dir}/$options{output_base}_miscRNA.gff";
+    $options{nc_gff} = qq"$options{output_dir}/$options{output_base}_ncRNA.gff";
+    $options{rrna_gff} = qq"$options{output_dir}/$options{output_base}_rRNA.gff";
+
     my $seqio = Bio::SeqIO->new(-format => 'genbank', -fh => $handle);
     my $seq_count = 0;
     my $total_nt = 0;
     my $feature_count = 0;
-    my $fasta = Bio::SeqIO->new(-file => qq">$outputs->{fasta}",
+    my $fasta = Bio::SeqIO->new(-file => qq">$options{fasta}",
                                 -format => 'fasta', -flush => 0);
-    my $gffout = Bio::Tools::GFF->new(-file => ">$outputs->{all_gff}",
+    my $gffout = Bio::Tools::GFF->new(-file => ">$options{all_gff}",
                                       -gff_version => 3);
-    my $gene_gff = Bio::Tools::GFF->new(-file => ">$outputs->{gene_gff}",
+    my $gene_gff = Bio::Tools::GFF->new(-file => ">$options{gene_gff}",
                                         -gff_version => 3);
-    my $cds_gff = Bio::Tools::GFF->new(-file => ">$outputs->{cds_gff}",
+    my $cds_gff = Bio::Tools::GFF->new(-file => ">$options{cds_gff}",
                                        -gff_version => 3);
-    my $inter_gffout = Bio::Tools::GFF->new(-file => ">$outputs->{inter_gff}",
+    my $inter_gffout = Bio::Tools::GFF->new(-file => ">$options{inter_gff}",
                                             -gff_version => 3);
-    my $cds_fasta = Bio::SeqIO->new(-file => qq">$outputs->{cds_fasta}",
+    my $cds_fasta = Bio::SeqIO->new(-file => qq">$options{cds_fasta}",
                                     -format => 'Fasta');
-    my $pep_fasta = Bio::SeqIO->new(-file => qq">$outputs->{pep_fasta}",
+    my $pep_fasta = Bio::SeqIO->new(-file => qq">$options{pep_fasta}",
                                     -format => 'Fasta');
-    my $nc_fasta = Bio::SeqIO->new(-file => qq">$outputs->{nc_fasta}",
+    my $nc_fasta = Bio::SeqIO->new(-file => qq">$options{nc_fasta}",
                                    -format => 'Fasta');
-    my $misc_fasta = Bio::SeqIO->new(-file => qq">$outputs->{misc_fasta}",
+    my $misc_fasta = Bio::SeqIO->new(-file => qq">$options{misc_fasta}",
                                      -format => 'Fasta');
-    my $nc_gffout = Bio::Tools::GFF->new(-file => ">$outputs->{nc_gff}", -gff_version => 3);
-    my $misc_gffout = Bio::Tools::GFF->new(-file => ">$outputs->{misc_gff}", -gff_version => 3);
-    my $rrna_gffout = Bio::Tools::GFF->new(-file => ">$outputs->{rrna_gff}", -gff_version => 3);
-    my $rrna_fasta = Bio::SeqIO->new(-file => qq">$outputs->{rrna_fasta}", -format => 'Fasta');
+    my $nc_gffout = Bio::Tools::GFF->new(-file => ">$options{nc_gff}", -gff_version => 3);
+    my $misc_gffout = Bio::Tools::GFF->new(-file => ">$options{misc_gff}", -gff_version => 3);
+    my $rrna_gffout = Bio::Tools::GFF->new(-file => ">$options{rrna_gff}", -gff_version => 3);
+    my $rrna_fasta = Bio::SeqIO->new(-file => qq">$options{rrna_fasta}", -format => 'Fasta');
     my $rrna_id_counter = {};
     my $cds_id_counter = {};
     my $ncrna_id_counter = {};
@@ -645,19 +675,19 @@ sub Gb2Gff_Worker {
         num_sequences => $seq_count,
         total_nt => $total_nt,
         num_features => $feature_count,
-        fasta_out => $outputs->{fasta},
-        all_gff_out => $outputs->{all_gff},
-        gene_gff => $outputs->{gene_gff},
-        inter_cds => $outputs->{inter_gff},
-        cds_fasta => $outputs->{cds_fasta},
-        cds_gff => $outputs->{cds_gff},
-        pep_fasta => $outputs->{pep_fasta},
-        rrna_gff => $outputs->{rrna_gff},
-        rrna_fasta => $outputs->{rrna_fasta},
-        ncrna_gff => $outputs->{nc_gff},
-        ncrna_fasta => $outputs->{nc_fasta},
-        misc_gff => $outputs->{misc_gff},
-        misc_fasta => $outputs->{misc_fasta},
+        fasta_out => $options{fasta},
+        all_gff_out => $options{all_gff},
+        gene_gff => $options{gene_gff},
+        inter_cds => $options{inter_gff},
+        cds_fasta => $options{cds_fasta},
+        cds_gff => $options{cds_gff},
+        pep_fasta => $options{pep_fasta},
+        rrna_gff => $options{rrna_gff},
+        rrna_fasta => $options{rrna_fasta},
+        ncrna_gff => $options{nc_gff},
+        ncrna_fasta => $options{nc_fasta},
+        misc_gff => $options{misc_gff},
+        misc_fasta => $options{misc_fasta},
     };
     close($handle);
     $fasta->close();
@@ -996,6 +1026,7 @@ sub Samtools {
         options => \%options,);
     print "TESTME: Samtools about to submit with main: $options{main}\n";
     my $samtools_job = $class->Submit();
+    print "After submission main: $samtools_job->{main}\n";
     return($samtools_job);
 }
 

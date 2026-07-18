@@ -1,0 +1,11 @@
+## Write out the various arguments here to see what happened:
+## output: [% main %]
+## reporter: [% pdf %]
+## stdout: [% stdout %]
+## stderr: [% stderr %]
+
+## Invoke the GATK InsertSizeMetrics function on a set of aligned reads.
+/usr/bin/time -v -o [% time_file %] -a \
+  gatk CollectInsertSizeMetrics \
+    -I [% input %] -O [% main %] -H [% pdf %] \
+    -M 0.5 2>[% stderr %] 1>[%= stdout =%]

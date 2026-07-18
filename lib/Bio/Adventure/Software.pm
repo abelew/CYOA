@@ -106,8 +106,11 @@ function module() {
 
 ";
     $modulecmd_handle->close();
+    ## I think I have created the little shell fragments for detecting
+    ## things like conda/module/etc functions smart enough that they
+    ## will not leave files behind, but check just in case.
     if (-f 'typescript') {
-        rm('typescript');
+        unlink('typescript');
     }
     ## If module is not in the current environment, check for the
     ## modulecmd executable and just use that.
@@ -189,7 +192,6 @@ export -f spack
 
 !;
     } else {
-        print "Software::Get_Spack: There are: $num_spack_lines \n";
         $found = 1;
     }
     my $spack_cmd = {
@@ -240,9 +242,11 @@ sub Module_Catalog {
         my $counter = 0;
         my $version = q{};
         my $name = q{};
-        for my $pkg (sort keys %module_dir_info) {
+      VERS: for my $pkg (sort keys %module_dir_info) {
             $counter++;
-            ($name, $version) = split(/\//, $pkg, 2);
+            my ($name, $version) = split(/\//, $pkg, 2);
+            next VERS unless (defined($version));
+            ## The following line might be an error, it requires checking.
             if (!defined($pkg_info->{$name})) {
                 $pkg_info->{$name} = {};
                 ## If we have moved to a new package from an old one, and we never found
@@ -258,8 +262,6 @@ sub Module_Catalog {
                 default => 0,
             };
             if (defined($module_dir_info{$pkg}->{symbols}->[0])) {
-                print "HEY: Symbols are defined!\n";
-                p $module_dir_info{$pkg}->{symbols}->[0];
                 $pkg_info->{$name}->{$version}->{default} = 1;
                 $found_default = 1;
             }
@@ -269,61 +271,7 @@ sub Module_Catalog {
             $pkg_info->{$previous_name}->{$version}->{default} = 1;
         }
     }
-    p $pkg_info;
     return($pkg_info);
-}
-
-sub Module_Catalog_bad {
-    my $modules_ref = {};
-    my $module_dir = q{};
-    my $module_dir_ref = {};
-    my $avail_test = qq!bash -i -c "module avail --no-pager --redirect --color=never -t -C" |!;
-    my $avail_handle = FileHandle->new($avail_test);
-    my $previous_module = q{};
-    my $found_default = 0;
-    my $counter = 0;
-    my $default = 0;
-  MOD: while (my $line = <$avail_handle>) {
-        chomp $line;
-        $line =~ s/\s+$//g;
-        $counter++;
-        $default = 0;
-        my $version = q{};
-        my $name = q{};
-        if ($line =~ /:$/) {
-            if ($counter > 1) {
-                $modules_ref->{$module_dir} = $module_dir_ref;
-                print "Adding a new hash to modules\n";
-            }
-            $module_dir = $line;
-            $module_dir =~ s/:$//;
-            $module_dir_ref = {};
-            $previous_module = q{};
-            $found_default = 0;
-        } else {
-            $line =~ s/^(\S+)\s+.*$/$1/g;
-            ($name, $version) = split(/\//, $line, 2);
-            next MOD if ($name eq '');
-            if ($name ne $previous_module) {
-                if ($found_default) {
-                    $found_default = 0;
-                } else {
-                    ## If we switched to a new module, and never found a default
-                    ## for the previous, then the last one printed is the default.
-                    $module_dir_ref->{$previous_module}->{$version} = 1;
-                }
-            }
-            if ($version =~ /\(default\)$/) {
-                $version =~ s/^(.+)\(.*$/$1/g;
-                $default = 1;
-                $found_default = 1;
-            }
-            $module_dir_ref->{$name}->{$version} = $default;
-            $previous_module = $name;
-        } ## End checking for a module directory.
-    }
-    $modules_ref->{$module_dir} = $module_dir_ref;
-    return($modules_ref);
 }
 
 =head2 C<Module_Loader>

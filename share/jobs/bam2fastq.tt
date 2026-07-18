@@ -1,0 +1,15 @@
+## Write out the various arguments here to see what happened:
+## output: [% main %]
+## input: [% input %]
+## stdout: [% stdout %]
+## stderr: [% stderr %]
+
+## Resort an alignment by name, then extract the fastq data with bedtools.
+/usr/bin/time -v -o [% time_file %] -a \
+  samtools sort -n -o [% resorted %]
+/usr/bin/time -v -o [% time_file %] -a \
+  bamToFastq -i [% resorted %] \
+    [% output_string %] \
+    2>[% stderr %] \
+    1>[% stdout %]
+rm [% resorted %]

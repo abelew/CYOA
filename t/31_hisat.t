@@ -55,8 +55,8 @@ my $cyoa = Bio::Adventure->new(
     stranded => 'no',);
 my $hisat = $cyoa->Bio::Adventure::Map::Hisat2(
     input => $local_input_fastq,
-    prefix => '31',);
-ok($hisat, 'Run Hisat2');
+    prefix => '31_1',);
+ok($hisat, 'Run Hisat2 with single-end input.');
 my $sam_file = $hisat->{samtools}->{main};
 my $count_file = $hisat->{counter}->{main};
 my $stats_file = $hisat->{stats}->{main};
@@ -98,4 +98,69 @@ unless(ok($expected eq $actual, 'Is the resulting count table as expected?')) {
     my($old, $new) = diff($expected, $actual);
     diag("--Expected--\n${old}\n--Actual--\n${new}\n");
 }
+
+## Repeat with some paired end input which is xz compressed.
+my $input_r1 = qq"${source_dir}/r1.fastq.xz";
+my $input_r2 = qq"${source_dir}/r2.fastq.xz";
+my $local_r1 = basename($input_r1);
+my $local_r2 = basename($input_r2);
+if (!-r $local_r1) {
+    print "Copying ${input_r1} to the current working directory.\n";
+    cp($input_r1, $local_r1);
+}
+if (!-r $local_r2) {
+    print "Copying ${input_r2} to the current working directory.\n";
+    cp($input_r2, $local_r2);
+}
+my $input = qq"r1.fastq.xz:r2.fastq.xz";
+my $hs_paired = $cyoa->Bio::Adventure::Map::Hisat2(
+    input => $input,
+    jprefix => '31_2',);
+
+ok($hs_paired, 'Run Hisat2 with paired-end input.');
+my $sam_paired = $hs_paired->{samtools}->{main};
+my $count_paired = $hs_paired->{counter}->{main};
+my $stats_paired = $hs_paired->{stats}->{main};
+ok(-f $sam_paired, qq"The sorted bamfile was created to ${sam_file}.");
+ok(-f $count_paired, qq"The count table was created: ${count_file}.");
+ok(-f $stats_paired, qq"The hisat stats were recorded to ${stats_file}.");
+
+$actual = $cyoa->Last_Stat(input => $stats_paired);
+ok($actual, 'Collect Hisat Statistics for a paired-end run.');
+
+$expected = qq"hisat_phix_genome_test.stderr,10000,49,9951,0";
+unless(ok($expected eq $actual, 'Are the hisat stats as expected?')) {
+    my ($old, $new) = diff($expected, $actual);
+    diag("--Expected--\n${old}\n--Actual--\n${new}\n");
+}
+
+## Stupid featureCounts puts a random space at the end of the first line
+$expected = qq!"1"
+Length
+1542
+1026
+363
+171
+261
+3618
+634
+276
+117
+528
+987
+!;
+
+$cmd = qq!xzcat ${count_file} | awk '{print \$6}'!;
+print "Running
+${cmd}\n";
+$actual = qx"$cmd";
+unless(ok($expected eq $actual, 'Is the resulting count table as expected?')) {
+    my($old, $new) = diff($expected, $actual);
+    diag("--Expected--\n${old}\n--Actual--\n${new}\n");
+}
+
+
+
+
+
 chdir($start);

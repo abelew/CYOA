@@ -7,7 +7,10 @@ use Moo;
 extends 'Bio::Adventure';
 use FileHandle;
 use File::Path qw"make_path remove_tree";
+use File::ShareDir qw"dist_file module_dir dist_dir";
 use JSON qw"to_json from_json";
+my $template_base = dist_dir('Bio-Adventure');
+my $template_dir = qq"${template_base}/jobs";
 
 sub Get_JSON {
     my ($class, $option_file) = @_;
@@ -50,54 +53,61 @@ sub Make_Comment {
     return($comment_string);
 }
 
+=head2 C<Make_Sub_Job>
+
+ Create a sub-job: This is a secondary script run by an arbitrary scripting language
+ and submitted as a job.
+
+ As of the time of this writing, I have only played with perl and R in this context;
+ but with the recent changes to cyoa, it should be pretty easy to define jobs which
+ run in other programming languages and get them to run with whatever
+ parameters one wants.
+
+
+
+
+=cut
 sub Make_Sub_Job {
     my ($class, %args) = @_;
     my $state_ref = $class->current_state;
     my %state = %{$state_ref};
-
+    print "TESTME: CREATING A SUBJIB with $state{perl_job}\n";
     my $primary_job = $state{jstring};
-    if (defined($state{subjob})) {
-        if ($state{subjob} eq 'perl') {
-            my $perl_file = qq"$state{basedir}/$state{script_dir}/$state{jname}.pl";
-            my $perl_stderr = qq"$state{output_dir}/$state{jname}.stderr";
-            my $perl_stdout = qq"$state{output_dir}/$state{jname}.stdout";
-            my $bash_log = qq"$state{basedir}/outputs/log.txt";
-            $state{prescript} = '' unless (defined($state{prescript}));
-            $state{postscript} = '' unless (defined($state{postscript}));
-            my $subjob = qq?#!/usr/bin/env perl
-use strict;
-use Modern::Perl;
-use FileHandle;
-use Bio::Adventure;
-my \$out = FileHandle->new(">>${bash_log}");
-my \$d = qx'date';
-print \$out "###Started $state{jname} at \${d}";
-chdir("$state{basedir}");
-my \$h = Bio::Adventure->new();
-my \$information = \$h->Bio::Adventure::Languages::Get_JSON('$class->{option_file}');
-## $state{jcomment}
-$state{prescript}
-$state{jstring}
-$state{postscript}
-## The following lines give status codes and some logging
-my \$jobid = "";
-\$jobid = \$ENV{SLURM_JOBID} if (\$ENV{SLURM_JOBID});
-my \$end_d = qx'date';
-print \$out "####Finished \${jobid} $state{jname} at \${end_d}.";
-close(\$out);
-?;
-            my $perl_script = FileHandle->new(">${perl_file}");
-            print $perl_script $subjob;
-            $perl_script->close();
-            chmod(0755, $perl_file);
-            $primary_job = qq?
-${perl_file} \\
-  2>${perl_stderr} \\
-  2>${perl_stdout}
-?;
-        } else {
-            print "I currently only know how to set up a perl job.\n";
+    if (defined($state{perl_job})) {
+        ## perl_job is the location of the .pl which will be run by the primary job.
+        ## The following template process() requires that a
+        ## perl_jstring be defined; when I start creating ruby/R/python/julia/etc
+        ## the same should be true for them and be comprised of the functions
+        ## run by the appropriate runtime.
+        $state{perl_stderr} = qq"$state{output_dir}/$state{jname}.stderr";
+        $state{perl_stdout} = qq"$state{output_dir}/$state{jname}.stdout";
+
+        ## Ensure a few assumed variables exist.
+        if (!defined($state{log})) {
+            $state{log} = qq"$state{basedir}/outputs/log.txt";
         }
+        if (!defined($state{perl_shebang})) {
+            $state{perl_shebang} = qq"#!/usr/bin/env perl";
+        }
+
+        ## The submitting function is responsible for providing a perl_job as above and
+        ## a 'worker' which is the name of the function which will be called; there should
+        ## be a corresponding file in the jobs/ tree which templates
+        ## the various parameters which this job will use.
+        my $worker_name = lc($state{worker});
+        my $worker_file = qq"${worker_name}.tt";
+        my $templater = Template->new({
+            INCLUDE_PATH => $template_dir,
+            TRIM => 0,
+            INTERPOLATE => 0,});
+        my $perl_jstring = q{};
+        my $perl_jstring_processed = $templater->process($worker_file, \%state, \$perl_jstring);
+        $state{perl_jstring} = $perl_jstring;
+        print "\n\nTESTME In subjob: $perl_jstring\n\n";
+        sleep(3);
+        my $processed = $templater->process('perl.tt', \%state, $state{perl_job}) or die $templater->error;
+        say "Writing job script to $state{perl_job}.";
+        chmod(0755, $state{perl_job});
     } ## End checking for subjob.
     return($primary_job);
 }

@@ -906,7 +906,7 @@ sub Hisat2 {
         $options{hisat_args} .= qq" --no-spliced-alignment ";
     }
 
-        ## Set up the names of this and the following jobs.
+    ## Set up the names of this and the following jobs.
     my $prefix_name = 'hisat';
     $prefix_name .= qq"_k$options{maximum}" if (defined($options{maximum}));
     $options{hisat_name} = qq"${prefix_name}_$options{species}_$options{libtype}";
@@ -925,7 +925,8 @@ sub Hisat2 {
     ## It is noteworthy that I modified hisat2 on my computer
     ## so that it supports xz inputs.
     my $number_inputs = scalar(@{$inputs});
-    my $paired = 0;
+    ## Assume unpaired input, count the input files, and set paired if there are 2.
+    $options{paired} = 0;
     my $input_string = '';
     my $test_file = $inputs->[0]->{fullpath};
     if ($number_inputs == 1) {
@@ -938,6 +939,8 @@ sub Hisat2 {
     } else {
         die("This number of inputs is unsuitable: ${number_inputs}.\n");
     }
+    print "Map::Hisat, checking PAIRED: $options{paired}\n";
+    sleep(3);
 
     ## Check that the indexes exist
     my $cluster = $options{cluster};
@@ -995,7 +998,6 @@ sub Hisat2 {
         paired => $options{paired},
         species => $options{species},);
     $hisat_job->{samtools} = $samtools_job;
-    p $samtools_job;
 
     ## Compress the various plain text outputs.
     if ($options{compress}) {
@@ -1032,11 +1034,13 @@ sub Hisat2 {
 
     ## Use HTSeq or featureCounts to count up reads/featue.
     my $counter_input;
-    if ($paired) {
+    if ($options{paired}) {
         $counter_input = $samtools_job->{paired};
     } else {
         $counter_input = $samtools_job->{main};
     }
+    print "\n\nTESTME: What is the counter input: $counter_input vs $samtools_job->{main} $samtools_job->{paired}\n\n";
+    sleep(3);
     my $counter_out = '';
     my $counter;
     my $counter_job;
@@ -1074,6 +1078,8 @@ sub Hisat2 {
             jprefix => $options{jprefix},
             libtype => $options{libtype},
             mapper => 'hisat2',
+            gff_tag => $options{gff_tag},
+            gff_type => $options{gff_type},
             paired => $options{paired},
             stranded => $options{stranded},);
         ## If this is not the final job in a chain, then make sure
@@ -1717,46 +1723,45 @@ sub RSEM {
 =cut
 sub Salmon {
     my ($class, %args) = @_;
-    my ($options, $paths, $inputs, $outputs) = $class->Get_Vars(
-        args => \%args,
-        required => ['species', 'input'],
-        libtype => 'CDS',
-        stranded => 'A',);
-    if ($options->{libtype} ne 'CDS') {
+    my $function_info = $class->Bio::Adventure::Config::Get_Function_Vars(\%args);
+    my %options = %{$function_info};
+    my $all_inputs = $class->inputs;
+    my $inputs = $all_inputs->[$#$all_inputs];
+
+    if ($options{libtype} ne 'CDS') {
         print "The library type for salmon generally needs to be CDS unless this is something special.
 Waiting 10 seconds to see if you change your mind.\n";
         sleep(10);
     }
-    if ($options->{species} =~ /:/) {
-        my $start_species = $options->{species};
-        my @species_lst = split(/:/, $options->{species});
+
+    if ($options{species} =~ /:/) {
+        my @species_lst = split(/:/, $options{species});
         my @result_lst = ();
         for my $sp (@species_lst) {
+            my %inner_options = %options;
             print "Invoking salmon on ${sp}\n";
-            $options->{species} = $sp;
-            my $result = $class->Bio::Adventure::Map::Salmon(%{$options});
+            $inner_options{species} = $sp;
+            my $result = $class->Bio::Adventure::Map::Salmon(%inner_options);
             push (@result_lst, $result);
         }
-        $options->{species} = $start_species;
         return(@result_lst);
     }
 
     my $ready;
-    if (!$options->{jdepends}) {
-        $ready = $class->Check_Input(files => $options->{input});
+    if (!$options{jdepends}) {
+        $ready = $class->Check_Input(files => $options{input});
     }
     my %sa_jobs = ();
     my $libtype = 'genome';
-    $libtype = $options->{libtype} if ($options->{libtype});
+    $libtype = $options{libtype} if ($options{libtype});
 
-    my $jname = qq"sal_$options->{species}_$options->{libtype}";
-    ## $jname = $options->{jname} if ($options->{jname});
+    my $jname = qq"sal_$options{species}_$options{libtype}";
     my $sa_args = '';
-    my $sa_input = $options->{input};
+    my $sa_input = $options{input};
     my $input_name = $sa_input;
     my $num_inputs = 1;
-    if ($sa_input =~ /$options->{delimiter}/) {
-        my @pair_listing = split(/$options->{delimiter}/, $sa_input);
+    if ($sa_input =~ /$options{delimiter}/) {
+        my @pair_listing = split(/$options{delimiter}/, $sa_input);
         my $r1_fd = $class->Get_FD(input => $pair_listing[0]);
         my $r2_fd = $class->Get_FD(input => $pair_listing[1]);
         $sa_args .= qq" -1 ${r1_fd} -2 ${r2_fd} ";
@@ -1766,6 +1771,7 @@ Waiting 10 seconds to see if you change your mind.\n";
         my $r1_fd = $class->Get_FD(input => $sa_input);
         $sa_args .= qq" -r ${r1_fd} ";
     }
+    $options{sa_args} = $sa_args;
 
     ## A reminder from the salmon documentation regarding the various strand declarations:
     ## 'A': autodetect
@@ -1777,7 +1783,7 @@ Waiting 10 seconds to see if you change your mind.\n";
     ##   read1 is on the forward/reverse strand: F/R
     ## Thus, a paired end, stranded, away from each other library <-> with r1 on the reverse strand:
     ## 'OSR'
-    my $strand_string = $options->{stranded};
+    my $strand_string = $options{stranded};
     if (!defined($strand_string)) {
         $strand_string = 'A';
     } elsif ($strand_string eq '0' || 'no') {
@@ -1797,46 +1803,32 @@ Waiting 10 seconds to see if you change your mind.\n";
     }
 
     ## Check that the indexes exist
-    my $sa_reflib = $paths->{index_dir};
+    my $sa_reflib = $options{index_dir};
     my $index_job;
-    my $cluster = $options->{cluster};
+    my $cluster = $options{cluster};
     if (!-d $sa_reflib) {
-        my $transcript_file = qq"$options->{libpath}/${libtype}/fasta/$options->{species}.fasta";
+        my $transcript_file = qq"$options{libpath}/$options{libtype}/fasta/$options{species}.fasta";
         my $index_extras = {
             input => $transcript_file,
         };
-        my %index_args = $class->Extra_Options(options => $options, extras => $index_extras);
+        my %index_args = $class->Extra_Options(options => %options, extras => $index_extras);
         $index_job = $class->Bio::Adventure::Index::Salmon_Index(%index_args, cluster => 0);
     }
-    my $jstring = qq!mapped=1
-{
-  /usr/bin/time -v -o $outputs->{stdout}.time -a \\
-    salmon quant -i ${sa_reflib} \\
-      -l ${strand_string} --gcBias --validateMappings  \\
-      ${sa_args} \\
-      -o $paths->{outdir} \\
-      2>$outputs->{stderr} \\
-      1>$outputs->{stdout}
-} || {
-  echo 'salmon failed.' >> $outputs->{stderr}
-}
-!;
+
+    my $updated = $class->Bio::Adventure::Config::Update_State(
+        options => \%options,);
+    my $salmon_job = $class->Submit();
+
     ## Explicitly setting the cluster state to whatever it was before
     ## testing for the indexes, because I forced the index creation
     ## to run outside of the context of a cluster.
-    my $salmon = $class->Submit(
-        cluster => $cluster,
-        input => $sa_input,
-        jdepends => $options->{jdepends},
-        jstring => $jstring,
-        outputs => $outputs,);
-    $salmon->{index_job} = $index_job;
+    $salmon_job->{index_job} = $index_job;
     my $stats = $class->Bio::Adventure::Metadata::Salmon_Stats(
-        input => qq"$paths->{outdir}/lib_format_counts.json",
-        jdepends => $salmon->{job_id},);
-    $salmon->{stats} = $stats;
-    $salmon->{job_id} = $stats->{job_id};
-    return($salmon);
+        input => qq"$options{outdir}/lib_format_counts.json",
+        jdepends => $salmon_job->{job_id},);
+    $salmon_job->{stats} = $stats;
+    $salmon_job->{job_id} = $stats->{job_id};
+    return($salmon_job);
 }
 
 =head2 C<STAR>

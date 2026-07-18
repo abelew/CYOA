@@ -1,0 +1,7 @@
+## Write out the various arguments here to see what happened:
+## input: [% input %]
+## stdout: [% stdout %]
+## stderr: [% stderr %]
+
+## Convert a genbank file into a series of gff/fasta files.
+[% perl_job %]
